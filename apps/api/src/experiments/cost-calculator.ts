@@ -12,6 +12,7 @@ export interface ModelPricing {
   outputPerMillion: number;
   currency: 'USD';
   effectiveAsOf: string;
+  source: string;
 }
 
 export const KNOWN_MODEL_PRICING: Record<string, ModelPricing> = {
@@ -19,30 +20,74 @@ export const KNOWN_MODEL_PRICING: Record<string, ModelPricing> = {
     inputPerMillion: 0.15,
     outputPerMillion: 0.60,
     currency: 'USD',
-    effectiveAsOf: '2024-10',
+    effectiveAsOf: '2024-10-01',
+    source: 'OpenAI Published API Pricing (Oct 2024)',
+  },
+  'gpt-4o': {
+    inputPerMillion: 2.50,
+    outputPerMillion: 10.00,
+    currency: 'USD',
+    effectiveAsOf: '2024-10-01',
+    source: 'OpenAI Published API Pricing (Oct 2024)',
   },
   'claude-3-5-sonnet': {
     inputPerMillion: 3.00,
     outputPerMillion: 15.00,
     currency: 'USD',
-    effectiveAsOf: '2024-10',
+    effectiveAsOf: '2024-10-01',
+    source: 'Anthropic Published API Pricing (Oct 2024)',
   },
 };
 
-export function calculateCost(
+/**
+ * Allows registering or overriding pricing for custom or newer models at runtime.
+ */
+export function registerModelPricing(model: string, pricing: ModelPricing): void {
+  KNOWN_MODEL_PRICING[model.toLowerCase()] = pricing;
+}
+
+export function getModelPricing(model: string): ModelPricing | null {
+  return KNOWN_MODEL_PRICING[model.toLowerCase()] || null;
+}
+
+export interface CostCalculationResult {
+  estimatedCost: number | null;
+  isEstimate: boolean;
+  pricingSource: string | null;
+  effectiveAsOf: string | null;
+}
+
+export function calculateCostDetails(
   model: string,
   inputTokens: number,
   outputTokens: number,
-): number | null {
-  const pricing = KNOWN_MODEL_PRICING[model.toLowerCase()];
+): CostCalculationResult {
+  const pricing = getModelPricing(model);
   if (!pricing) {
-    return null;
+    return {
+      estimatedCost: null,
+      isEstimate: true,
+      pricingSource: null,
+      effectiveAsOf: null,
+    };
   }
 
   const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillion;
   const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
   const totalCost = inputCost + outputCost;
 
-  // Round to 6 decimal places for precision without floating point noise
-  return Math.round(totalCost * 1_000_000) / 1_000_000;
+  return {
+    estimatedCost: Math.round(totalCost * 1_000_000) / 1_000_000,
+    isEstimate: true,
+    pricingSource: pricing.source,
+    effectiveAsOf: pricing.effectiveAsOf,
+  };
+}
+
+export function calculateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+): number | null {
+  return calculateCostDetails(model, inputTokens, outputTokens).estimatedCost;
 }

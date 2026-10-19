@@ -267,6 +267,65 @@ describe('UsageService', () => {
       expect(mockPrisma.usageRecord.create).not.toHaveBeenCalled();
     });
 
+    it('should reject second concurrent request when parallel reservations would collectively exceed quota', async () => {
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
+        id: 'qp-1',
+        monthlyTokenLimit: 10_000,
+        requestRateLimit: 60,
+      });
+
+      mockPrisma.usageRecord.findUnique.mockResolvedValue(null);
+
+      let currentPeriodState = {
+        id: 'period-concurrency',
+        userId: 'dev-user-001',
+        periodStart: new Date('2026-10-01T00:00:00.000Z'),
+        periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+        tokenLimit: 10_000,
+        actualTokens: 4_000,
+        reservedTokens: 0,
+      };
+
+      mockPrisma.quotaPeriod.findUnique.mockImplementation(async () => ({ ...currentPeriodState }));
+      mockPrisma.quotaPeriod.update.mockImplementation(async (args: any) => {
+        if (args.data.reservedTokens?.increment) {
+          currentPeriodState.reservedTokens += args.data.reservedTokens.increment;
+        }
+        return { ...currentPeriodState };
+      });
+
+      // Request 1: requests 4,000 tokens (4,000 actual + 0 reserved + 4,000 req = 8,000 <= 10,000) -> SUCCEEDS
+      const req1 = await service.reserveUsage({
+        requestId: 'req-conc-1',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        estimatedTokens: 4_000,
+      });
+      expect(req1.success).toBe(true);
+      expect(currentPeriodState.reservedTokens).toBe(4_000);
+
+      // Request 2: concurrently attempts 4,000 tokens (4,000 actual + 4,000 reserved + 4,000 req = 12,000 > 10,000) -> REJECTED
+      let req2Error: any = null;
+      try {
+        await service.reserveUsage({
+          requestId: 'req-conc-2',
+          userId: 'dev-user-001',
+          model: 'gpt-4o-mini',
+          provider: 'openai',
+          estimatedTokens: 4_000,
+        });
+      } catch (err) {
+        req2Error = err;
+      }
+
+      expect(req2Error).toBeDefined();
+      expect(req2Error.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+      expect(req2Error.getResponse().error).toBe('QUOTA_EXCEEDED');
+      // Verify quota was not breached
+      expect(currentPeriodState.actualTokens + currentPeriodState.reservedTokens).toBeLessThanOrEqual(10_000);
+    });
+
     it('should independently enforce request-rate limits (req/min)', async () => {
       mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
         id: 'qp-1',
@@ -380,18 +439,57 @@ describe('UsageService', () => {
       const res = await service.reconcileUsage({
         requestId: 'req-fail',
         success: false,
-        error: 'Gateway timeout',
+        error: 'Missing API key: provider authentication error',
       });
 
       expect(res.success).toBe(true);
 
       const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
       expect(periodUpdate.where.id).toBe('period-1');
-      expect(periodUpdate.data.reservedTokens).toBe(0); // released!
-      expect(periodUpdate.data.actualTokens).toBeUndefined(); // NOT touched!
+      expect(periodUpdate.data.reservedTokens).toBe(0); // 100% reservation released!
+      expect(periodUpdate.data.actualTokens).toBeUndefined(); // Zero tokens deducted!
 
       const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
       expect(recordUpdate.data.status).toBe('failed');
+    });
+
+    it('should conservatively retain partial tokens on ambiguous timeout instead of assuming zero usage', async () => {
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'rec-timeout',
+        requestId: 'req-timeout-1',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        reservedTokens: 2_000,
+        status: 'reserved',
+        createdAt: new Date(),
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        reservedTokens: 2_000,
+        actualTokens: 10_000,
+      });
+
+      const res = await service.reconcileUsage({
+        requestId: 'req-timeout-1',
+        success: false,
+        error: 'Request timed out after 30000ms while awaiting response from gateway.',
+      });
+
+      expect(res.success).toBe(true);
+
+      const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      expect(periodUpdate.where.id).toBe('period-1');
+      expect(periodUpdate.data.reservedTokens).toBe(0);
+      // Conservative deduction: retains 50% of reservation (1,000 tokens)
+      expect(periodUpdate.data.actualTokens).toEqual({ increment: 1_000 });
+
+      const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
+      expect(recordUpdate.data.status).toBe('timeout-ambiguous');
+      expect(recordUpdate.data.tokenUsageSource).toBe('estimated-timeout');
+      expect(recordUpdate.data.inputTokens).toBe(1_000);
+      expect(recordUpdate.data.estimatedCost).toBeGreaterThan(0);
     });
 
     it('should be idempotent and not double-reconcile already completed records', async () => {

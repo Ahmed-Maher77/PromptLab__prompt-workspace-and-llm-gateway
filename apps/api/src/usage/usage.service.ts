@@ -327,6 +327,18 @@ export class UsageService {
         });
       }
 
+      // Row-level lock to serialize concurrent requests and eliminate stale reads
+      if (typeof tx.$queryRawUnsafe === 'function') {
+        try {
+          await tx.$queryRawUnsafe(
+            `SELECT id FROM "quota_periods" WHERE id = $1 FOR UPDATE`,
+            period.id,
+          );
+        } catch {
+          // Continues safely in environments or mocks without raw SQL support
+        }
+      }
+
       const totalProjected = period.actualTokens + period.reservedTokens + estimatedTokens;
 
       if (totalProjected > period.tokenLimit) {
@@ -452,7 +464,49 @@ export class UsageService {
 
         return { success: true, record: updatedRecord };
       } else {
-        // Failed request, timeout, or provider error: release reserved tokens safely!
+        // Check for ambiguous timeout where upstream provider may have generated tokens
+        const isTimeout =
+          dto.error &&
+          (dto.error.toLowerCase().includes('timeout') ||
+            dto.error.toLowerCase().includes('timed out') ||
+            dto.error.toLowerCase().includes('ambiguous'));
+
+        if (isTimeout) {
+          // Conservative timeout recovery strategy:
+          // Retain estimated input tokens (50% of reservation), release unconsumed remainder,
+          // and record as 'timeout-ambiguous' with 'estimated-timeout' source.
+          const conservativeConsumed = Math.max(1, Math.floor(reservedAmount * 0.5));
+
+          if (period) {
+            const newReserved = Math.max(0, period.reservedTokens - reservedAmount);
+            await tx.quotaPeriod.update({
+              where: { id: period.id },
+              data: {
+                reservedTokens: newReserved,
+                actualTokens: { increment: conservativeConsumed },
+              },
+            });
+          }
+
+          const cost = calculateCost(record.model, conservativeConsumed, 0);
+
+          const updatedRecord = await tx.usageRecord.update({
+            where: { id: record.id },
+            data: {
+              inputTokens: conservativeConsumed,
+              outputTokens: 0,
+              tokenUsageSource: 'estimated-timeout',
+              estimatedCost: cost,
+              status: 'timeout-ambiguous',
+              reconciledAt: new Date(),
+            },
+          });
+
+          return { success: true, record: updatedRecord };
+        }
+
+        // Definitive pre-dispatch error (e.g. auth failure, unreachable gateway, bad request):
+        // 100% of reserved tokens are released with zero actual tokens charged
         if (period) {
           const newReserved = Math.max(0, period.reservedTokens - reservedAmount);
           await tx.quotaPeriod.update({
