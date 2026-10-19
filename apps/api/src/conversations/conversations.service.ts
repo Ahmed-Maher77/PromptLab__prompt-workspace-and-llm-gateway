@@ -3,9 +3,11 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
+import { UsageService } from '../usage/usage.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import {
@@ -27,6 +29,7 @@ export class ConversationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
+    @Optional() private readonly usageService?: UsageService,
   ) {}
 
   /**
@@ -345,6 +348,20 @@ export class ConversationsService {
       content: m.content,
     }));
 
+    // Reserve estimated quota before dispatching
+    const estimatedTokens = inspection.totalEstimatedInputTokens + 1024;
+    const requestId = `req-conv-${conv.id}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    if (this.usageService) {
+      await this.usageService.reserveUsage({
+        requestId,
+        model: conv.model,
+        provider: conv.provider,
+        estimatedTokens,
+        conversationId: conv.id,
+      });
+    }
+
     // 3. Dispatch to model gateway
     const result = await this.providersService.executeChatCompletion({
       model: conv.model,
@@ -352,6 +369,16 @@ export class ConversationsService {
       temperature: 0.7,
       maxTokens: 1024,
     });
+
+    if (this.usageService) {
+      await this.usageService.reconcileUsage({
+        requestId,
+        success: result.success,
+        usage: result.usage,
+        latencyMs: result.latencyMs,
+        error: result.errorMessage,
+      });
+    }
 
     if (!result.success) {
       // Handle provider failure explicitly without corrupting the conversation history

@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { PromptsService } from '../prompts/prompts.service';
+import { UsageService } from '../usage/usage.service';
 import { RunComparisonDto, SlotConfigDto, EvaluationCriterionDto, RateExperimentDto } from './dto/run-comparison.dto';
 import { calculateCost } from './cost-calculator';
 import { Prisma } from '@prisma/client';
@@ -56,6 +57,7 @@ export class ExperimentsService {
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
     private readonly promptsService: PromptsService,
+    @Optional() private readonly usageService?: UsageService,
   ) {}
 
   /**
@@ -358,12 +360,38 @@ export class ExperimentsService {
     prepared: { templateBody: string; resolvedPrompt: string; promptId?: string; promptName?: string; versionNumber?: number },
     criteria: EvaluationCriterionDto[],
   ): Promise<SlotRunResult> {
+    const promptEst =
+      typeof this.providersService?.estimateTokens === 'function'
+        ? this.providersService.estimateTokens(prepared.resolvedPrompt)
+        : Math.max(1, Math.ceil((prepared.resolvedPrompt?.length || 0) / 4));
+    const estimatedTokens = promptEst + (config.maxTokens || 1024);
+    const requestId = `req-exp-${slotLabel.toLowerCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    if (this.usageService) {
+      await this.usageService.reserveUsage({
+        requestId,
+        model: config.model,
+        provider: config.provider,
+        estimatedTokens,
+      });
+    }
+
     const completion = await this.providersService.executeChatCompletion({
       model: config.model,
       messages: [{ role: 'user', content: prepared.resolvedPrompt }],
       temperature: config.temperature,
       maxTokens: config.maxTokens,
     });
+
+    if (this.usageService) {
+      await this.usageService.reconcileUsage({
+        requestId,
+        success: completion.success,
+        usage: completion.usage,
+        latencyMs: completion.latencyMs,
+        error: completion.errorMessage,
+      });
+    }
 
     const isSuccess = completion.success;
     const output = completion.content || null;
