@@ -49,7 +49,15 @@ graph TD
 - **LiteLLM Proxy:** Separately hosted reverse proxy handling model routing, failover, upstream provider credentials, and gateway-level financial/rate limits.
 - **Database:** PostgreSQL storing immutable versions, conversations, original messages, checkpoints, and usage records.
 
-## 3. Security & Governance Principles
+## 3. Phase 1 Data Flow: Prompt Studio & Gateway Execution
+
+1. **Template Authoring:** The engineer writes a prompt template with dynamic variable syntax (`{{variable_name}}`) and selects composable technique metadata (e.g. `RTF`, `few-shot`, `structured-output`).
+2. **Variable Resolution:** Template variables are dynamically parsed, sample values are substituted, and the exact assembled prompt text is generated while strictly preserving whitespace, line breaks, and indentation.
+3. **Immutable Versioning:** Saving an edited prompt creates a new version record (`versionNumber = latest + 1`) linked to the parent prompt without modifying historical versions.
+4. **Gateway Execution:** The NestJS `ProvidersService` submits the assembled prompt to LiteLLM Proxy (`/v1/chat/completions`) using the configured model. Response content, roundtrip latency, and token metrics with provenance labels (`provider-reported` vs `estimated`) are recorded.
+5. **Honest Provider Error Handling:** If upstream credentials are unconfigured or fail authentication, an explicit provider configuration notice is returned without exposing API secrets or returning fake responses.
+
+## 4. Security & Governance Principles
 1. **Secrets Management:** Provider API keys remain strictly server-side inside gateway secrets or environment variables. No secrets are ever exposed in client bundles or client logs.
 2. **Quota Enforcement:** Monthly token quotas are enforced in the NestJS application backend prior to gateway calls with concurrent reservation locking and post-call reconciliation.
 3. **Observability:** Input/output tokens are distinguished; token counts are labeled *estimated* prior to execution and *provider-reported* once reconciled.

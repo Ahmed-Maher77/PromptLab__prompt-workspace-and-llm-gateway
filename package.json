@@ -9,6 +9,7 @@
   "scripts": {
     "start:api": "npm --workspace=@promptlab/api run start:dev",
     "start:web": "npm --workspace=@promptlab/web run start",
+    "start:gateway": "python infra/litellm/run_proxy.py",
     "build": "npm run build:api && npm run build:web",
     "build:api": "npm --workspace=@promptlab/api run build",
     "build:web": "npm --workspace=@promptlab/web run build",
