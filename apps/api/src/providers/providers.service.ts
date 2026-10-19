@@ -101,6 +101,9 @@ export class ProvidersService {
     temperature?: number;
     maxTokens?: number;
     timeoutMs?: number;
+    traceId?: string;
+    spanId?: string;
+    requestId?: string;
   }): Promise<CompletionResult> {
     const startTime = Date.now();
     const gatewayUrl = this.getGatewayUrl();
@@ -114,13 +117,23 @@ export class ProvidersService {
       max_tokens: params.maxTokens ?? 1024,
     };
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${masterKey}`,
+    };
+
+    if (params.traceId && params.spanId) {
+      headers['traceparent'] = `00-${params.traceId}-${params.spanId}-01`;
+      headers['x-litellm-trace-id'] = params.traceId;
+    }
+    if (params.requestId) {
+      headers['x-request-id'] = params.requestId;
+    }
+
     try {
       const response = await fetch(`${gatewayUrl}/v1/chat/completions`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${masterKey}`,
-        },
+        headers,
         body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(timeoutMs),
       });

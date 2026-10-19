@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException, 
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService, CompletionResult } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
+import { ObservabilityService } from '../observability/observability.service';
+import { calculateCost } from '../experiments/cost-calculator';
 import { CreatePromptDto, PromptVariableDto, FewShotExampleDto } from './dto/create-prompt.dto';
 import { CreateVersionDto } from './dto/create-version.dto';
 import { PreviewPromptDto, RunPlaygroundDto } from './dto/run-prompt.dto';
@@ -59,6 +61,7 @@ export interface ResolvedPreview {
 
 export interface PlaygroundRunResult extends CompletionResult {
   resolvedPrompt: string;
+  traceId?: string;
 }
 
 @Injectable()
@@ -69,6 +72,7 @@ export class PromptsService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
     @Optional() private readonly usageService?: UsageService,
+    @Optional() private readonly observabilityService?: ObservabilityService,
   ) {}
 
   async onModuleInit() {
@@ -485,6 +489,16 @@ export class PromptsService implements OnModuleInit {
     const estimatedTokens = preview.estimatedTokens + (dto.maxTokens || 1024);
     const requestId = `req-play-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
+    // Start trace for observability
+    const trace = this.observabilityService?.startTrace({
+      name: `Playground (${dto.model})`,
+      operation: 'playground.execute',
+      model: dto.model,
+      provider: 'gateway',
+      metadata: { requestId },
+    });
+
+    const reserveSpan = trace?.startSpan('quota.reserve', { estimatedTokens, requestId });
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
@@ -493,7 +507,9 @@ export class PromptsService implements OnModuleInit {
         estimatedTokens,
       });
     }
+    reserveSpan?.end('ok');
 
+    const llmSpan = trace?.startSpan('litellm.chat_completion', { model: dto.model });
     const completionResult = await this.providersService.executeChatCompletion({
       model: dto.model,
       messages: [
@@ -504,8 +520,16 @@ export class PromptsService implements OnModuleInit {
       ],
       temperature: dto.temperature,
       maxTokens: dto.maxTokens,
+      traceId: trace?.traceId,
+      spanId: llmSpan?.id,
+      requestId,
+    });
+    llmSpan?.end(completionResult.success ? 'ok' : 'error', {
+      latencyMs: completionResult.latencyMs,
+      errorCode: completionResult.errorType,
     });
 
+    const reconcileSpan = trace?.startSpan('quota.reconcile', { requestId });
     if (this.usageService) {
       await this.usageService.reconcileUsage({
         requestId,
@@ -515,10 +539,24 @@ export class PromptsService implements OnModuleInit {
         error: completionResult.errorMessage,
       });
     }
+    reconcileSpan?.end('ok');
+
+    const promptTokens = completionResult.usage?.promptTokens || 0;
+    const completionTokens = completionResult.usage?.completionTokens || 0;
+    const cost = calculateCost(dto.model, promptTokens, completionTokens);
+
+    trace?.complete({
+      status: completionResult.success ? 'success' : 'error',
+      usage: completionResult.usage,
+      cost,
+      errorCode: completionResult.errorType,
+      errorMessage: completionResult.errorMessage,
+    });
 
     return {
       ...completionResult,
       resolvedPrompt: preview.resolvedPrompt,
+      traceId: trace?.traceId,
     };
   }
 }

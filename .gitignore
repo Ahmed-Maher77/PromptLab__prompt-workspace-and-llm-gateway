@@ -44,3 +44,7 @@ Thumbs.db
 # Test coverage
 coverage/
 .nyc_output/
+
+# Nested external repositories
+sme_agent/
+
