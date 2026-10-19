@@ -226,6 +226,28 @@ describe('ExperimentsService', () => {
       const longOutput = service.evaluateCriteria('123456789012345', criteria);
       expect(longOutput[0].passed).toBe(false);
     });
+
+    it('should evaluate regex criterion matching and handle invalid regex safely', () => {
+      const validRegexCriteria = [
+        { id: 'c-4', name: 'Has Order ID', type: 'regex' as const, expectedValue: 'order\\s*#?\\d+' },
+      ];
+
+      const matchOutput = service.evaluateCriteria('Your Order #4567 is being processed', validRegexCriteria);
+      expect(matchOutput[0].passed).toBe(true);
+      expect(matchOutput[0].notes).toBe('Matches regex pattern');
+
+      const nonMatchOutput = service.evaluateCriteria('Hello world', validRegexCriteria);
+      expect(nonMatchOutput[0].passed).toBe(false);
+      expect(nonMatchOutput[0].notes).toBe('Did not match regex pattern');
+
+      // Invalid regex pattern should fail safely and not throw
+      const invalidRegexCriteria = [
+        { id: 'c-5', name: 'Broken Regex', type: 'regex' as const, expectedValue: '[a-z' },
+      ];
+      const invalidOutput = service.evaluateCriteria('Any content', invalidRegexCriteria);
+      expect(invalidOutput[0].passed).toBe(false);
+      expect(invalidOutput[0].notes).toBe('Invalid regular expression');
+    });
   });
 
   describe('findById & updateRating', () => {
