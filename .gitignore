@@ -2,6 +2,10 @@
 node_modules/
 .pnp
 .pnp.js
+.venv/
+infra/litellm/.venv/
+__pycache__/
+*.pyc
 
 # Production builds
 dist/
