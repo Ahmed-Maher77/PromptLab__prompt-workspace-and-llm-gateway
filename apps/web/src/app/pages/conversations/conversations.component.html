@@ -1,0 +1,601 @@
+<div class="conversations-layout">
+  <!-- Left Column: Conversations List -->
+  <aside class="conversations-sidebar">
+    <div class="sidebar-header">
+      <div class="header-title-row">
+        <h3>Conversations</h3>
+        <button class="btn btn-primary btn-sm" (click)="openNewModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          New
+        </button>
+      </div>
+      <p class="sidebar-subtitle">Persistent session context & compaction</p>
+    </div>
+
+    <!-- Conversations List -->
+    <div class="conv-list-container">
+      @if (loadingList()) {
+        <div class="loading-state">
+          <span class="spinner"></span>
+          <span>Loading conversations...</span>
+        </div>
+      } @else if (conversations().length === 0) {
+        <div class="empty-state-sidebar">
+          <p>No conversations yet.</p>
+          <button class="btn btn-secondary btn-sm" (click)="openNewModal()">Start your first chat</button>
+        </div>
+      } @else {
+        <div class="conv-items">
+          @for (conv of conversations(); track conv.id) {
+            <div
+              class="conv-item"
+              [class.active]="selectedConversation()?.id === conv.id"
+              (click)="selectConversation(conv.id)"
+            >
+              <div class="conv-item-top">
+                <span class="conv-title" [title]="conv.title">{{ conv.title }}</span>
+                <button
+                  class="btn-icon-danger"
+                  (click)="deleteConversation(conv.id, $event)"
+                  title="Delete conversation"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+
+              <div class="conv-item-meta">
+                <span class="badge badge-neutral model-tag">{{ conv.model }}</span>
+                @if (conv.hasActiveCheckpoint) {
+                  <span class="badge badge-accent checkpoint-tag" title="Active compacted checkpoint">Compacted</span>
+                }
+                <span class="msg-count">{{ conv.messageCount }} msgs</span>
+              </div>
+
+              @if (conv.lastMessageSnippet) {
+                <div class="conv-snippet">
+                  <span class="snippet-role">{{ conv.lastMessageRole }}:</span>
+                  {{ conv.lastMessageSnippet }}
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+  </aside>
+
+  <!-- Main Chat Panel -->
+  <main class="chat-main">
+    @if (!selectedConversation()) {
+      <div class="no-selection-state">
+        <div class="empty-card">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <h4>No Conversation Selected</h4>
+          <p>Select a conversation from the left sidebar or start a new session with an initial prompt.</p>
+          <button class="btn btn-primary" (click)="openNewModal()">New Conversation</button>
+        </div>
+      </div>
+    } @else {
+      <!-- Chat Header -->
+      <header class="chat-header">
+        <div class="chat-header-info">
+          <h2 class="chat-title">{{ selectedConversation()?.title }}</h2>
+          <div class="chat-meta-bar">
+            <span class="badge badge-neutral">{{ selectedConversation()?.provider }} / {{ selectedConversation()?.model }}</span>
+            <span class="meta-separator">•</span>
+            <span class="meta-item">Total Transcript: {{ selectedConversation()?.messages?.length || 0 }} messages</span>
+            @if (selectedConversation()?.activeCheckpoint) {
+              <span class="meta-separator">•</span>
+              <span class="badge badge-accent">Compacted through turn #{{ selectedConversation()?.activeCheckpoint?.compactedThroughSequence }}</span>
+            }
+          </div>
+        </div>
+
+        <div class="chat-header-actions">
+          <button class="btn btn-secondary btn-sm" (click)="openContextModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="16" x2="12" y2="12"></line>
+              <line x1="12" y1="8" x2="12.01" y2="8"></line>
+            </svg>
+            Inspect Context
+          </button>
+
+          <button class="btn btn-secondary btn-sm" (click)="openCompactModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="4 14 10 14 10 20"></polyline>
+              <polyline points="20 10 14 10 14 4"></polyline>
+              <line x1="14" y1="10" x2="21" y2="3"></line>
+              <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+            Compact History
+          </button>
+
+          <button class="btn btn-ghost btn-sm" (click)="toggleHistoryDrawer()" title="View Checkpoints & History">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+            Checkpoints ({{ selectedConversation()?.checkpoints?.length || 0 }})
+          </button>
+        </div>
+      </header>
+
+      <!-- Active Context Usage Meter -->
+      <div class="context-meter-strip">
+        <div class="meter-labels">
+          <span class="meter-title">Active Context Budget:</span>
+          @if (contextData()) {
+            <span class="meter-value">
+              <strong>~{{ contextData()?.totalEstimatedInputTokens }}</strong> tokens
+              <span class="provenance-tag">({{ contextData()?.tokenUsageSource }})</span>
+              /
+              @if (contextData()?.contextLimitStatus === 'known') {
+                <span>{{ contextData()?.contextWindow | number }} max limit</span>
+              } @else {
+                <span class="text-muted">Model limit not specified</span>
+              }
+            </span>
+          } @else {
+            <span class="text-muted">Estimating context tokens...</span>
+          }
+        </div>
+        <div class="meter-bar-container">
+          <div
+            class="meter-bar-fill"
+            [style.width.%]="contextData()?.contextWindow ? (contextData()!.totalEstimatedInputTokens / contextData()!.contextWindow! * 100) : 15"
+          ></div>
+        </div>
+      </div>
+
+      <!-- Resume Confirmation Banner -->
+      @if (resumeMessage()) {
+        <div class="alert alert-info">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>{{ resumeMessage() }}</span>
+        </div>
+      }
+
+      <!-- Chat Error Banner -->
+      @if (chatError()) {
+        <div class="alert alert-danger">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          <div class="alert-content">
+            <strong>Provider Execution Error:</strong>
+            <p>{{ chatError() }}</p>
+          </div>
+        </div>
+      }
+
+      <!-- Messages Transcript Area -->
+      <div class="transcript-scroll-area">
+        @if (selectedConversation()?.messages?.length === 0) {
+          <div class="empty-transcript">
+            <p>This conversation has no messages yet. Type an input below to begin.</p>
+          </div>
+        } @else {
+          @for (msg of selectedConversation()?.messages; track msg.id) {
+            <!-- Checkpoint Divider Insertion -->
+            @if (selectedConversation()?.activeCheckpoint?.compactedThroughSequence === msg.sequenceNumber) {
+              <div class="checkpoint-divider">
+                <div class="divider-line"></div>
+                <div class="divider-badge">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                  </svg>
+                  <span>Active Compaction Checkpoint (Messages above are summarized in context)</span>
+                </div>
+                <div class="divider-line"></div>
+              </div>
+            }
+
+            <div
+              class="message-row"
+              [class.message-user]="msg.role === 'user'"
+              [class.message-assistant]="msg.role === 'assistant'"
+              [class.message-system]="msg.role === 'system'"
+              [class.message-compacted]="isMessageCompacted(msg.sequenceNumber)"
+            >
+              <div class="message-bubble">
+                <div class="message-header">
+                  <div class="role-badge" [class.badge-user]="msg.role === 'user'" [class.badge-assistant]="msg.role === 'assistant'" [class.badge-system]="msg.role === 'system'">
+                    {{ msg.role === 'system' ? 'System Instruction' : (msg.role === 'user' ? 'User' : 'Assistant') }}
+                  </div>
+                  <div class="message-meta">
+                    <span class="seq-num">#{{ msg.sequenceNumber }}</span>
+                    @if (isMessageCompacted(msg.sequenceNumber)) {
+                      <span class="compacted-tag" title="Compacted into checkpoint summary for model input">In Checkpoint</span>
+                    }
+                    @if (msg.tokenUsageSource) {
+                      <span class="token-tag">
+                        {{ (msg.outputTokens || msg.inputTokens) }} tokens ({{ msg.tokenUsageSource }})
+                      </span>
+                    }
+                  </div>
+                </div>
+
+                <div class="message-content">
+                  <pre class="content-text">{{ msg.content }}</pre>
+                </div>
+              </div>
+            </div>
+          }
+        }
+      </div>
+
+      <!-- Chat Input Area -->
+      <footer class="chat-input-bar">
+        <div class="input-container">
+          <textarea
+            class="chat-textarea"
+            rows="3"
+            [(ngModel)]="messageInput"
+            placeholder="Type your message... (Ctrl+Enter to send)"
+            (keydown.control.enter)="sendMessage()"
+            [disabled]="sendingMessage()"
+          ></textarea>
+
+          <div class="input-controls">
+            <span class="input-estimate">
+              ~{{ currentInputTokensEstimate() }} estimated tokens
+            </span>
+
+            <button
+              class="btn btn-primary"
+              [disabled]="!messageInput.trim() || sendingMessage()"
+              (click)="sendMessage()"
+            >
+              @if (sendingMessage()) {
+                <span class="spinner"></span>
+                <span>Transmitting...</span>
+              } @else {
+                <span>Send</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              }
+            </button>
+          </div>
+        </div>
+      </footer>
+    }
+  </main>
+
+  <!-- Right Drawer: Checkpoints & Resume -->
+  @if (showHistoryDrawer()) {
+    <div class="drawer-overlay" (click)="toggleHistoryDrawer()"></div>
+    <aside class="checkpoints-drawer">
+      <div class="drawer-header">
+        <h4>Compaction Checkpoints</h4>
+        <button class="btn-icon" (click)="toggleHistoryDrawer()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="drawer-body">
+        <p class="drawer-note">
+          Checkpoints represent immutable summaries and retained facts derived from earlier turns.
+          The original conversation transcript is never modified or deleted.
+        </p>
+
+        @if (!selectedConversation()?.checkpoints || selectedConversation()?.checkpoints?.length === 0) {
+          <div class="empty-state">
+            <p>No checkpoints have been generated for this conversation yet.</p>
+            <button class="btn btn-secondary btn-sm" (click)="openCompactModal()">Generate Compaction</button>
+          </div>
+        } @else {
+          <div class="checkpoints-list">
+            @for (chk of selectedConversation()?.checkpoints; track chk.id) {
+              <div class="checkpoint-card" [class.active-chk]="selectedConversation()?.activeCheckpoint?.id === chk.id">
+                <div class="chk-card-top">
+                  <span class="chk-title">Checkpoint #{{ chk.id.slice(0, 8) }}</span>
+                  <span class="chk-date">{{ chk.createdAt | date:'short' }}</span>
+                </div>
+
+                <div class="chk-range">
+                  Compacted through turn #{{ chk.compactedThroughSequence }}
+                </div>
+
+                <div class="chk-summary">
+                  <strong>Summary:</strong>
+                  <p>{{ chk.summary }}</p>
+                </div>
+
+                @if (chk.retainedFacts && chk.retainedFacts.length > 0) {
+                  <div class="chk-facts">
+                    <strong>Retained Facts:</strong>
+                    <ul>
+                      @for (fact of chk.retainedFacts; track fact) {
+                        <li>{{ fact }}</li>
+                      }
+                    </ul>
+                  </div>
+                }
+
+                <div class="chk-actions">
+                  <button class="btn btn-secondary btn-sm" (click)="resumeCheckpoint(chk.id)">
+                    Resume from this Checkpoint
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </aside>
+  }
+
+  <!-- Modal 1: Context Window Inspector -->
+  @if (showContextModal()) {
+    <div class="modal-backdrop" (click)="closeContextModal()">
+      <div class="modal-card modal-lg" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <div class="modal-title-group">
+            <h3>Context Window Inspector</h3>
+            <span class="badge badge-neutral">{{ contextData()?.model }}</span>
+          </div>
+          <button class="btn-icon" (click)="closeContextModal()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-intro">
+            This inspector shows the <strong>exact assembled messages</strong> that will be dispatched to the LLM
+            on the next turn, reflecting any active compaction checkpoints and uncompacted turns.
+          </p>
+
+          <!-- Metrics summary grid -->
+          <div class="context-metrics-grid">
+            <div class="c-metric-card">
+              <span class="c-metric-label">Model Context Limit</span>
+              <span class="c-metric-value">
+                @if (contextData()?.contextLimitStatus === 'known') {
+                  {{ contextData()?.contextWindow | number }}
+                } @else {
+                  <span class="status-unknown">Not specified</span>
+                }
+              </span>
+              <span class="c-metric-sub">
+                {{ contextData()?.contextLimitStatus === 'known' ? 'From model specs' : 'Metadata unavailable' }}
+              </span>
+            </div>
+
+            <div class="c-metric-card">
+              <span class="c-metric-label">Total Input Tokens</span>
+              <span class="c-metric-value text-accent">~{{ contextData()?.totalEstimatedInputTokens }}</span>
+              <span class="c-metric-sub">Provenance: <strong>{{ contextData()?.tokenUsageSource }}</strong></span>
+            </div>
+
+            <div class="c-metric-card">
+              <span class="c-metric-label">Compaction Status</span>
+              <span class="c-metric-value">
+                {{ contextData()?.isCompacted ? 'Compacted' : 'Full Transcript' }}
+              </span>
+              <span class="c-metric-sub">
+                {{ contextData()?.compactedMessagesCount }} compacted, {{ contextData()?.retainedMessagesCount }} active
+              </span>
+            </div>
+          </div>
+
+          <!-- Assembled Messages List -->
+          <div class="assembled-messages-section">
+            <h4>Assembled Payload ({{ contextData()?.assembledMessages?.length }} messages dispatched to model)</h4>
+
+            <div class="payload-messages-list">
+              @for (msg of contextData()?.assembledMessages; track $index) {
+                <div class="payload-message-card" [class.payload-system]="msg.role === 'system'" [class.payload-user]="msg.role === 'user'" [class.payload-assistant]="msg.role === 'assistant'">
+                  <div class="payload-card-header">
+                    <span class="badge" [class.badge-system]="msg.role === 'system'" [class.badge-user]="msg.role === 'user'" [class.badge-assistant]="msg.role === 'assistant'">
+                      {{ msg.role | uppercase }}
+                    </span>
+                    <span class="payload-source-badge">{{ msg.source }}</span>
+                    <span class="payload-tokens">~{{ msg.estimatedTokens }} estimated tokens</span>
+                  </div>
+
+                  <pre class="payload-content">{{ msg.content }}</pre>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeContextModal()">Close Inspector</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Modal 2: Manual Compaction Review Modal -->
+  @if (showCompactModal()) {
+    <div class="modal-backdrop" (click)="closeCompactModal()">
+      <div class="modal-card modal-lg" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>Manual Conversation Compaction</h3>
+          <button class="btn-icon" (click)="closeCompactModal()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <p class="modal-intro">
+            Compaction creates an immutable checkpoint summary and retained facts list.
+            <strong>All original messages remain permanently in your database transcript.</strong>
+          </p>
+
+          @if (compactionError()) {
+            <div class="alert alert-danger">
+              <p>{{ compactionError() }}</p>
+            </div>
+          }
+
+          @if (loadingPreview()) {
+            <div class="loading-state">
+              <span class="spinner"></span>
+              <span>Analyzing transcript and generating synthesis preview...</span>
+            </div>
+          } @else if (compactPreview()) {
+            <!-- Token savings comparison -->
+            <div class="compaction-savings-card">
+              <div class="savings-metric">
+                <span class="s-label">Tokens Before</span>
+                <span class="s-val text-muted">~{{ compactPreview()?.estimatedTokensBefore }}</span>
+              </div>
+              <div class="savings-arrow">→</div>
+              <div class="savings-metric">
+                <span class="s-label">Tokens After</span>
+                <span class="s-val text-accent">~{{ compactPreview()?.estimatedTokensAfter }}</span>
+              </div>
+              <div class="savings-metric">
+                <span class="s-label">Context Savings</span>
+                <span class="s-val text-success">-{{ compactPreview()?.tokenSavings }} tokens</span>
+              </div>
+            </div>
+
+            <!-- Target sequence configuration -->
+            <div class="form-group">
+              <label for="compactThroughInput">Compact Through Message Sequence:</label>
+              <div class="input-row">
+                <input
+                  id="compactThroughInput"
+                  type="number"
+                  class="input-field"
+                  [(ngModel)]="targetSequence"
+                  (change)="onTargetSequenceChange()"
+                  min="1"
+                />
+                <span class="hint-text">
+                  Compacting {{ compactPreview()?.messagesToCompactCount }} message(s).
+                </span>
+              </div>
+            </div>
+
+            <!-- Proposed Summary Review/Edit -->
+            <div class="form-group">
+              <label for="summaryInput">Proposed Compaction Summary (Editable):</label>
+              <textarea
+                id="summaryInput"
+                class="input-field textarea-field"
+                rows="4"
+                [(ngModel)]="editableSummary"
+              ></textarea>
+            </div>
+
+            <!-- Proposed Retained Facts Review/Edit -->
+            <div class="form-group">
+              <label for="factsInput">Retained Facts & Decisions (One per line):</label>
+              <textarea
+                id="factsInput"
+                class="input-field textarea-field"
+                rows="4"
+                [(ngModel)]="editableFactsText"
+                placeholder="Key fact 1&#10;Key fact 2"
+              ></textarea>
+            </div>
+          }
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeCompactModal()" [disabled]="applyingCompaction()">
+            Cancel
+          </button>
+          <button
+            class="btn btn-primary"
+            (click)="applyCompaction()"
+            [disabled]="loadingPreview() || applyingCompaction() || !editableSummary.trim()"
+          >
+            @if (applyingCompaction()) {
+              <span class="spinner"></span>
+              <span>Applying Checkpoint...</span>
+            } @else {
+              <span>Confirm & Apply Compaction</span>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Modal 3: New Conversation Modal -->
+  @if (showNewModal()) {
+    <div class="modal-backdrop" (click)="closeNewModal()">
+      <div class="modal-card" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h3>Create New Conversation</h3>
+          <button class="btn-icon" (click)="closeNewModal()">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="newTitleInput">Title:</label>
+            <input
+              id="newTitleInput"
+              type="text"
+              class="input-field"
+              [(ngModel)]="newTitle"
+              placeholder="e.g. Architecture Discussion"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="modelSelect">Model & Provider:</label>
+            <select
+              id="modelSelect"
+              class="input-field"
+              [(ngModel)]="newModel"
+              (ngModelChange)="onModelChange($event)"
+            >
+              @for (m of availableModels(); track m.id) {
+                <option [value]="m.id">{{ m.name }} ({{ m.provider }})</option>
+              }
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="systemPromptInput">System Instructions (Optional initial context):</label>
+            <textarea
+              id="systemPromptInput"
+              class="input-field textarea-field"
+              rows="3"
+              [(ngModel)]="newSystemPrompt"
+              placeholder="System prompt to initialize the conversation context..."
+            ></textarea>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" (click)="closeNewModal()" [disabled]="creatingConversation()">
+            Cancel
+          </button>
+          <button
+            class="btn btn-primary"
+            (click)="createNewConversation()"
+            [disabled]="creatingConversation()"
+          >
+            @if (creatingConversation()) {
+              <span class="spinner"></span>
+              <span>Creating...</span>
+            } @else {
+              <span>Create Conversation</span>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>
