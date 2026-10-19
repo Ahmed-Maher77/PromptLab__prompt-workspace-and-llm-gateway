@@ -1,0 +1,534 @@
+import {
+  Injectable,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { calculateCost } from '../experiments/cost-calculator';
+import {
+  UpdateQuotaPolicyDto,
+  ReserveUsageDto,
+  ReconcileUsageDto,
+} from './dto/usage.dto';
+import {
+  QuotaPeriodStatus,
+  UsageRecordItem,
+  ReservationResult,
+} from './usage.types';
+
+@Injectable()
+export class UsageService {
+  private readonly logger = new Logger(UsageService.name);
+
+  // In-memory sliding window for rate limiting: userId -> timestamps array
+  private readonly rateLimitTracker = new Map<string, number[]>();
+
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Returns default user ID ('dev-user-001') or ensures one exists.
+   */
+  async getDefaultUserId(): Promise<string> {
+    const existing = await this.prisma.user.findFirst();
+    if (existing) {
+      return existing.id;
+    }
+    const created = await this.prisma.user.create({
+      data: {
+        id: 'dev-user-001',
+        email: 'developer@promptlab.local',
+        displayName: 'Developer',
+        role: 'admin',
+      },
+    });
+    return created.id;
+  }
+
+  /**
+   * Retrieves or creates the quota policy for a user.
+   */
+  async getPolicy(userId?: string) {
+    const uid = userId || (await this.getDefaultUserId());
+
+    let policy = await this.prisma.quotaPolicy.findUnique({
+      where: {
+        scope_scopeId: {
+          scope: 'user',
+          scopeId: uid,
+        },
+      },
+    });
+
+    if (!policy) {
+      policy = await this.prisma.quotaPolicy.create({
+        data: {
+          scope: 'user',
+          scopeId: uid,
+          monthlyTokenLimit: 1_000_000,
+          requestRateLimit: 60,
+        },
+      });
+    }
+
+    return policy;
+  }
+
+  /**
+   * Updates quota policy (monthly limit and/or rate limit) for demo/dev configuration.
+   */
+  async updatePolicy(dto: UpdateQuotaPolicyDto, userId?: string) {
+    const uid = userId || (await this.getDefaultUserId());
+    const current = await this.getPolicy(uid);
+
+    const updated = await this.prisma.quotaPolicy.update({
+      where: { id: current.id },
+      data: {
+        monthlyTokenLimit:
+          dto.monthlyTokenLimit !== undefined
+            ? Math.max(1000, dto.monthlyTokenLimit)
+            : current.monthlyTokenLimit,
+        requestRateLimit:
+          dto.requestRateLimit !== undefined
+            ? Math.max(1, dto.requestRateLimit)
+            : current.requestRateLimit,
+      },
+    });
+
+    // Also update current active quota period token limit to match new policy
+    const currentPeriod = await this.getCurrentPeriodRecord(uid);
+    if (currentPeriod && currentPeriod.status === 'active') {
+      await this.prisma.quotaPeriod.update({
+        where: { id: currentPeriod.id },
+        data: {
+          tokenLimit: updated.monthlyTokenLimit,
+        },
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Computes UTC start and end bounds for the current month.
+   */
+  getUtcMonthBounds(date = new Date()): { periodStart: Date; periodEnd: Date } {
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth();
+    const periodStart = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+    const periodEnd = new Date(Date.UTC(year, month + 1, 1, 0, 0, 0, 0));
+    return { periodStart, periodEnd };
+  }
+
+  /**
+   * Retrieves or creates the active QuotaPeriod for the current month in UTC.
+   */
+  async getCurrentPeriodRecord(userId: string) {
+    const { periodStart, periodEnd } = this.getUtcMonthBounds();
+    const policy = await this.getPolicy(userId);
+
+    // Close any older open periods
+    await this.prisma.quotaPeriod.updateMany({
+      where: {
+        userId,
+        periodEnd: { lte: new Date() },
+        status: 'active',
+      },
+      data: {
+        status: 'closed',
+      },
+    });
+
+    let period = await this.prisma.quotaPeriod.findUnique({
+      where: {
+        userId_periodStart: {
+          userId,
+          periodStart,
+        },
+      },
+    });
+
+    if (!period) {
+      period = await this.prisma.quotaPeriod.create({
+        data: {
+          userId,
+          periodStart,
+          periodEnd,
+          tokenLimit: policy.monthlyTokenLimit,
+          reservedTokens: 0,
+          actualTokens: 0,
+          status: 'active',
+        },
+      });
+    }
+
+    return period;
+  }
+
+  /**
+   * Checks whether the user has exceeded their request-rate limit (requests per minute).
+   */
+  checkRateLimit(userId: string, rateLimit: number): void {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60_000;
+
+    let timestamps = this.rateLimitTracker.get(userId) || [];
+    timestamps = timestamps.filter((t) => t > oneMinuteAgo);
+
+    if (timestamps.length >= rateLimit) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          error: 'RATE_LIMIT_EXCEEDED',
+          message: `Request rate limit of ${rateLimit} requests per minute exceeded. Please wait before retrying.`,
+          retryAfterSeconds: Math.ceil((timestamps[0] + 60_000 - now) / 1000),
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    timestamps.push(now);
+    this.rateLimitTracker.set(userId, timestamps);
+  }
+
+  /**
+   * Returns current minute rate limit status for a user.
+   */
+  getRateLimitStatus(userId: string, rateLimit: number) {
+    const now = Date.now();
+    const oneMinuteAgo = now - 60_000;
+    const timestamps = (this.rateLimitTracker.get(userId) || []).filter((t) => t > oneMinuteAgo);
+    return {
+      limitPerMinute: rateLimit,
+      currentMinuteRequests: timestamps.length,
+      remainingRequests: Math.max(0, rateLimit - timestamps.length),
+    };
+  }
+
+  /**
+   * Returns comprehensive status for the active monthly quota period.
+   */
+  async getStatus(userId?: string): Promise<QuotaPeriodStatus> {
+    const uid = userId || (await this.getDefaultUserId());
+    const policy = await this.getPolicy(uid);
+    const period = await this.getCurrentPeriodRecord(uid);
+
+    const remainingTokens = Math.max(
+      0,
+      period.tokenLimit - (period.actualTokens + period.reservedTokens),
+    );
+    const percentUsed =
+      period.tokenLimit > 0
+        ? Math.min(100, Math.round((period.actualTokens / period.tokenLimit) * 1000) / 10)
+        : 0;
+    const percentReserved =
+      period.tokenLimit > 0
+        ? Math.min(100, Math.round((period.reservedTokens / period.tokenLimit) * 1000) / 10)
+        : 0;
+
+    // Calculate sum of estimated cost across reconciled usage records in this period
+    const costAggregate = await this.prisma.usageRecord.aggregate({
+      where: {
+        userId: uid,
+        createdAt: {
+          gte: period.periodStart,
+          lt: period.periodEnd,
+        },
+        status: 'reconciled',
+      },
+      _sum: {
+        estimatedCost: true,
+      },
+    });
+
+    const estimatedTotalCost =
+      costAggregate._sum.estimatedCost !== null
+        ? Math.round(costAggregate._sum.estimatedCost * 1_000_000) / 1_000_000
+        : 0;
+
+    return {
+      userId: uid,
+      periodId: period.id,
+      periodStart: (period.periodStart ? new Date(period.periodStart) : new Date()).toISOString(),
+      periodEnd: (period.periodEnd ? new Date(period.periodEnd) : new Date()).toISOString(),
+      resetDate: (period.periodEnd ? new Date(period.periodEnd) : new Date()).toISOString(),
+      tokenLimit: period.tokenLimit,
+      actualTokens: period.actualTokens,
+      reservedTokens: period.reservedTokens,
+      remainingTokens,
+      percentUsed,
+      percentReserved,
+      status: period.status,
+      rateLimit: this.getRateLimitStatus(uid, policy.requestRateLimit),
+      estimatedTotalCost,
+    };
+  }
+
+  /**
+   * Concurrency-safe reservation before dispatching a request to the gateway.
+   * Atomically checks quota boundaries and increments reservedTokens.
+   */
+  async reserveUsage(dto: ReserveUsageDto): Promise<ReservationResult> {
+    const uid = dto.userId || (await this.getDefaultUserId());
+    const policy = await this.getPolicy(uid);
+
+    // 1. Enforce rate limit (independent from monthly token quota)
+    this.checkRateLimit(uid, policy.requestRateLimit);
+
+    // 2. Concurrency and Idempotency check:
+    // If request already exists, return existing status safely without double-charging
+    const existingRecord = await this.prisma.usageRecord.findUnique({
+      where: { requestId: dto.requestId },
+    });
+
+    if (existingRecord) {
+      const currentPeriod = await this.getCurrentPeriodRecord(uid);
+      const remaining = Math.max(
+        0,
+        currentPeriod.tokenLimit - (currentPeriod.actualTokens + currentPeriod.reservedTokens),
+      );
+      return {
+        success: true,
+        requestId: existingRecord.requestId,
+        reservedTokens: existingRecord.reservedTokens,
+        remainingTokens: remaining,
+        periodId: currentPeriod.id,
+      };
+    }
+
+    const estimatedTokens = Math.max(1, dto.estimatedTokens || 1);
+
+    // 3. Database transaction with atomic boundary validation
+    return await this.prisma.$transaction(async (tx) => {
+      const { periodStart, periodEnd } = this.getUtcMonthBounds();
+
+      let period = await tx.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: uid,
+            periodStart,
+          },
+        },
+      });
+
+      if (!period) {
+        period = await tx.quotaPeriod.create({
+          data: {
+            userId: uid,
+            periodStart,
+            periodEnd,
+            tokenLimit: policy.monthlyTokenLimit,
+            reservedTokens: 0,
+            actualTokens: 0,
+            status: 'active',
+          },
+        });
+      }
+
+      const totalProjected = period.actualTokens + period.reservedTokens + estimatedTokens;
+
+      if (totalProjected > period.tokenLimit) {
+        const remaining = Math.max(
+          0,
+          period.tokenLimit - (period.actualTokens + period.reservedTokens),
+        );
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            error: 'QUOTA_EXCEEDED',
+            message: `Monthly token quota exceeded. Available: ${remaining.toLocaleString()} tokens, Requested reservation: ${estimatedTokens.toLocaleString()} tokens.`,
+            tokenLimit: period.tokenLimit,
+            actualTokens: period.actualTokens,
+            reservedTokens: period.reservedTokens,
+            requestedTokens: estimatedTokens,
+            remainingTokens: remaining,
+            resetDate: period.periodEnd.toISOString(),
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+
+      // Atomically increment reserved tokens
+      const updatedPeriod = await tx.quotaPeriod.update({
+        where: { id: period.id },
+        data: {
+          reservedTokens: { increment: estimatedTokens },
+        },
+      });
+
+      // Persist usage record in 'reserved' state
+      await tx.usageRecord.create({
+        data: {
+          requestId: dto.requestId,
+          userId: uid,
+          conversationId: dto.conversationId || null,
+          provider: dto.provider,
+          model: dto.model,
+          reservedTokens: estimatedTokens,
+          status: 'reserved',
+          tokenUsageSource: 'estimated',
+        },
+      });
+
+      const remainingAfter = Math.max(
+        0,
+        updatedPeriod.tokenLimit - (updatedPeriod.actualTokens + updatedPeriod.reservedTokens),
+      );
+
+      return {
+        success: true,
+        requestId: dto.requestId,
+        reservedTokens: estimatedTokens,
+        remainingTokens: remainingAfter,
+        periodId: updatedPeriod.id,
+      };
+    });
+  }
+
+  /**
+   * Reconciles reservation against provider-reported or estimated completion usage.
+   * Idempotent: multiple calls for the same requestId will safely reconcile once.
+   */
+  async reconcileUsage(dto: ReconcileUsageDto): Promise<{ success: boolean; record: any }> {
+    return await this.prisma.$transaction(async (tx) => {
+      const record = await tx.usageRecord.findUnique({
+        where: { requestId: dto.requestId },
+      });
+
+      if (!record) {
+        this.logger.warn(`Cannot reconcile unknown requestId: ${dto.requestId}`);
+        return { success: false, record: null };
+      }
+
+      // Idempotency: if already reconciled or marked failed, do not double-process
+      if (record.status !== 'reserved') {
+        return { success: true, record };
+      }
+
+      const reservedAmount = record.reservedTokens;
+      const { periodStart } = this.getUtcMonthBounds(record.createdAt);
+
+      const period = await tx.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: record.userId,
+            periodStart,
+          },
+        },
+      });
+
+      if (dto.success) {
+        const inputTokens = dto.usage?.promptTokens ?? 0;
+        const outputTokens = dto.usage?.completionTokens ?? 0;
+        const totalTokens = dto.usage?.totalTokens ?? (inputTokens + outputTokens);
+        const source = dto.usage?.source || 'provider-reported';
+        const cost = calculateCost(record.model, inputTokens, outputTokens);
+
+        // Update quota period: release reserved amount and add actual tokens
+        if (period) {
+          const newReserved = Math.max(0, period.reservedTokens - reservedAmount);
+          await tx.quotaPeriod.update({
+            where: { id: period.id },
+            data: {
+              reservedTokens: newReserved,
+              actualTokens: { increment: totalTokens },
+            },
+          });
+        }
+
+        const updatedRecord = await tx.usageRecord.update({
+          where: { id: record.id },
+          data: {
+            inputTokens,
+            outputTokens,
+            tokenUsageSource: source,
+            estimatedCost: cost,
+            status: 'reconciled',
+            reconciledAt: new Date(),
+          },
+        });
+
+        return { success: true, record: updatedRecord };
+      } else {
+        // Failed request, timeout, or provider error: release reserved tokens safely!
+        if (period) {
+          const newReserved = Math.max(0, period.reservedTokens - reservedAmount);
+          await tx.quotaPeriod.update({
+            where: { id: period.id },
+            data: {
+              reservedTokens: newReserved,
+            },
+          });
+        }
+
+        const updatedRecord = await tx.usageRecord.update({
+          where: { id: record.id },
+          data: {
+            status: 'failed',
+            reconciledAt: new Date(),
+          },
+        });
+
+        return { success: true, record: updatedRecord };
+      }
+    });
+  }
+
+  /**
+   * Retrieves usage ledger records ordered newest first.
+   */
+  async getUsageLedger(userId?: string, limit = 50): Promise<UsageRecordItem[]> {
+    const uid = userId || (await this.getDefaultUserId());
+
+    const records = await this.prisma.usageRecord.findMany({
+      where: { userId: uid },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(200, Math.max(1, limit)),
+    });
+
+    return records.map((r) => ({
+      id: r.id,
+      requestId: r.requestId,
+      userId: r.userId,
+      conversationId: r.conversationId,
+      provider: r.provider,
+      model: r.model,
+      inputTokens: r.inputTokens,
+      outputTokens: r.outputTokens,
+      totalTokens: r.inputTokens + r.outputTokens,
+      tokenUsageSource: r.tokenUsageSource,
+      reservedTokens: r.reservedTokens,
+      estimatedCost: r.estimatedCost,
+      status: r.status,
+      createdAt: r.createdAt,
+      reconciledAt: r.reconciledAt,
+    }));
+  }
+
+  /**
+   * Resets active period usage counters for demo/testing purposes.
+   */
+  async resetPeriodForDemo(userId?: string) {
+    const uid = userId || (await this.getDefaultUserId());
+    const period = await this.getCurrentPeriodRecord(uid);
+
+    await this.prisma.quotaPeriod.update({
+      where: { id: period.id },
+      data: {
+        actualTokens: 0,
+        reservedTokens: 0,
+      },
+    });
+
+    // Reset rate limiter for this user
+    this.rateLimitTracker.delete(uid);
+
+    return {
+      success: true,
+      message: `Active period ${period.id} tokens reset to 0 for demo/testing.`,
+      status: await this.getStatus(uid),
+    };
+  }
+}

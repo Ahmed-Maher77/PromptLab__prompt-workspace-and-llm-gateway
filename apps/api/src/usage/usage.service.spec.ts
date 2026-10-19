@@ -1,0 +1,439 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { UsageService } from './usage.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { HttpException, HttpStatus } from '@nestjs/common';
+
+describe('UsageService', () => {
+  let service: UsageService;
+  let mockPrisma: any;
+
+  beforeEach(async () => {
+    mockPrisma = {
+      user: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'dev-user-001', email: 'developer@promptlab.local' }),
+        create: jest.fn(),
+      },
+      quotaPolicy: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      quotaPeriod: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      usageRecord: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        findMany: jest.fn(),
+        aggregate: jest.fn().mockResolvedValue({ _sum: { estimatedCost: 0.042 } }),
+      },
+      $transaction: jest.fn().mockImplementation(async (callback) => {
+        return callback(mockPrisma);
+      }),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        UsageService,
+        { provide: PrismaService, useValue: mockPrisma },
+      ],
+    }).compile();
+
+    service = module.get<UsageService>(UsageService);
+  });
+
+  describe('getPolicy & updatePolicy', () => {
+    it('should create default policy with 1,000,000 monthly tokens and 60 req/min if none exists', async () => {
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.quotaPolicy.create.mockResolvedValueOnce({
+        id: 'qp-1',
+        scope: 'user',
+        scopeId: 'dev-user-001',
+        monthlyTokenLimit: 1_000_000,
+        requestRateLimit: 60,
+      });
+
+      const policy = await service.getPolicy('dev-user-001');
+
+      expect(policy.monthlyTokenLimit).toBe(1_000_000);
+      expect(policy.requestRateLimit).toBe(60);
+      expect(mockPrisma.quotaPolicy.create).toHaveBeenCalled();
+    });
+
+    it('should update quota policy and active quota period limit', async () => {
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValueOnce({
+        id: 'qp-1',
+        scope: 'user',
+        scopeId: 'dev-user-001',
+        monthlyTokenLimit: 1_000_000,
+        requestRateLimit: 60,
+      });
+
+      mockPrisma.quotaPolicy.update.mockResolvedValueOnce({
+        id: 'qp-1',
+        monthlyTokenLimit: 500_000,
+        requestRateLimit: 30,
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        tokenLimit: 1_000_000,
+        status: 'active',
+      });
+
+      const updated = await service.updatePolicy(
+        { monthlyTokenLimit: 500_000, requestRateLimit: 30 },
+        'dev-user-001',
+      );
+
+      expect(updated.monthlyTokenLimit).toBe(500_000);
+      expect(mockPrisma.quotaPeriod.update).toHaveBeenCalled();
+      const updateCall = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      expect(updateCall.where.id).toBe('period-1');
+      expect(updateCall.data.tokenLimit).toBe(500_000);
+    });
+  });
+
+  describe('getUtcMonthBounds & getStatus', () => {
+    it('should calculate accurate UTC month boundaries', () => {
+      const fixedDate = new Date('2026-10-19T14:30:00.000Z');
+      const bounds = service.getUtcMonthBounds(fixedDate);
+
+      expect(bounds.periodStart.toISOString()).toBe('2026-10-01T00:00:00.000Z');
+      expect(bounds.periodEnd.toISOString()).toBe('2026-11-01T00:00:00.000Z');
+    });
+
+    it('should return honest distinct values for used, reserved, remaining, and limit', async () => {
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
+        id: 'qp-1',
+        scope: 'user',
+        scopeId: 'dev-user-001',
+        monthlyTokenLimit: 100_000,
+        requestRateLimit: 60,
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValue({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        periodStart: new Date('2026-10-01T00:00:00.000Z'),
+        periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+        tokenLimit: 100_000,
+        actualTokens: 25_000,
+        reservedTokens: 5_000,
+        status: 'active',
+      });
+
+      const status = await service.getStatus('dev-user-001');
+
+      expect(status.tokenLimit).toBe(100_000);
+      expect(status.actualTokens).toBe(25_000);
+      expect(status.reservedTokens).toBe(5_000);
+      expect(status.remainingTokens).toBe(70_000);
+      expect(status.percentUsed).toBe(25);
+      expect(status.percentReserved).toBe(5);
+      expect(status.resetDate).toBe('2026-11-01T00:00:00.000Z');
+      expect(status.estimatedTotalCost).toBe(0.042);
+    });
+  });
+
+  describe('reserveUsage', () => {
+    it('should reserve estimated tokens and return remaining tokens within quota', async () => {
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
+        id: 'qp-1',
+        monthlyTokenLimit: 100_000,
+        requestRateLimit: 60,
+      });
+
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce(null);
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValue({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        periodStart: new Date('2026-10-01T00:00:00.000Z'),
+        periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+        tokenLimit: 100_000,
+        actualTokens: 10_000,
+        reservedTokens: 0,
+      });
+
+      mockPrisma.quotaPeriod.update.mockResolvedValueOnce({
+        id: 'period-1',
+        tokenLimit: 100_000,
+        actualTokens: 10_000,
+        reservedTokens: 2_000,
+      });
+
+      const res = await service.reserveUsage({
+        requestId: 'req-1',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        estimatedTokens: 2_000,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.reservedTokens).toBe(2_000);
+      expect(res.remainingTokens).toBe(88_000);
+
+      const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      expect(periodUpdate.data.reservedTokens).toEqual({ increment: 2_000 });
+
+      const recordCreate = mockPrisma.usageRecord.create.mock.calls[0][0];
+      expect(recordCreate.data.requestId).toBe('req-1');
+      expect(recordCreate.data.status).toBe('reserved');
+      expect(recordCreate.data.reservedTokens).toBe(2_000);
+    });
+
+    it('should reject reservation with 429 QUOTA_EXCEEDED when quota is exhausted', async () => {
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
+        id: 'qp-1',
+        monthlyTokenLimit: 50_000,
+        requestRateLimit: 60,
+      });
+
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce(null);
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValue({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        periodStart: new Date('2026-10-01T00:00:00.000Z'),
+        periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+        tokenLimit: 50_000,
+        actualTokens: 48_000,
+        reservedTokens: 1_000,
+      });
+
+      let thrownError: any = null;
+      try {
+        await service.reserveUsage({
+          requestId: 'req-overflow',
+          userId: 'dev-user-001',
+          model: 'gpt-4o-mini',
+          provider: 'openai',
+          estimatedTokens: 2_000,
+        });
+      } catch (err) {
+        thrownError = err;
+      }
+
+      expect(thrownError).toBeDefined();
+      expect(thrownError instanceof HttpException).toBe(true);
+      expect(thrownError.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+      const resp = thrownError.getResponse();
+      expect(resp.error).toBe('QUOTA_EXCEEDED');
+      expect(resp.tokenLimit).toBe(50_000);
+      expect(resp.actualTokens).toBe(48_000);
+      expect(resp.reservedTokens).toBe(1_000);
+      expect(resp.remainingTokens).toBe(1_000);
+    });
+
+    it('should be idempotent for duplicate reservation requests with the same requestId', async () => {
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
+        id: 'qp-1',
+        monthlyTokenLimit: 100_000,
+        requestRateLimit: 60,
+      });
+
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        requestId: 'req-duplicate',
+        reservedTokens: 1500,
+        status: 'reserved',
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValue({
+        id: 'period-1',
+        tokenLimit: 100_000,
+        actualTokens: 20_000,
+        reservedTokens: 1500,
+      });
+
+      const res = await service.reserveUsage({
+        requestId: 'req-duplicate',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        estimatedTokens: 1500,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.requestId).toBe('req-duplicate');
+      expect(res.reservedTokens).toBe(1500);
+      // Ensure no secondary record creation or reservation increment
+      expect(mockPrisma.usageRecord.create).not.toHaveBeenCalled();
+    });
+
+    it('should independently enforce request-rate limits (req/min)', async () => {
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
+        id: 'qp-1',
+        monthlyTokenLimit: 1_000_000,
+        requestRateLimit: 2, // low rate limit for test
+      });
+
+      mockPrisma.usageRecord.findUnique.mockResolvedValue(null);
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValue({
+        id: 'period-1',
+        tokenLimit: 1_000_000,
+        actualTokens: 0,
+        reservedTokens: 0,
+      });
+      mockPrisma.quotaPeriod.update.mockResolvedValue({
+        tokenLimit: 1_000_000,
+        actualTokens: 0,
+        reservedTokens: 10,
+      });
+
+      // Request 1: ok
+      await service.reserveUsage({ requestId: 'r1', userId: 'user-rate', model: 'm', provider: 'p', estimatedTokens: 10 });
+      // Request 2: ok
+      await service.reserveUsage({ requestId: 'r2', userId: 'user-rate', model: 'm', provider: 'p', estimatedTokens: 10 });
+
+      // Request 3: should fail rate limit even though token quota has plenty of room
+      let thrown: any = null;
+      try {
+        await service.reserveUsage({ requestId: 'r3', userId: 'user-rate', model: 'm', provider: 'p', estimatedTokens: 10 });
+      } catch (err) {
+        thrown = err;
+      }
+
+      expect(thrown).toBeDefined();
+      expect(thrown.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+      expect(thrown.getResponse().error).toBe('RATE_LIMIT_EXCEEDED');
+    });
+  });
+
+  describe('reconcileUsage', () => {
+    it('should reconcile successful response by updating actualTokens, releasing reservation, and computing cost', async () => {
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'rec-1',
+        requestId: 'req-success',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        reservedTokens: 1_500,
+        status: 'reserved',
+        createdAt: new Date(),
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        reservedTokens: 1_500,
+        actualTokens: 10_000,
+      });
+
+      mockPrisma.usageRecord.update.mockResolvedValueOnce({
+        id: 'rec-1',
+        status: 'reconciled',
+        inputTokens: 800,
+        outputTokens: 400,
+        tokenUsageSource: 'provider-reported',
+      });
+
+      const res = await service.reconcileUsage({
+        requestId: 'req-success',
+        success: true,
+        usage: {
+          promptTokens: 800,
+          completionTokens: 400,
+          totalTokens: 1200,
+          source: 'provider-reported',
+        },
+      });
+
+      expect(res.success).toBe(true);
+
+      const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      expect(periodUpdate.where.id).toBe('period-1');
+      expect(periodUpdate.data.reservedTokens).toBe(0);
+      expect(periodUpdate.data.actualTokens).toEqual({ increment: 1200 });
+
+      const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
+      expect(recordUpdate.data.status).toBe('reconciled');
+      expect(recordUpdate.data.inputTokens).toBe(800);
+      expect(recordUpdate.data.outputTokens).toBe(400);
+      expect(recordUpdate.data.tokenUsageSource).toBe('provider-reported');
+    });
+
+    it('should safely release reservation on failed or timed-out requests without charging actualTokens', async () => {
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'rec-failed',
+        requestId: 'req-fail',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        reservedTokens: 2_000,
+        status: 'reserved',
+        createdAt: new Date(),
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        reservedTokens: 2_000,
+        actualTokens: 10_000,
+      });
+
+      const res = await service.reconcileUsage({
+        requestId: 'req-fail',
+        success: false,
+        error: 'Gateway timeout',
+      });
+
+      expect(res.success).toBe(true);
+
+      const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      expect(periodUpdate.where.id).toBe('period-1');
+      expect(periodUpdate.data.reservedTokens).toBe(0); // released!
+      expect(periodUpdate.data.actualTokens).toBeUndefined(); // NOT touched!
+
+      const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
+      expect(recordUpdate.data.status).toBe('failed');
+    });
+
+    it('should be idempotent and not double-reconcile already completed records', async () => {
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'rec-already',
+        requestId: 'req-already',
+        status: 'reconciled',
+      });
+
+      const res = await service.reconcileUsage({
+        requestId: 'req-already',
+        success: true,
+      });
+
+      expect(res.success).toBe(true);
+      expect(mockPrisma.quotaPeriod.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resetPeriodForDemo', () => {
+    it('should reset active period actualTokens and reservedTokens to 0', async () => {
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValue({
+        id: 'period-reset',
+        userId: 'dev-user-001',
+        periodStart: new Date('2026-10-01T00:00:00.000Z'),
+        periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+        tokenLimit: 1_000_000,
+        actualTokens: 50_000,
+        reservedTokens: 5_000,
+      });
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
+        monthlyTokenLimit: 1_000_000,
+        requestRateLimit: 60,
+      });
+
+      const reset = await service.resetPeriodForDemo('dev-user-001');
+
+      expect(reset.success).toBe(true);
+      const updateCall = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      expect(updateCall.where.id).toBe('period-reset');
+      expect(updateCall.data.actualTokens).toBe(0);
+      expect(updateCall.data.reservedTokens).toBe(0);
+    });
+  });
+});

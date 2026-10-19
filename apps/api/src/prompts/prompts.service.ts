@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, OnModuleInit, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService, CompletionResult } from '../providers/providers.service';
+import { UsageService } from '../usage/usage.service';
 import { CreatePromptDto, PromptVariableDto, FewShotExampleDto } from './dto/create-prompt.dto';
 import { CreateVersionDto } from './dto/create-version.dto';
 import { PreviewPromptDto, RunPlaygroundDto } from './dto/run-prompt.dto';
@@ -67,6 +68,7 @@ export class PromptsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
+    @Optional() private readonly usageService?: UsageService,
   ) {}
 
   async onModuleInit() {
@@ -480,6 +482,18 @@ export class PromptsService implements OnModuleInit {
       );
     }
 
+    const estimatedTokens = preview.estimatedTokens + (dto.maxTokens || 1024);
+    const requestId = `req-play-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    if (this.usageService) {
+      await this.usageService.reserveUsage({
+        requestId,
+        model: dto.model,
+        provider: 'gateway',
+        estimatedTokens,
+      });
+    }
+
     const completionResult = await this.providersService.executeChatCompletion({
       model: dto.model,
       messages: [
@@ -491,6 +505,16 @@ export class PromptsService implements OnModuleInit {
       temperature: dto.temperature,
       maxTokens: dto.maxTokens,
     });
+
+    if (this.usageService) {
+      await this.usageService.reconcileUsage({
+        requestId,
+        success: completionResult.success,
+        usage: completionResult.usage,
+        latencyMs: completionResult.latencyMs,
+        error: completionResult.errorMessage,
+      });
+    }
 
     return {
       ...completionResult,
