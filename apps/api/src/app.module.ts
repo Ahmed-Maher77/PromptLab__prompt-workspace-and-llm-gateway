@@ -8,6 +8,7 @@ import { PromptsModule } from './prompts/prompts.module';
 import { ExperimentsModule } from './experiments/experiments.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { UsageModule } from './usage/usage.module';
+import { ObservabilityModule } from './observability/observability.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { UsageModule } from './usage/usage.module';
     ExperimentsModule,
     ConversationsModule,
     UsageModule,
+    ObservabilityModule,
   ],
 })
 export class AppModule {}

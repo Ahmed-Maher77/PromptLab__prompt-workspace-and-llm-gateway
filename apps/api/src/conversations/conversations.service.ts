@@ -8,6 +8,8 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
+import { ObservabilityService } from '../observability/observability.service';
+import { calculateCost } from '../experiments/cost-calculator';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import {
@@ -30,6 +32,7 @@ export class ConversationsService {
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
     @Optional() private readonly usageService?: UsageService,
+    @Optional() private readonly observabilityService?: ObservabilityService,
   ) {}
 
   /**
@@ -348,10 +351,19 @@ export class ConversationsService {
       content: m.content,
     }));
 
-    // Reserve estimated quota before dispatching
     const estimatedTokens = inspection.totalEstimatedInputTokens + 1024;
     const requestId = `req-conv-${conv.id}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
+    const trace = this.observabilityService?.startTrace({
+      name: `Conversation Turn (${conv.model})`,
+      operation: 'conversation.turn',
+      model: conv.model,
+      provider: conv.provider,
+      metadata: { conversationId: conv.id, requestId },
+    });
+
+    // Reserve estimated quota before dispatching
+    const reserveSpan = trace?.startSpan('quota.reserve', { estimatedTokens, requestId });
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
@@ -361,15 +373,25 @@ export class ConversationsService {
         conversationId: conv.id,
       });
     }
+    reserveSpan?.end('ok');
 
     // 3. Dispatch to model gateway
+    const llmSpan = trace?.startSpan('litellm.chat_completion', { model: conv.model });
     const result = await this.providersService.executeChatCompletion({
       model: conv.model,
       messages: messagesPayload,
       temperature: 0.7,
       maxTokens: 1024,
+      traceId: trace?.traceId,
+      spanId: llmSpan?.id,
+      requestId,
+    });
+    llmSpan?.end(result.success ? 'ok' : 'error', {
+      latencyMs: result.latencyMs,
+      errorCode: result.errorType,
     });
 
+    const reconcileSpan = trace?.startSpan('quota.reconcile', { requestId });
     if (this.usageService) {
       await this.usageService.reconcileUsage({
         requestId,
@@ -379,6 +401,19 @@ export class ConversationsService {
         error: result.errorMessage,
       });
     }
+    reconcileSpan?.end('ok');
+
+    const promptTokens = result.usage?.promptTokens || 0;
+    const completionTokens = result.usage?.completionTokens || 0;
+    const cost = calculateCost(conv.model, promptTokens, completionTokens);
+
+    trace?.complete({
+      status: result.success ? 'success' : 'error',
+      usage: result.usage,
+      cost,
+      errorCode: result.errorType,
+      errorMessage: result.errorMessage,
+    });
 
     if (!result.success) {
       // Handle provider failure explicitly without corrupting the conversation history
@@ -389,6 +424,7 @@ export class ConversationsService {
         errorType: result.errorType,
         errorMessage: result.errorMessage || 'Provider failed to generate response',
         configurationHint: result.configurationHint,
+        traceId: trace?.traceId,
       };
     }
 
@@ -418,6 +454,7 @@ export class ConversationsService {
       assistantMessage,
       latencyMs: result.latencyMs,
       usage: result.usage,
+      traceId: trace?.traceId,
     };
   }
 

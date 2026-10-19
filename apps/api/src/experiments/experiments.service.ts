@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { PromptsService } from '../prompts/prompts.service';
 import { UsageService } from '../usage/usage.service';
+import { ObservabilityService } from '../observability/observability.service';
 import { RunComparisonDto, SlotConfigDto, EvaluationCriterionDto, RateExperimentDto } from './dto/run-comparison.dto';
 import { calculateCost } from './cost-calculator';
 import { Prisma } from '@prisma/client';
@@ -38,6 +39,7 @@ export interface SlotRunResult {
   criteriaResults: CriterionResult[];
   manualRating?: number;
   manualNotes?: string;
+  traceId?: string;
 }
 
 export interface ComparisonResult {
@@ -58,6 +60,7 @@ export class ExperimentsService {
     private readonly providersService: ProvidersService,
     private readonly promptsService: PromptsService,
     @Optional() private readonly usageService?: UsageService,
+    @Optional() private readonly observabilityService?: ObservabilityService,
   ) {}
 
   /**
@@ -367,6 +370,15 @@ export class ExperimentsService {
     const estimatedTokens = promptEst + (config.maxTokens || 1024);
     const requestId = `req-exp-${slotLabel.toLowerCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
+    const trace = this.observabilityService?.startTrace({
+      name: `Comparison Slot ${slotLabel} (${config.model})`,
+      operation: 'comparison.slot',
+      model: config.model,
+      provider: config.provider,
+      metadata: { slot: slotLabel, promptId: prepared.promptId, requestId },
+    });
+
+    const reserveSpan = trace?.startSpan('quota.reserve', { estimatedTokens, requestId });
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
@@ -375,14 +387,24 @@ export class ExperimentsService {
         estimatedTokens,
       });
     }
+    reserveSpan?.end('ok');
 
+    const llmSpan = trace?.startSpan('litellm.chat_completion', { model: config.model });
     const completion = await this.providersService.executeChatCompletion({
       model: config.model,
       messages: [{ role: 'user', content: prepared.resolvedPrompt }],
       temperature: config.temperature,
       maxTokens: config.maxTokens,
+      traceId: trace?.traceId,
+      spanId: llmSpan?.id,
+      requestId,
+    });
+    llmSpan?.end(completion.success ? 'ok' : 'error', {
+      latencyMs: completion.latencyMs,
+      errorCode: completion.errorType,
     });
 
+    const reconcileSpan = trace?.startSpan('quota.reconcile', { requestId });
     if (this.usageService) {
       await this.usageService.reconcileUsage({
         requestId,
@@ -392,6 +414,7 @@ export class ExperimentsService {
         error: completion.errorMessage,
       });
     }
+    reconcileSpan?.end('ok');
 
     const isSuccess = completion.success;
     const output = completion.content || null;
@@ -404,7 +427,20 @@ export class ExperimentsService {
     const errorCode = !isSuccess ? completion.errorType || 'PROVIDER_ERROR' : null;
 
     // Evaluate criteria against output
+    const evalSpan = trace?.startSpan('evaluations.criteria', { criteriaCount: criteria.length });
     const criteriaResults = this.evaluateCriteria(output, criteria);
+    evalSpan?.end('ok', {
+      passedCount: criteriaResults.filter((c) => c.passed).length,
+      failedCount: criteriaResults.filter((c) => !c.passed).length,
+    });
+
+    trace?.complete({
+      status: isSuccess ? 'success' : 'error',
+      usage: completion.usage,
+      cost: estimatedCost,
+      errorCode,
+      errorMessage: completion.errorMessage,
+    });
 
     return {
       slot: slotLabel,
@@ -427,6 +463,7 @@ export class ExperimentsService {
       errorMessage: completion.errorMessage,
       configurationHint: completion.configurationHint,
       criteriaResults,
+      traceId: trace?.traceId,
     };
   }
 

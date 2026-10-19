@@ -1,0 +1,360 @@
+<div class="observability-container">
+  <!-- Header -->
+  <header class="observability-header">
+    <div class="header-left">
+      <div class="breadcrumbs">
+        <span class="breadcrumb-item">PromptLab</span>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current">Observability & Traces</span>
+      </div>
+      <p class="header-sub">
+        W3C distributed tracing, OpenTelemetry OTLP integration, Langfuse LLM observability, and in-flight span inspection.
+      </p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" (click)="clearTraces()" [disabled]="clearing || traces.length === 0">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"></polyline>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+        Clear Traces
+      </button>
+      <button class="btn btn-secondary" (click)="loadData()" [disabled]="loading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        Refresh
+      </button>
+    </div>
+  </header>
+
+  <!-- Alerts -->
+  <div *ngIf="errorMessage" class="alert alert-error">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <span>{{ errorMessage }}</span>
+  </div>
+
+  <div *ngIf="successMessage" class="alert alert-success">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+      <polyline points="22 4 12 14.01 9 11.01"></polyline>
+    </svg>
+    <span>{{ successMessage }}</span>
+  </div>
+
+  <!-- Telemetry Status Grid -->
+  <div *ngIf="status" class="status-grid">
+    <div class="status-card">
+      <div class="status-header">
+        <span class="status-label">Tracing Engine</span>
+        <span class="badge" [ngClass]="status.telemetryEnabled ? 'badge-success' : 'badge-neutral'">
+          {{ status.telemetryEnabled ? 'Enabled' : 'Disabled' }}
+        </span>
+      </div>
+      <div class="status-value">{{ status.totalTracesRecorded }}</div>
+      <div class="status-meta">Traces in in-memory ring buffer (max 500)</div>
+    </div>
+
+    <div class="status-card">
+      <div class="status-header">
+        <span class="status-label">OpenTelemetry (OTLP)</span>
+        <span class="badge" [ngClass]="status.otelConfigured ? 'badge-info' : 'badge-neutral'">
+          {{ status.otelConfigured ? 'Connected' : 'Optional / Standby' }}
+        </span>
+      </div>
+      <div class="status-value-text mono">
+        {{ status.otelEndpoint || 'OTEL_EXPORTER_OTLP_ENDPOINT not set' }}
+      </div>
+      <div class="status-meta">Standard HTTP OTLP export via W3C TraceContext</div>
+    </div>
+
+    <div class="status-card">
+      <div class="status-header">
+        <span class="status-label">Langfuse Ingestion</span>
+        <span class="badge" [ngClass]="status.langfuseConfigured ? 'badge-info' : 'badge-neutral'">
+          {{ status.langfuseConfigured ? 'Active' : 'Optional / Standby' }}
+        </span>
+      </div>
+      <div class="status-value-text mono">
+        {{ status.langfuseHost || 'LANGFUSE_PUBLIC_KEY not configured' }}
+      </div>
+      <div class="status-meta">Trace & generation ingestion for LLM analytics</div>
+    </div>
+
+    <div class="status-card">
+      <div class="status-header">
+        <span class="status-label">Privacy & Redaction</span>
+        <span class="badge badge-success">Enforced</span>
+      </div>
+      <div class="status-value-text">
+        API Keys (sk-*) & Bearer tokens scrubbed
+      </div>
+      <div class="status-meta">No upstream provider secrets leak into telemetry</div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="filter-card">
+    <div class="filter-row">
+      <div class="form-group filter-item">
+        <label for="statusFilter" class="form-label">Status</label>
+        <select
+          id="statusFilter"
+          class="form-select"
+          [(ngModel)]="statusFilter"
+          (change)="applyFilters()"
+        >
+          <option value="all">All Statuses</option>
+          <option value="success">Success</option>
+          <option value="error">Error</option>
+          <option value="rate_limited">Rate Limited</option>
+        </select>
+      </div>
+
+      <div class="form-group filter-item">
+        <label for="operationFilter" class="form-label">Operation</label>
+        <select
+          id="operationFilter"
+          class="form-select"
+          [(ngModel)]="operationFilter"
+          (change)="applyFilters()"
+        >
+          <option value="all">All Operations</option>
+          <option value="playground.execute">Playground Execution</option>
+          <option value="comparison.slot">Comparison Slot Run</option>
+          <option value="conversation.turn">Conversation Turn</option>
+          <option value="gateway.request">Direct Gateway Request</option>
+        </select>
+      </div>
+
+      <div class="form-group filter-item">
+        <label for="modelFilter" class="form-label">Model Filter</label>
+        <input
+          id="modelFilter"
+          type="text"
+          class="form-input"
+          placeholder="e.g. gpt-4o, claude"
+          [(ngModel)]="modelFilter"
+          (input)="applyFilters()"
+        />
+      </div>
+
+      <div class="filter-actions">
+        <button class="btn btn-ghost" (click)="statusFilter = 'all'; operationFilter = 'all'; modelFilter = ''; applyFilters()">
+          Reset
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading && traces.length === 0" class="loading-state">
+    <div class="spinner"></div>
+    <p>Loading distributed traces...</p>
+  </div>
+
+  <!-- Traces List / Split Inspector View -->
+  <div class="explorer-layout" [class.has-selection]="selectedTrace !== null">
+    <!-- Table View -->
+    <div class="traces-table-container">
+      <div *ngIf="traces.length === 0 && !loading" class="empty-state">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+        <p class="empty-title">No traces recorded yet</p>
+        <p class="empty-sub">
+          Execute a prompt in Prompt Studio, run a comparison experiment, or send a message in Conversations to generate traces.
+        </p>
+      </div>
+
+      <div *ngIf="traces.length > 0" class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Operation</th>
+              <th>Model</th>
+              <th>Status</th>
+              <th>Latency</th>
+              <th>Tokens</th>
+              <th>Estimated Cost</th>
+              <th>Trace ID</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              *ngFor="let trace of traces"
+              [class.row-selected]="selectedTrace?.id === trace.id"
+              (click)="selectTrace(trace)"
+            >
+              <td class="mono text-muted">{{ formatDate(trace.startTime) }}</td>
+              <td>
+                <span class="op-badge" [attr.data-op]="trace.operation">{{ trace.operation }}</span>
+              </td>
+              <td>
+                <span class="mono">{{ trace.model }}</span>
+                <span class="provider-pill">{{ trace.provider }}</span>
+              </td>
+              <td>
+                <span
+                  class="badge"
+                  [ngClass]="{
+                    'badge-success': trace.status === 'success',
+                    'badge-danger': trace.status === 'error',
+                    'badge-warning': trace.status === 'rate_limited'
+                  }"
+                >
+                  {{ trace.status }}
+                </span>
+              </td>
+              <td class="mono font-medium">{{ formatDuration(trace.durationMs) }}</td>
+              <td class="mono">
+                {{ trace.totalTokens }}
+                <span class="token-source-badge">{{ trace.tokenUsageSource }}</span>
+              </td>
+              <td class="mono">{{ formatCost(trace.estimatedCost) }}</td>
+              <td class="mono trace-id-col" title="{{ trace.id }}">
+                {{ trace.id.substring(0, 12) }}…
+              </td>
+              <td>
+                <button
+                  class="btn btn-xs btn-secondary"
+                  (click)="selectTrace(trace); $event.stopPropagation()"
+                >
+                  Inspect
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Waterfall / Detail Drawer -->
+    <aside *ngIf="selectedTrace" class="trace-drawer">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <h3 class="drawer-title">Trace Details</h3>
+          <span class="mono text-muted drawer-subtitle">{{ selectedTrace.id }}</span>
+        </div>
+        <button class="btn btn-ghost btn-xs close-btn" (click)="closeDrawer()" aria-label="Close inspector">
+          ✕
+        </button>
+      </div>
+
+      <div class="drawer-body">
+        <!-- Trace Metadata Summary -->
+        <div class="meta-section">
+          <div class="meta-item">
+            <span class="meta-key">Operation</span>
+            <span class="meta-val mono">{{ selectedTrace.operation }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">Status</span>
+            <span
+              class="badge"
+              [ngClass]="{
+                'badge-success': selectedTrace.status === 'success',
+                'badge-danger': selectedTrace.status === 'error',
+                'badge-warning': selectedTrace.status === 'rate_limited'
+              }"
+            >
+              {{ selectedTrace.status }}
+            </span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">Model / Provider</span>
+            <span class="meta-val mono">{{ selectedTrace.model }} ({{ selectedTrace.provider }})</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">Total Duration</span>
+            <span class="meta-val mono">{{ formatDuration(selectedTrace.durationMs) }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">Tokens</span>
+            <span class="meta-val mono">
+              {{ selectedTrace.inputTokens }} in / {{ selectedTrace.outputTokens }} out ({{ selectedTrace.totalTokens }} total)
+            </span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-key">Estimated Cost</span>
+            <span class="meta-val mono">
+              {{ formatCost(selectedTrace.estimatedCost) }}
+              <span *ngIf="selectedTrace.estimatedCost !== null" class="pricing-hint text-muted small">(Configurable Oct 2024 estimate)</span>
+            </span>
+          </div>
+          <div class="meta-item full-width">
+            <span class="meta-key">W3C Traceparent Header</span>
+            <div class="copy-box">
+              <span class="mono traceparent-text">{{ selectedTrace.metadata['traceparent'] || ('00-' + selectedTrace.id + '-...-01') }}</span>
+              <button
+                class="btn btn-xs btn-ghost copy-btn"
+                (click)="copyToClipboard(selectedTrace.metadata['traceparent']?.toString() || selectedTrace.id, 'tp')"
+              >
+                {{ copiedId === 'tp' ? 'Copied!' : 'Copy' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error banner if trace failed -->
+        <div *ngIf="selectedTrace.errorMessage" class="trace-error-box">
+          <div class="error-title">Error Code: {{ selectedTrace.errorCode || 'UNKNOWN_ERROR' }}</div>
+          <div class="error-msg">{{ selectedTrace.errorMessage }}</div>
+        </div>
+
+        <!-- Waterfall / Spans Section -->
+        <div class="waterfall-section">
+          <h4 class="section-title">Span Waterfall ({{ selectedTrace.spans.length }} spans)</h4>
+          <p class="section-desc">Timeline of child operations and gateway calls:</p>
+
+          <div class="waterfall-container">
+            <div *ngFor="let span of selectedTrace.spans" class="span-row">
+              <div class="span-info" (click)="toggleSpanExpanded(span.id)">
+                <span class="expand-icon">{{ isSpanExpanded(span.id) ? '▾' : '▸' }}</span>
+                <span class="span-name mono">{{ span.name }}</span>
+                <span class="span-duration mono">{{ formatDuration(span.durationMs) }}</span>
+                <span class="badge badge-xs" [ngClass]="span.status === 'ok' ? 'badge-success' : 'badge-danger'">
+                  {{ span.status }}
+                </span>
+              </div>
+
+              <!-- Bar visualizer -->
+              <div class="span-timeline-track">
+                <div
+                  class="span-bar"
+                  [class.span-bar-error]="span.status === 'error'"
+                  [style.margin-left.%]="calculateSpanLeftPercent(span, selectedTrace)"
+                  [style.width.%]="calculateSpanWidthPercent(span, selectedTrace)"
+                ></div>
+              </div>
+
+              <!-- Expanded Attributes -->
+              <div *ngIf="isSpanExpanded(span.id)" class="span-attributes-box">
+                <div class="attr-header">Attributes (Sanitized):</div>
+                <div *ngIf="getAttributeKeys(span.attributes).length === 0" class="text-muted small">
+                  No attributes recorded for this span.
+                </div>
+                <table *ngIf="getAttributeKeys(span.attributes).length > 0" class="attr-table">
+                  <tbody>
+                    <tr *ngFor="let key of getAttributeKeys(span.attributes)">
+                      <td class="attr-key mono">{{ key }}</td>
+                      <td class="attr-val mono">{{ formatAttributeValue(span.attributes[key]) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>

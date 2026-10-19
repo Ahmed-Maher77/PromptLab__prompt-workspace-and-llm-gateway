@@ -4,9 +4,10 @@ import { ExperimentsController } from './experiments.controller';
 import { ProvidersModule } from '../providers/providers.module';
 import { PromptsModule } from '../prompts/prompts.module';
 import { UsageModule } from '../usage/usage.module';
+import { ObservabilityModule } from '../observability/observability.module';
 
 @Module({
-  imports: [ProvidersModule, PromptsModule, UsageModule],
+  imports: [ProvidersModule, PromptsModule, UsageModule, ObservabilityModule],
   controllers: [ExperimentsController],
   providers: [ExperimentsService],
   exports: [ExperimentsService],
