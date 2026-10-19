@@ -2,20 +2,30 @@
  * Cost calculator for model token usage.
  * Pricing is expressed in USD per 1 Million tokens.
  * Only returns a cost if exact pricing is known; otherwise returns null.
+ * 
+ * Note: Rates reflect standard published vendor API pricing as of October 2024.
+ * Figures are configurable estimates for engineering comparisons, not real-time
+ * financial ledger statements or live vendor invoice guarantees.
  */
 export interface ModelPricing {
   inputPerMillion: number;
   outputPerMillion: number;
+  currency: 'USD';
+  effectiveAsOf: string;
 }
 
 export const KNOWN_MODEL_PRICING: Record<string, ModelPricing> = {
   'gpt-4o-mini': {
     inputPerMillion: 0.15,
     outputPerMillion: 0.60,
+    currency: 'USD',
+    effectiveAsOf: '2024-10',
   },
   'claude-3-5-sonnet': {
     inputPerMillion: 3.00,
     outputPerMillion: 15.00,
+    currency: 'USD',
+    effectiveAsOf: '2024-10',
   },
 };
 
