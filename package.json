@@ -1,0 +1,33 @@
+{
+  "name": "promptlab-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PromptLab — Prompt Engineering & LLM Gateway POC",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "start:api": "npm --workspace=@promptlab/api run start:dev",
+    "start:web": "npm --workspace=@promptlab/web run start",
+    "build": "npm run build:api && npm run build:web",
+    "build:api": "npm --workspace=@promptlab/api run build",
+    "build:web": "npm --workspace=@promptlab/web run build",
+    "test": "npm run test:api && npm run test:web",
+    "test:api": "npm --workspace=@promptlab/api run test",
+    "test:web": "npm --workspace=@promptlab/web run test",
+    "typecheck": "npm --workspace=@promptlab/api run typecheck && npm --workspace=@promptlab/web run typecheck",
+    "lint": "npm --workspace=@promptlab/api run lint && npm --workspace=@promptlab/web run lint",
+    "prisma:generate": "npm --workspace=@promptlab/api run prisma:generate",
+    "prisma:push": "npm --workspace=@promptlab/api run prisma:push",
+    "prisma:migrate": "npm --workspace=@promptlab/api run prisma:migrate"
+  },
+  "keywords": [
+    "prompt-engineering",
+    "llm-gateway",
+    "litellm",
+    "nestjs",
+    "angular"
+  ],
+  "author": "PromptLab Team",
+  "license": "UNLICENSED"
+}

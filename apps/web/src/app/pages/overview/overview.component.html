@@ -1,0 +1,155 @@
+<div class="page-container">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">System Status & Environment</h1>
+      <p class="page-subtitle">Real-time connectivity and service health across the PromptLab platform.</p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" (click)="refreshHealth()" [disabled]="isLoading" aria-label="Refresh status">
+        <span *ngIf="isLoading">Checking...</span>
+        <span *ngIf="!isLoading">Check Status</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="grid-cards">
+    <!-- API Status Card -->
+    <div class="panel status-card">
+      <div class="card-header">
+        <span class="card-label">Application Backend</span>
+        <span class="badge" [ngClass]="healthData?.status === 'ok' ? 'badge-success' : 'badge-danger'">
+          {{ healthData ? (healthData.status === 'ok' ? 'Online' : 'Degraded') : 'Offline' }}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="metric-row">
+          <span class="metric-label">Environment</span>
+          <span class="metric-val font-mono">{{ healthData?.environment || 'unknown' }}</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Version</span>
+          <span class="metric-val font-mono">{{ healthData?.version || '0.1.0' }}</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Uptime</span>
+          <span class="metric-val">{{ healthData ? (healthData.uptimeSeconds + 's') : 'N/A' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Database Status Card -->
+    <div class="panel status-card">
+      <div class="card-header">
+        <span class="card-label">PostgreSQL Database</span>
+        <span class="badge" [ngClass]="healthData?.services?.database?.status === 'connected' ? 'badge-success' : 'badge-danger'">
+          {{ healthData?.services?.database?.status === 'connected' ? 'Connected' : 'Disconnected' }}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="metric-row">
+          <span class="metric-label">ORM</span>
+          <span class="metric-val">Prisma Client</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Ping Latency</span>
+          <span class="metric-val font-mono">
+            {{ healthData?.services?.database?.latencyMs !== undefined ? (healthData?.services?.database?.latencyMs + ' ms') : 'N/A' }}
+          </span>
+        </div>
+        <div class="metric-row" *ngIf="healthData?.services?.database?.error">
+          <span class="metric-label">Notice</span>
+          <span class="metric-val text-danger font-mono">{{ healthData?.services?.database?.error }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- LiteLLM Gateway Card -->
+    <div class="panel status-card">
+      <div class="card-header">
+        <span class="card-label">LiteLLM Proxy Gateway</span>
+        <span class="badge" [ngClass]="healthData?.services?.gateway?.serviceAvailability === 'available' ? 'badge-success' : 'badge-neutral'">
+          {{ healthData?.services?.gateway?.serviceAvailability === 'available' ? 'Service Available' : 'Service Standby' }}
+        </span>
+      </div>
+      <div class="card-body">
+        <div class="metric-row">
+          <span class="metric-label">Gateway Endpoint</span>
+          <span class="metric-val font-mono">{{ healthData?.services?.gateway?.url || 'http://localhost:4000' }}</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Provider Readiness</span>
+          <span class="badge" [ngClass]="healthData?.services?.gateway?.providerReadiness?.status === 'ready' ? 'badge-success' : 'badge-warning'">
+            {{ healthData?.services?.gateway?.providerReadiness?.status === 'ready' ? 'Credentials Configured' : 'Credentials Needed' }}
+          </span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Configured Providers</span>
+          <span class="metric-val font-mono">
+            {{ (healthData?.services?.gateway?.providerReadiness?.configuredProviders?.length || 0) > 0 ? healthData?.services?.gateway?.providerReadiness?.configuredProviders?.join(', ') : 'None (server-side only)' }}
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modules Status Section -->
+  <div class="panel modules-panel">
+    <h2 class="section-title">POC Implementation Roadmap</h2>
+    <div class="table-container">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Module Name</th>
+            <th>Scope & Deliverables</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="font-mono">Phase 0</td>
+            <td><strong>Repository & Foundation</strong></td>
+            <td>Monorepo setup, Angular + NestJS scaffold, Prisma models, health endpoint, safe envs</td>
+            <td><span class="badge badge-success">Completed</span></td>
+          </tr>
+          <tr>
+            <td class="font-mono">Phase 1</td>
+            <td>Prompt Studio</td>
+            <td>Prompt library, technique templates, immutable versioning, 1-provider playground</td>
+            <td><span class="badge badge-neutral">Planned</span></td>
+          </tr>
+          <tr>
+            <td class="font-mono">Phase 2</td>
+            <td>Compare & Experiments</td>
+            <td>Side-by-side A/B execution, latency and token metrics, manual/repeatable evaluation</td>
+            <td><span class="badge badge-neutral">Planned</span></td>
+          </tr>
+          <tr>
+            <td class="font-mono">Phase 3</td>
+            <td>Conversations & Context</td>
+            <td>Context assembly, inspection, budget estimation, manual/auto compaction, checkpoints</td>
+            <td><span class="badge badge-neutral">Planned</span></td>
+          </tr>
+          <tr>
+            <td class="font-mono">Phase 4</td>
+            <td>Monthly Quotas & Ledger</td>
+            <td>User token allowances, concurrency-safe reservations, post-call reconciliation, limits</td>
+            <td><span class="badge badge-neutral">Planned</span></td>
+          </tr>
+          <tr>
+            <td class="font-mono">Phase 5</td>
+            <td>Gateway & Observability</td>
+            <td>LiteLLM integration, correlation tracing, provider errors, OpenTelemetry/Langfuse</td>
+            <td><span class="badge badge-neutral">Planned</span></td>
+          </tr>
+          <tr>
+            <td class="font-mono">Phase 6</td>
+            <td>Hardening & Delivery</td>
+            <td>Pagination, security audit, secret redaction, end-to-end verification, demo script</td>
+            <td><span class="badge badge-neutral">Planned</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

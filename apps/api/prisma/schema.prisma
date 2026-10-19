@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  displayName String
+  role        String   @default("user") // admin, engineer, viewer
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  prompts       Prompt[]
+  experiments   Experiment[]
+  conversations Conversation[]
+  usageRecords  UsageRecord[]
+  quotaPeriods  QuotaPeriod[]
+
+  @@map("users")
+}
+
+model Prompt {
+  id                String   @id @default(uuid())
+  ownerId           String
+  name              String
+  description       String?
+  techniqueMetadata Json     @default("{}") // zero-shot, few-shot, RTF, etc.
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  owner    User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  versions PromptVersion[]
+
+  @@map("prompts")
+}
+
+model PromptVersion {
+  id            String   @id @default(uuid())
+  promptId      String
+  versionNumber Int
+  templateBody  String
+  variables     Json     @default("[]") // list of variable declarations
+  examples      Json     @default("[]") // optional few-shot examples
+  outputSchema  Json?
+  modelDefaults Json     @default("{}") // default provider, model, temperature
+  createdAt     DateTime @default(now())
+  createdBy     String
+
+  prompt         Prompt          @relation(fields: [promptId], references: [id], onDelete: Cascade)
+  experimentRuns ExperimentRun[]
+
+  @@unique([promptId, versionNumber])
+  @@map("prompt_versions")
+}
+
+model Experiment {
+  id          String   @id @default(uuid())
+  ownerId     String
+  name        String
+  commonInput String
+  settings    Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  owner User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  runs  ExperimentRun[]
+
+  @@map("experiments")
+}
+
+model ExperimentRun {
+  id               String   @id @default(uuid())
+  experimentId     String
+  slot             String // "A" or "B"
+  promptVersionId  String?
+  provider         String
+  model            String
+  output           String?
+  status           String   @default("pending") // pending, running, completed, failed
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  tokenUsageSource String   @default("estimated") // estimated, provider-reported
+  latencyMs        Int      @default(0)
+  estimatedCost    Float?
+  errorCode        String?
+  createdAt        DateTime @default(now())
+
+  experiment    Experiment     @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  promptVersion PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+
+  @@map("experiment_runs")
+}
+
+model Conversation {
+  id        String   @id @default(uuid())
+  ownerId   String
+  title     String
+  provider  String
+  model     String
+  status    String   @default("active") // active, archived
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner       User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  messages    ConversationMessage[]
+  checkpoints ConversationCheckpoint[]
+
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id               String   @id @default(uuid())
+  conversationId   String
+  role             String // system, user, assistant
+  content          String
+  sequenceNumber   Int
+  inputTokens      Int?
+  outputTokens     Int?
+  tokenUsageSource String? // estimated, provider-reported
+  createdAt        DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, sequenceNumber])
+  @@map("conversation_messages")
+}
+
+model ConversationCheckpoint {
+  id                       String   @id @default(uuid())
+  conversationId           String
+  summary                  String
+  retainedFacts            Json     @default("[]")
+  compactedThroughSequence Int
+  contextPolicyVersion     String   @default("v1")
+  createdAt                DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("conversation_checkpoints")
+}
+
+model QuotaPolicy {
+  id                String   @id @default(uuid())
+  scope             String   @default("user") // user, workspace
+  scopeId           String
+  monthlyTokenLimit Int      @default(1000000)
+  requestRateLimit  Int      @default(60) // requests per minute
+  effectiveFrom     DateTime @default(now())
+
+  @@unique([scope, scopeId])
+  @@map("quota_policies")
+}
+
+model QuotaPeriod {
+  id             String   @id @default(uuid())
+  userId         String
+  periodStart    DateTime
+  periodEnd      DateTime
+  tokenLimit     Int
+  reservedTokens Int      @default(0)
+  actualTokens   Int      @default(0)
+  status         String   @default("active") // active, closed
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, periodStart])
+  @@map("quota_periods")
+}
+
+model UsageRecord {
+  id               String    @id @default(uuid())
+  requestId        String    @unique // idempotency key
+  userId           String
+  conversationId   String?
+  provider         String
+  model            String
+  inputTokens      Int       @default(0)
+  outputTokens     Int       @default(0)
+  tokenUsageSource String    @default("estimated") // estimated, provider-reported
+  reservedTokens   Int       @default(0)
+  estimatedCost    Float?
+  status           String    @default("pending") // reserved, reconciled, failed
+  createdAt        DateTime  @default(now())
+  reconciledAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("usage_records")
+}
