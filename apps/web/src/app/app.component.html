@@ -2,7 +2,7 @@
   <!-- Top Bar -->
   <header class="top-bar">
     <div class="top-bar-left">
-      <button class="btn btn-ghost menu-toggle" (click)="toggleSidebar()" aria-label="Toggle navigation menu">
+      <button class="btn btn-ghost menu-toggle" (click)="toggleSidebar()" [attr.aria-expanded]="!sidebarCollapsed" aria-controls="primary-navigation" aria-label="Toggle navigation menu">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="3" y1="12" x2="21" y2="12"></line>
           <line x1="3" y1="6" x2="21" y2="6"></line>
@@ -11,15 +11,11 @@
       </button>
       <div class="brand">
         <span class="brand-title">PromptLab</span>
-        <span class="badge badge-neutral env-badge">POC Environment</span>
+        <span class="badge badge-neutral env-badge">Developer workspace</span>
       </div>
     </div>
 
     <div class="top-bar-right">
-      <div class="gateway-status-indicator">
-        <span class="status-dot"></span>
-        <span class="status-text">Gateway Active</span>
-      </div>
       <div class="user-menu">
         <div class="user-avatar" title="Developer User">PM</div>
         <span class="user-name">Developer</span>
@@ -30,10 +26,10 @@
   <!-- Shell Body -->
   <div class="app-body">
     <!-- Left Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="primary-navigation">
       <div class="sidebar-section">
         <span class="sidebar-heading">Workspace</span>
-        <nav class="nav-list">
+        <nav class="nav-list" aria-label="Workspace">
           <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="7" height="7"></rect>
@@ -48,7 +44,7 @@
 
       <div class="sidebar-section">
         <span class="sidebar-heading">Modules</span>
-        <nav class="nav-list">
+        <nav class="nav-list" aria-label="Modules">
           <a routerLink="/prompt-studio" routerLinkActive="active" class="nav-item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M12 20h9"></path>

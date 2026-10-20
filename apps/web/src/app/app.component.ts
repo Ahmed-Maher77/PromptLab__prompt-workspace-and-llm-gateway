@@ -11,7 +11,7 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 })
 export class AppComponent {
   title = 'PromptLab';
-  sidebarCollapsed = false;
+  sidebarCollapsed = window.matchMedia('(max-width: 520px)').matches;
 
   toggleSidebar(): void {
     this.sidebarCollapsed = !this.sidebarCollapsed;
