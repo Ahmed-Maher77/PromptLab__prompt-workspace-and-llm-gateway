@@ -1,14 +1,15 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { ExperimentsService } from './experiments.service';
 import { RunComparisonDto, RateExperimentDto } from './dto/run-comparison.dto';
+import { PaginationQueryDto } from '../common/dto/pagination.dto';
 
 @Controller('experiments')
 export class ExperimentsController {
   constructor(private readonly experimentsService: ExperimentsService) {}
 
   @Get()
-  async findAll() {
-    return this.experimentsService.findAll();
+  async findAll(@Query() pagination: PaginationQueryDto) {
+    return this.experimentsService.findAll('dev-user-001', pagination);
   }
 
   @Get(':id')

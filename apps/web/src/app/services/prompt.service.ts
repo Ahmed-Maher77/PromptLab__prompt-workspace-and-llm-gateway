@@ -129,13 +129,24 @@ export class PromptService {
 
   constructor(private readonly http: HttpClient) {}
 
-  getPrompts(filter?: { search?: string; technique?: string }): Observable<PromptSummary[]> {
+  getPrompts(filter?: {
+    search?: string;
+    technique?: string;
+    limit?: number;
+    offset?: number;
+  }): Observable<PromptSummary[]> {
     let params = new HttpParams();
     if (filter?.search) {
       params = params.set('search', filter.search);
     }
     if (filter?.technique && filter.technique !== 'all') {
       params = params.set('technique', filter.technique);
+    }
+    if (filter?.limit !== undefined) {
+      params = params.set('limit', filter.limit.toString());
+    }
+    if (filter?.offset !== undefined) {
+      params = params.set('offset', filter.offset.toString());
     }
     return this.http.get<PromptSummary[]>(this.baseUrl, { params });
   }

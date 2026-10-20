@@ -1,8 +1,16 @@
-import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class PreviewCompactionDto {
-  @IsNumber()
   @IsOptional()
+  @IsInt({ message: 'compactThroughSequence must be an integer' })
   @Min(1)
   compactThroughSequence?: number;
 }
@@ -10,13 +18,15 @@ export class PreviewCompactionDto {
 export class ApplyCompactionDto {
   @IsString()
   @IsNotEmpty()
-  summary: string;
+  @MaxLength(16384, { message: 'summary must not exceed 16384 characters' })
+  summary!: string;
 
   @IsArray()
   @IsString({ each: true })
-  retainedFacts: string[];
+  @MaxLength(1000, { each: true, message: 'each retained fact must not exceed 1000 characters' })
+  retainedFacts!: string[];
 
-  @IsNumber()
+  @IsInt({ message: 'compactedThroughSequence must be an integer' })
   @Min(1)
-  compactedThroughSequence: number;
+  compactedThroughSequence!: number;
 }

@@ -3,6 +3,7 @@ import { PromptsService } from './prompts.service';
 import { CreatePromptDto } from './dto/create-prompt.dto';
 import { CreateVersionDto } from './dto/create-version.dto';
 import { PreviewPromptDto, RunPlaygroundDto } from './dto/run-prompt.dto';
+import { PaginationQueryDto } from '../common/dto/pagination.dto';
 
 @Controller('prompts')
 export class PromptsController {
@@ -10,10 +11,16 @@ export class PromptsController {
 
   @Get()
   async findAll(
+    @Query() pagination: PaginationQueryDto,
     @Query('search') search?: string,
     @Query('technique') technique?: string,
   ) {
-    return this.promptsService.findAll({ search, technique });
+    return this.promptsService.findAll({
+      search,
+      technique,
+      limit: pagination.limit,
+      offset: pagination.offset,
+    });
   }
 
   @Get(':id')

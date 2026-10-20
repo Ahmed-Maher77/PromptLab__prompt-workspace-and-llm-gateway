@@ -15,6 +15,8 @@ import {
   ApplyCompactionDto,
 } from './dto/compact-conversation.dto';
 
+import { PaginationQueryDto } from '../common/dto/pagination.dto';
+
 @Controller('conversations')
 export class ConversationsController {
   constructor(private readonly conversationsService: ConversationsService) {}
@@ -25,8 +27,8 @@ export class ConversationsController {
   }
 
   @Get()
-  async findAll() {
-    return this.conversationsService.findAll();
+  async findAll(@Query() pagination: PaginationQueryDto) {
+    return this.conversationsService.findAll(undefined, pagination);
   }
 
   @Get(':id')

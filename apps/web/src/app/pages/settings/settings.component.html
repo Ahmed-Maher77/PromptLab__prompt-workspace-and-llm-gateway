@@ -1,0 +1,262 @@
+<div class="settings-container">
+  <!-- Header -->
+  <header class="settings-header">
+    <div class="header-left">
+      <div class="breadcrumbs">
+        <span class="breadcrumb-item">PromptLab</span>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-current">System Settings</span>
+      </div>
+      <p class="header-sub">
+        Read-only runtime environment status, LiteLLM gateway connectivity, effective quota policies, and service telemetry.
+      </p>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" (click)="loadSettings()" [disabled]="loading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        Refresh Status
+      </button>
+    </div>
+  </header>
+
+  <!-- Error Alert -->
+  <div *ngIf="errorMessage" class="alert alert-error">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"></circle>
+      <line x1="12" y1="8" x2="12" y2="12"></line>
+      <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+    <span>{{ errorMessage }}</span>
+  </div>
+
+  <!-- Loading State -->
+  <div *ngIf="loading && !settings" class="loading-state">
+    <div class="spinner"></div>
+    <p>Inspecting runtime services and gateway connectivity...</p>
+  </div>
+
+  <!-- Settings Grid -->
+  <div *ngIf="settings" class="settings-grid">
+    <!-- Card 1: LiteLLM Gateway & Models -->
+    <div class="panel settings-card">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+            <line x1="6" y1="6" x2="6.01" y2="6"></line>
+            <line x1="6" y1="18" x2="6.01" y2="18"></line>
+          </svg>
+          <h2 class="panel-title">LiteLLM Proxy Gateway</h2>
+        </div>
+        <span
+          class="badge"
+          [ngClass]="settings.gateway.connected ? 'badge-success' : 'badge-danger'"
+        >
+          <span class="status-dot"></span>
+          {{ settings.gateway.connected ? 'Connected' : 'Unreachable' }}
+        </span>
+      </div>
+      <div class="panel-body">
+        <div class="info-row">
+          <span class="info-label">Gateway URL</span>
+          <code class="info-value code-value">{{ settings.gateway.url }}</code>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Configured Models</span>
+          <span class="info-value">{{ settings.gateway.modelsConfigured }} active</span>
+        </div>
+        <div *ngIf="settings.gateway.error" class="notice notice-warning">
+          {{ settings.gateway.error }}
+        </div>
+        <div class="models-list">
+          <span class="section-subheading">Available Model Catalog:</span>
+          <div *ngIf="settings.gateway.models.length === 0" class="empty-hint">
+            No models detected. Ensure LiteLLM is running (<code>npm run start:gateway</code>).
+          </div>
+          <div *ngFor="let model of settings.gateway.models" class="model-item">
+            <span class="model-id">{{ model.id }}</span>
+            <span class="badge badge-neutral">{{ model.provider }}</span>
+          </div>
+        </div>
+        <div class="security-caption">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          Provider API keys (OpenAI / Anthropic) reside strictly on the server and are never sent to the browser.
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Quota & Rate Limit Policy -->
+    <div class="panel settings-card">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <h2 class="panel-title">Active Quota Policy</h2>
+        </div>
+        <span class="badge badge-neutral">Enforced Server-Side</span>
+      </div>
+      <div class="panel-body">
+        <div class="info-row">
+          <span class="info-label">Policy Scope</span>
+          <span class="info-value">{{ settings.quotaPolicy.scope }} ({{ settings.quotaPolicy.scopeId }})</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Monthly Token Limit</span>
+          <span class="info-value metric-highlight">{{ settings.quotaPolicy.monthlyTokenLimit | number }} tokens</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Request Rate Limit</span>
+          <span class="info-value">{{ settings.quotaPolicy.requestRateLimit }} requests / minute</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Effective From</span>
+          <span class="info-value">{{ settings.quotaPolicy.effectiveFrom | date:'yyyy-MM-dd HH:mm:ss' }} UTC</span>
+        </div>
+        <div class="notice notice-info">
+          Budget enforcement uses row-level pessimistic locking in PostgreSQL to prevent double-spending during concurrent requests.
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3: Observability & Telemetry Status -->
+    <div class="panel settings-card">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          <h2 class="panel-title">Telemetry & Observability</h2>
+        </div>
+        <span
+          class="badge"
+          [ngClass]="settings.observability.telemetryEnabled ? 'badge-success' : 'badge-neutral'"
+        >
+          {{ settings.observability.telemetryEnabled ? 'Telemetry Active' : 'Disabled' }}
+        </span>
+      </div>
+      <div class="panel-body">
+        <div class="info-row">
+          <span class="info-label">In-Memory Trace Buffer</span>
+          <span class="info-value">{{ settings.observability.tracesRecorded }} traces recorded</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Telemetry Redaction</span>
+          <span class="info-value text-success">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inline-icon">
+              <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            Active (Bearer, sk-*, pk-* masked)
+          </span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">OpenTelemetry OTLP Exporter</span>
+          <span class="info-value">
+            <span *ngIf="settings.observability.otelConfigured" class="badge badge-success">Configured</span>
+            <span *ngIf="!settings.observability.otelConfigured" class="badge badge-neutral">Known Follow-Up</span>
+          </span>
+        </div>
+        <div *ngIf="settings.observability.otelEndpoint" class="sub-row">
+          <code class="code-value">{{ settings.observability.otelEndpoint }}</code>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Langfuse Observability</span>
+          <span class="info-value">
+            <span *ngIf="settings.observability.langfuseConfigured" class="badge badge-success">Configured</span>
+            <span *ngIf="!settings.observability.langfuseConfigured" class="badge badge-neutral">Known Follow-Up</span>
+          </span>
+        </div>
+        <div *ngIf="settings.observability.langfuseHost" class="sub-row">
+          <code class="code-value">{{ settings.observability.langfuseHost }}</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 4: Database & Platform Runtime -->
+    <div class="panel settings-card">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+          </svg>
+          <h2 class="panel-title">Database & Platform</h2>
+        </div>
+        <span
+          class="badge"
+          [ngClass]="settings.database.connected ? 'badge-success' : 'badge-danger'"
+        >
+          <span class="status-dot"></span>
+          {{ settings.database.connected ? 'Connected' : 'Disconnected' }}
+        </span>
+      </div>
+      <div class="panel-body">
+        <div class="info-row">
+          <span class="info-label">Database Type</span>
+          <span class="info-value">{{ settings.database.type }}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Query Latency</span>
+          <span class="info-value">{{ settings.database.latencyMs }} ms</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Application Version</span>
+          <span class="info-value">v{{ settings.application.version }} (Phase 6 Final POC)</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Node Runtime</span>
+          <span class="info-value">{{ settings.application.nodeVersion }} ({{ settings.application.platform }})</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">API Uptime</span>
+          <span class="info-value">{{ formatUptime(settings.application.uptimeSeconds) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 5: Security Architecture & Boundary Status -->
+    <div class="panel settings-card full-width-card">
+      <div class="panel-header">
+        <div class="panel-title-group">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+          </svg>
+          <h2 class="panel-title">Security & Environment Boundaries</h2>
+        </div>
+        <span class="badge badge-neutral">Developer Mode</span>
+      </div>
+      <div class="panel-body">
+        <div class="security-grid">
+          <div class="security-item">
+            <span class="security-title">Authentication Model</span>
+            <p class="security-desc">
+              Currently running in single-tenant developer mode (<code>{{ settings.security.defaultUser }}</code>). Multi-tenant production deployments require OAuth2 / OIDC guards.
+            </p>
+          </div>
+          <div class="security-item">
+            <span class="security-title">CORS Restrictions</span>
+            <p class="security-desc">
+              Restricted to configured origin: <code>{{ settings.security.corsOrigins }}</code>.
+            </p>
+          </div>
+          <div class="security-item">
+            <span class="security-title">Secret Isolation</span>
+            <p class="security-desc">
+              Database credentials, provider API keys, and LiteLLM master keys remain strictly server-side. Zero secrets are exposed to the client.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

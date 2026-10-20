@@ -147,8 +147,19 @@ export class ConversationService {
 
   constructor(private readonly http: HttpClient) {}
 
-  getConversations(): Observable<ConversationSummary[]> {
-    return this.http.get<ConversationSummary[]>(this.baseUrl);
+  getConversations(pagination?: { limit?: number; offset?: number }): Observable<ConversationSummary[]> {
+    let url = this.baseUrl;
+    const params: string[] = [];
+    if (pagination?.limit !== undefined) {
+      params.push(`limit=${pagination.limit}`);
+    }
+    if (pagination?.offset !== undefined) {
+      params.push(`offset=${pagination.offset}`);
+    }
+    if (params.length > 0) {
+      url += `?${params.join('&')}`;
+    }
+    return this.http.get<ConversationSummary[]>(url);
   }
 
   getConversation(id: string): Observable<ConversationDetail> {

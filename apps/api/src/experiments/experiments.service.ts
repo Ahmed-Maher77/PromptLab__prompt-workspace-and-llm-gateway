@@ -65,8 +65,14 @@ export class ExperimentsService {
 
   /**
    * Retrieves all saved comparison experiments ordered newest first.
+   * Supports deterministic pagination (limit and offset).
    */
-  async findAll(ownerId = 'dev-user-001') {
+  async findAll(ownerId = 'dev-user-001', pagination?: { limit?: number; offset?: number }) {
+    const take = pagination?.limit !== undefined
+      ? Math.min(Math.max(1, pagination.limit), 100)
+      : (pagination?.offset !== undefined ? 50 : undefined);
+    const skip = pagination?.offset !== undefined ? Math.max(0, pagination.offset) : undefined;
+
     const experiments = await this.prisma.experiment.findMany({
       where: { ownerId },
       include: {
@@ -80,7 +86,9 @@ export class ExperimentsService {
           },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      take,
+      skip,
     });
 
     return experiments.map((exp) => {

@@ -9,7 +9,7 @@ import {
 import { UsageService } from './usage.service';
 import { UpdateQuotaPolicyDto } from './dto/usage.dto';
 
-@Controller('api/usage')
+@Controller('usage')
 export class UsageController {
   constructor(private readonly usageService: UsageService) {}
 

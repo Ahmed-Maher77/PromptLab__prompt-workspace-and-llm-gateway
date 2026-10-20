@@ -9,6 +9,7 @@ import { ExperimentsModule } from './experiments/experiments.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { UsageModule } from './usage/usage.module';
 import { ObservabilityModule } from './observability/observability.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ObservabilityModule } from './observability/observability.module';
     ConversationsModule,
     UsageModule,
     ObservabilityModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

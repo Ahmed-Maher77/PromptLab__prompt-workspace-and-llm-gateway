@@ -5,7 +5,7 @@ import { ProvidersService } from './providers.service';
 describe('ProvidersService', () => {
   let service: ProvidersService;
   const mockConfigService = {
-    get: jest.fn((key: string) => {
+    get: jest.fn((key: string): string | null => {
       if (key === 'LITELLM_GATEWAY_URL') return 'http://127.0.0.1:4000';
       if (key === 'LITELLM_MASTER_KEY') return 'sk-promptlab-dev-key';
       return null;
@@ -117,5 +117,32 @@ describe('ProvidersService', () => {
     expect(result.gatewayConnected).toBe(false);
     expect(result.models).toEqual([]);
     expect(result.error).toContain('Gateway down');
+  });
+
+  describe('getGatewayUrl', () => {
+    it('prefers LITELLM_GATEWAY_URL when explicitly configured', () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'LITELLM_GATEWAY_URL') return 'http://gateway.internal:4000';
+        if (key === 'LITELLM_PROXY_URL') return 'http://proxy.internal:4000';
+        return null;
+      });
+
+      expect(service.getGatewayUrl()).toBe('http://gateway.internal:4000');
+    });
+
+    it('falls back to LITELLM_PROXY_URL when LITELLM_GATEWAY_URL is not set', () => {
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'LITELLM_PROXY_URL') return 'http://proxy.internal:4000';
+        return null;
+      });
+
+      expect(service.getGatewayUrl()).toBe('http://proxy.internal:4000');
+    });
+
+    it('falls back to default localhost URL when neither variable is set', () => {
+      mockConfigService.get.mockImplementation(() => null);
+
+      expect(service.getGatewayUrl()).toBe('http://127.0.0.1:4000');
+    });
   });
 });

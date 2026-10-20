@@ -106,8 +106,19 @@ export class ExperimentService {
 
   constructor(private readonly http: HttpClient) {}
 
-  getExperiments(): Observable<SavedExperimentSummary[]> {
-    return this.http.get<SavedExperimentSummary[]>(this.baseUrl);
+  getExperiments(pagination?: { limit?: number; offset?: number }): Observable<SavedExperimentSummary[]> {
+    let url = this.baseUrl;
+    const params: string[] = [];
+    if (pagination?.limit !== undefined) {
+      params.push(`limit=${pagination.limit}`);
+    }
+    if (pagination?.offset !== undefined) {
+      params.push(`offset=${pagination.offset}`);
+    }
+    if (params.length > 0) {
+      url += `?${params.join('&')}`;
+    }
+    return this.http.get<SavedExperimentSummary[]>(url);
   }
 
   getExperiment(id: string): Observable<SavedExperimentSummary> {

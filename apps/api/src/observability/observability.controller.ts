@@ -17,7 +17,7 @@ import { ObservabilityService } from './observability.service';
  * administrative role-based access control (e.g. @Roles('admin') / @UseGuards(AdminAuthGuard))
  * to prevent unauthorized cross-tenant trace inspection or ring-buffer clearing.
  */
-@Controller('api/observability')
+@Controller('observability')
 export class ObservabilityController {
   constructor(private readonly observabilityService: ObservabilityService) {}
 

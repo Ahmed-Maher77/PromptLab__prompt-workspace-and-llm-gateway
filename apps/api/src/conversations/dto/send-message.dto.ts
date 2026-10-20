@@ -1,7 +1,8 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class SendMessageDto {
   @IsString()
   @IsNotEmpty()
-  content: string;
+  @MaxLength(32768, { message: 'content must not exceed 32768 characters' })
+  content!: string;
 }
