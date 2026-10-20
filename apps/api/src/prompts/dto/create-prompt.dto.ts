@@ -1,12 +1,14 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString, IsObject } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsObject, MaxLength } from 'class-validator';
 
 export class PromptVariableDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   name!: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(500)
   description?: string;
 
   @IsOptional()
@@ -14,26 +16,31 @@ export class PromptVariableDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(1000)
   defaultValue?: string;
 }
 
 export class FewShotExampleDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(8192)
   input!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(8192)
   output!: string;
 }
 
 export class CreatePromptDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100, { message: 'name must not exceed 100 characters' })
   name!: string;
 
   @IsString()
   @IsOptional()
+  @MaxLength(1000, { message: 'description must not exceed 1000 characters' })
   description?: string;
 
   @IsArray()
@@ -42,6 +49,7 @@ export class CreatePromptDto {
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(32768, { message: 'templateBody must not exceed 32768 characters' })
   templateBody!: string;
 
   @IsArray()

@@ -94,10 +94,20 @@ export class ConversationsService {
 
   /**
    * Lists all conversations.
+   * Supports deterministic pagination (limit and offset).
    */
-  async findAll() {
+  async findAll(userId?: string, pagination?: { limit?: number; offset?: number }) {
+    const where = userId ? { ownerId: userId } : {};
+    const take = pagination?.limit !== undefined
+      ? Math.min(Math.max(1, pagination.limit), 100)
+      : (pagination?.offset !== undefined ? 50 : undefined);
+    const skip = pagination?.offset !== undefined ? Math.max(0, pagination.offset) : undefined;
+
     const list = await this.prisma.conversation.findMany({
-      orderBy: { updatedAt: 'desc' },
+      where,
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      take,
+      skip,
       include: {
         messages: {
           orderBy: { sequenceNumber: 'asc' },

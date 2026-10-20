@@ -5,6 +5,7 @@ import { CompareComponent } from './pages/compare/compare.component';
 import { ConversationsComponent } from './pages/conversations/conversations.component';
 import { UsageComponent } from './pages/usage/usage.component';
 import { ObservabilityComponent } from './pages/observability/observability.component';
+import { SettingsComponent } from './pages/settings/settings.component';
 
 export const routes: Routes = [
   { path: '', component: OverviewComponent, title: 'Overview — PromptLab' },
@@ -13,5 +14,6 @@ export const routes: Routes = [
   { path: 'conversations', component: ConversationsComponent, title: 'Conversations — PromptLab' },
   { path: 'usage', component: UsageComponent, title: 'Usage & Quotas — PromptLab' },
   { path: 'observability', component: ObservabilityComponent, title: 'Observability & Traces — PromptLab' },
+  { path: 'settings', component: SettingsComponent, title: 'Settings — PromptLab' },
   { path: '**', redirectTo: '' },
 ];

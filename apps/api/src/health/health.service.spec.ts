@@ -96,4 +96,26 @@ describe('HealthService', () => {
     expect(health.services.database.status).toBe('disconnected');
     expect(health.services.database.error).toBe('Database connection or query failed');
   });
+
+  it('prefers LITELLM_GATEWAY_URL over LITELLM_PROXY_URL for gateway health check', async () => {
+    mockConfigService.get.mockImplementation((key: string, defaultValue?: string) => {
+      if (key === 'LITELLM_GATEWAY_URL') return 'http://gateway.test:4000';
+      if (key === 'LITELLM_PROXY_URL') return 'http://proxy.test:4000';
+      if (key === 'NODE_ENV') return 'test';
+      return defaultValue;
+    });
+
+    const health = await service.getHealth();
+    expect(health.services.gateway.url).toBe('http://gateway.test:4000');
+  });
+
+  it('falls back to default http://127.0.0.1:4000 when neither gateway variable is set', async () => {
+    mockConfigService.get.mockImplementation((key: string, defaultValue?: string) => {
+      if (key === 'NODE_ENV') return 'test';
+      return defaultValue;
+    });
+
+    const health = await service.getHealth();
+    expect(health.services.gateway.url).toBe('http://127.0.0.1:4000');
+  });
 });

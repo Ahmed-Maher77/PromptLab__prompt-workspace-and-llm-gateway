@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DEFAULT_LITELLM_GATEWAY_URL } from '../common/config/env.validation';
 
 export interface ModelMetadata {
   id: string;
@@ -35,7 +36,8 @@ export class ProvidersService {
   getGatewayUrl(): string {
     return (
       this.configService.get<string>('LITELLM_GATEWAY_URL') ||
-      'http://127.0.0.1:4000'
+      this.configService.get<string>('LITELLM_PROXY_URL') ||
+      DEFAULT_LITELLM_GATEWAY_URL
     );
   }
 

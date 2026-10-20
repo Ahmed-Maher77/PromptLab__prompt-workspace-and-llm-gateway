@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { DEFAULT_LITELLM_GATEWAY_URL } from '../common/config/env.validation';
 
 export interface HealthCheckResult {
   status: 'ok' | 'degraded';
@@ -38,7 +39,10 @@ export class HealthService {
 
   async getHealth(): Promise<HealthCheckResult> {
     const dbHealth = await this.prisma.checkHealth();
-    const rawLitellmUrl = this.configService.get<string>('LITELLM_PROXY_URL', 'http://localhost:4000');
+    const rawLitellmUrl =
+      this.configService.get<string>('LITELLM_GATEWAY_URL') ||
+      this.configService.get<string>('LITELLM_PROXY_URL') ||
+      DEFAULT_LITELLM_GATEWAY_URL;
     const environment = this.configService.get<string>('NODE_ENV', 'development');
 
     const gatewayHealth = await this.checkGateway(rawLitellmUrl);

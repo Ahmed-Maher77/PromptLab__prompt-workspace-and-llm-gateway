@@ -197,8 +197,14 @@ export class PromptsService implements OnModuleInit {
 
   /**
    * Lists all prompts with metadata, version counts, and latest version information.
+   * Supports deterministic pagination (limit and offset).
    */
-  async findAll(params?: { search?: string; technique?: string }): Promise<PromptSummary[]> {
+  async findAll(params?: {
+    search?: string;
+    technique?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<PromptSummary[]> {
     const where: Prisma.PromptWhereInput = {};
 
     if (params?.search) {
@@ -218,7 +224,7 @@ export class PromptsService implements OnModuleInit {
           orderBy: { versionNumber: 'desc' },
         },
       },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
     });
 
     const result: PromptSummary[] = [];
@@ -248,6 +254,12 @@ export class PromptsService implements OnModuleInit {
         updatedAt: p.updatedAt,
         owner: p.owner,
       });
+    }
+
+    if (params?.limit !== undefined || params?.offset !== undefined) {
+      const offset = params.offset !== undefined ? Math.max(0, params.offset) : 0;
+      const limit = params.limit !== undefined ? Math.min(Math.max(1, params.limit), 100) : 50;
+      return result.slice(offset, offset + limit);
     }
 
     return result;

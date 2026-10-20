@@ -1,5 +1,16 @@
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
+
 export class UpdateQuotaPolicyDto {
+  @IsOptional()
+  @IsInt({ message: 'monthlyTokenLimit must be an integer' })
+  @Min(1000, { message: 'monthlyTokenLimit must be at least 1000' })
+  @Max(100000000, { message: 'monthlyTokenLimit must not exceed 100000000' })
   monthlyTokenLimit?: number;
+
+  @IsOptional()
+  @IsInt({ message: 'requestRateLimit must be an integer' })
+  @Min(1, { message: 'requestRateLimit must be at least 1' })
+  @Max(10000, { message: 'requestRateLimit must not exceed 10000' })
   requestRateLimit?: number;
 }
 
