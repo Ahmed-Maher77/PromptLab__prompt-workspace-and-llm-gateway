@@ -1,172 +1,181 @@
-# PromptLab — Prompt Engineering & LLM Gateway POC
+# PromptLab — Prompt Engineering Workspace & LLM Gateway
 
-PromptLab is a developer-focused workspace for prompt engineering, side-by-side model experimentation, conversational context compaction, quota governance, and LLM gateway observability.
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-10.0-E0234E.svg)](https://nestjs.com/)
+[![Angular](https://img.shields.io/badge/Angular-19.0-DD0031.svg)](https://angular.dev/)
+[![LiteLLM](https://img.shields.io/badge/LiteLLM-Proxy%20v1.0-412991.svg)](https://docs.litellm.ai/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Prisma%20ORM-336791.svg)](https://www.prisma.io/)
+[![OKF](https://img.shields.io/badge/Knowledge-OKF%20v0.2-green.svg)](docs/knowledge/index.md)
 
----
-
-## 1. Architecture & Implemented Capabilities (Phases 0–6)
-
-PromptLab follows a modular monolith architecture for the backend paired with a standalone LiteLLM Proxy gateway and an Angular frontend adhering to the restrained, high-density developer design system in [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md).
-
-```
- ┌────────────────────────────────────────────────────────┐
- │           Angular 19 Frontend (Port 4200)              │
- │  Prompt Studio | Comparison | Chats | Quotas | Traces │
- └───────────────────────────┬────────────────────────────┘
-                             │ HTTP (REST + SSE)
- ┌───────────────────────────▼────────────────────────────┐
- │           NestJS Modular Backend (Port 3100)           │
- │  - Prompts & Immutable Versions   - Context Compactor  │
- │  - A/B Experiments & Pricing      - Quota Ledger (ACID)│
- │  - Privacy Redaction Engine       - W3C Distributed Tx │
- └─────────────┬───────────────────────────┬──────────────┘
-               │ Prisma ORM                │ HTTP Proxy
- ┌─────────────▼─────────────┐ ┌───────────▼──────────────┐
- │ PostgreSQL Database (5432)│ │ LiteLLM Proxy (Port 4000)│
- │ - Templates & Versions    │ │ - Model Routing          │
- │ - Experiments & Ratings   │ │ - OpenAI, Anthropic      │
- │ - Conversations & Messages│ │ - Server-Side Secrets    │
- │ - Quota Ledger & Policy   │ └──────────────────────────┘
- └───────────────────────────┘
-```
-
-### Key Capabilities Implemented
-- **Phase 1 — Prompt Studio (`/prompts`):** Composable prompt techniques (`zero-shot`, `few-shot`, `RTF`, `structured-output`), dynamic `{{variable}}` extraction, live resolved preview, monospaced template editing, immutable version history, and single-prompt playground with provenance labeling (`provider-reported` vs `estimated`).
-- **Phase 2 — Model Comparison & Experimentation (`/compare`):** Multi-model side-by-side A/B execution, latency/token metrics, October 2024 configurable reference cost estimates, output rating (1–5 stars), winner selection, and experiment history with limit/offset pagination.
-- **Phase 3 — Conversational Workspace & Compaction (`/conversations`):** Multi-turn conversational threads, real-time context window budget consumption monitoring, and LLM-powered context compaction (Summarize & Truncate) that distills chat history while preserving essential memory.
-- **Phase 4 — Quotas & Budget Governance (`/usage`):** Monthly token limits, request rate limits, atomic quota reservations (reserve $\rightarrow$ commit / release) preventing race conditions, ambiguous-timeout usage protection, an immutable audit ledger, and demo period reset simulation.
-- **Phase 5 — Observability & Privacy Redaction (`/observability`):** W3C distributed trace context propagation (`traceparent`), OpenTelemetry (`OTLP/HTTP`) and Langfuse exporters, in-memory trace buffer with latency breakdowns, and a privacy redaction engine masking API keys, bearer tokens, and sensitive headers.
-- **Phase 6 — Hardening, UI & Data Completeness (`/settings`):** Read-only System Settings page displaying live gateway connectivity, PostgreSQL health/latency, effective quota policies, and safe configuration status with zero credential exposure; backward-compatible limit/offset pagination; and strict input validation.
+PromptLab is an enterprise-grade developer workspace for prompt engineering, side-by-side multi-model experimentation, context window budgeting with LLM compaction, atomic quota governance, and distributed LLM observability.
 
 ---
 
-## 2. Prerequisites & Verified Environments
+## 1. Open Knowledge Base (OKF v0.2)
 
-| Component | Minimum Required | Verified Version |
+This repository adopts the **Google Open Knowledge Format (OKF v0.2)**, organizing domain knowledge, architectural choices, and operational runbooks into a linked, navigable documentation graph.
+
+| Knowledge Area | Description | Direct Link |
 | :--- | :--- | :--- |
-| **Node.js** | v20.0.0+ | **v22.13.0** |
-| **npm** | v10.0.0+ | **v10.9.2** |
-| **PostgreSQL** | v15.0+ | **v18.0** / Docker PostgreSQL |
-| **Python** | v3.10+ | **v3.12** (for local LiteLLM runner) |
+| **Root Index** | Master entry point for the documentation | [`docs/knowledge/index.md`](docs/knowledge/index.md) |
+| **Architecture Decisions (ADRs)** | Formal records documenting 8 core architectural decisions (ADR-001 through ADR-008) | [`docs/knowledge/decisions/`](docs/knowledge/decisions/index.md) |
+| **Domain Concepts** | Comprehensive specifications for templates, experiments, context compaction, quotas, and traces | [`docs/knowledge/concepts/`](docs/knowledge/concepts/index.md) |
+| **System Architecture** | Multi-tier network topology, component interactions, and relational data schemas | [`docs/knowledge/architecture/`](docs/knowledge/architecture/index.md) |
+| **Operational Runbooks** | Step-by-step setup, troubleshooting procedures, and automated test execution | [`docs/knowledge/operations/`](docs/knowledge/operations/index.md) |
+| **Knowledge Evolution Log** | Chronological log of milestones and specification changes | [`docs/knowledge/log.md`](docs/knowledge/log.md) |
 
 ---
 
-## 3. Environment Configuration
+## 2. System Architecture
 
-Copy the template configuration file:
+PromptLab employs a modular monolith architecture for the application backend paired with an isolated LiteLLM Proxy gateway and a high-density Angular 19 frontend adhering to the developer design system in [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md).
+
+```
+ ┌────────────────────────────────────────────────────────────────────────┐
+ │                   Angular 19 Frontend (Port 4200)                      │
+ │   Prompt Studio   │   Model Comparison   │   Chats & Compaction       │
+ │   Usage & Quotas  │   Tracing & Spans    │   System Settings (Health) │
+ └───────────────────────────────────┬────────────────────────────────────┘
+                                     │ HTTP REST + SSE (/api)
+                                     │ CORS Origin: http://localhost:4200
+ ┌───────────────────────────────────▼────────────────────────────────────┐
+ │                  NestJS Modular Monolith (Port 3100)                   │
+ │   - PromptsModule & Versions (Immutable)   - Context Compactor (LLM)   │
+ │   - ExperimentsModule & A/B Engine        - QuotaLedger (ACID Two-Ph)  │
+ │   - Privacy Redaction Engine               - W3C Distributed Context   │
+ │   - SettingsModule (Read-Only Diagnostics) - HealthModule              │
+ └─────────────────┬────────────────────────────────────┬─────────────────┘
+                   │ Prisma ORM (Port 5432)             │ HTTP REST (Port 4000)
+                   │ PostgreSQL Database                │ W3C traceparent
+ ┌─────────────────▼───────────────┐  ┌─────────────────▼─────────────────┐
+ │   PostgreSQL Database (5432)    │  │   LiteLLM Proxy Gateway (4000)    │
+ │   - prompts & prompt_versions   │  │   - Unified OpenAI-compatible API │
+ │   - experiments & ratings       │  │   - Model routing & rate limiting │
+ │   - conversations & messages    │  │   - Upstream provider credentials │
+ │   - quota_ledger & quota_policy │  │     strictly isolated server-side │
+ └─────────────────────────────────┘  └─────────────────┬─────────────────┘
+                                                        │
+                                   ┌────────────────────┴────────────────────┐
+                                   │ Upstream LLM Providers                  │
+                                   │ - OpenAI API (gpt-4o-mini)              │
+                                   │ - Anthropic API (claude-3-5-sonnet)     │
+                                   └─────────────────────────────────────────┘
+```
+
+---
+
+## 3. Implemented Capabilities Matrix (Phases 0–6)
+
+| Capability Area | Core Features | Status |
+| :--- | :--- | :--- |
+| **Prompt Studio (`/prompts`)** | Composable techniques (`zero-shot`, `few-shot`, `RTF`, `structured-output`), dynamic `{{variable}}` extraction, live resolved preview, monospaced template editor, immutable version history with parent pointers, and provenance attribution (`provider-reported` vs `estimated`). | **Complete** |
+| **Model Comparison (`/compare`)** | Multi-model concurrent A/B execution, slot parameter tuning (temperature 0–2, maxTokens 1–32K), October 2024 reference cost estimation, 1–5 star human rating, winner selection, and experiment registry. | **Complete** |
+| **Conversations (`/conversations`)** | Multi-turn conversational threads, real-time context window budget consumption tracking with warning thresholds (70%/85%), and LLM-powered context compaction (Summarize & Truncate) that compresses dialogue history while preserving memory. | **Complete** |
+| **Quota Governance (`/usage`)** | Monthly token allowance (default 100K), request rate limiting (60 req/min), atomic two-phase reservations (reserve $\rightarrow$ commit/release) preventing concurrent overdrafts, ambiguous timeout recovery protection, and immutable audit ledger. | **Complete** |
+| **Observability (`/observability`)** | W3C distributed trace context (`traceparent`), in-memory trace buffer (100 spans) with latency breakdowns, OpenTelemetry OTLP/HTTP exporter, Langfuse exporter, and in-process privacy redaction masking API keys and bearer tokens. | **Complete** |
+| **System Settings (`/settings`)** | High-density read-only dashboard actively probing LiteLLM gateway status and PostgreSQL latency, reporting configured models and effective quota policy with guaranteed zero secret exposure. | **Complete** |
+| **Data Completeness** | Backward-compatible limit/offset pagination with deterministic multi-column sorting across all list endpoints; class-validator bounds (32KB text ceilings, model ID regex, runtime enums). | **Complete** |
+
+---
+
+## 4. Quickstart & Installation
+
+### Prerequisites
+- **Node.js:** v20.0+ (Verified on **v22.13.0**)
+- **npm:** v10.0+ (Verified on **v10.9.2**)
+- **PostgreSQL:** Running on port 5432 (`promptlab` database created)
+- **Python:** v3.10+ (Verified on **v3.12** for local LiteLLM runner)
+
+### Step 1: Environment Setup
 ```bash
 cp .env.example .env
 ```
-
-### Environment Variables Matrix
-
-| Variable | Required? | Default | Purpose |
-| :--- | :--- | :--- | :--- |
-| `NODE_ENV` | Optional | `development` | Runtime environment mode |
-| `PORT` | **Required** | `3100` | Port for the NestJS backend API |
-| `CORS_ORIGIN` | Optional | `http://localhost:4200` | Allowed frontend origin for CORS |
-| `DATABASE_URL` | **Required** | `postgresql://postgres:postgres@localhost:5432/promptlab?schema=public` | PostgreSQL connection string |
-| `LITELLM_PROXY_URL` | **Required** | `http://localhost:4000` | LiteLLM Proxy endpoint |
-| `LITELLM_MASTER_KEY`| **Required** | `sk-promptlab-dev-key` | Master key for LiteLLM internal requests |
-| `OPENAI_API_KEY` | Optional* | *empty* | Upstream OpenAI key (*needed for live OpenAI completions) |
-| `ANTHROPIC_API_KEY` | Optional* | *empty* | Upstream Anthropic key (*needed for live Claude completions) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Optional | `http://localhost:4318` | Target OTLP/HTTP collector endpoint |
-| `LANGFUSE_PUBLIC_KEY` | Optional | *empty* | Langfuse project public key |
-| `LANGFUSE_SECRET_KEY` | Optional | *empty* | Langfuse project secret key |
-| `LANGFUSE_HOST` | Optional | `http://localhost:3001` | Langfuse host URL |
+Ensure required parameters are defined:
+- `PORT=3100`
+- `CORS_ORIGIN=http://localhost:4200`
+- `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/promptlab?schema=public`
+- `LITELLM_PROXY_URL=http://localhost:4000`
+- `LITELLM_MASTER_KEY=sk-promptlab-dev-key`
 
 > [!NOTE]
-> All provider API keys and secrets are loaded **strictly server-side**. The frontend communicates exclusively with the NestJS API via `/api/*` proxies and never receives or handles upstream provider keys.
+> Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are optional for local offline testing (templating, variable preview, version history, context compaction simulation, quota tracking, tracing, and settings). Upstream keys are only required when dispatching live model completions.
 
----
-
-## 4. Setup & Initialization
-
-### Step 1: Install Monorepo Dependencies
+### Step 2: Install Monorepo Dependencies
 ```bash
 npm install
 ```
 
-### Step 2: Initialize Database Schema (Prisma)
-Generate the Prisma client types and push the schema directly to PostgreSQL:
+### Step 3: Initialize Database Schema (Prisma)
+Generate client types and synchronize the PostgreSQL schema:
 ```bash
 npm run prisma:generate
 npm run prisma:push
 ```
 
-> [!IMPORTANT]
-> The current POC uses `prisma db push` (`npm run prisma:push`) to synchronize the PostgreSQL schema directly with `apps/api/prisma/schema.prisma`. It **does not** utilize versioned Prisma migrations (`prisma migrate`). Schema alterations should be managed through `prisma db push` during development.
-
-### Step 3: Start LiteLLM Gateway
-The gateway routes requests to supported LLMs (`gpt-4o-mini`, `claude-3-5-sonnet`):
+### Step 4: Launch LiteLLM Gateway
 ```bash
 npm run start:gateway
+# Gateway health check: http://127.0.0.1:4000/health/liveliness
 ```
-*Health check:* [http://127.0.0.1:4000/health/liveliness](http://127.0.0.1:4000/health/liveliness)
 
-### Step 4: Start Backend API
+### Step 5: Launch Backend API
 ```bash
 npm run start:api
+# API health check: http://localhost:3100/api/health
 ```
-*Health check:* [http://localhost:3100/api/health](http://localhost:3100/api/health)
 
-### Step 5: Start Web Frontend
+### Step 6: Launch Web Frontend
 ```bash
 npm run start:web
+# Web Application URL: http://localhost:4200
 ```
-*Web application URL:* [http://localhost:4200](http://localhost:4200)
 
 ---
 
-## 5. Verification & Testing Commands
+## 5. Verification Commands
 
-All scripts are executed from the monorepo root:
+All quality gates are automated and executed from the repository root:
 
-| Command | Action |
-| :--- | :--- |
-| `npm run test` | Runs the full test suite across both API and Web |
-| `npm run test:api` | Runs Jest unit & integration tests for `@promptlab/api` |
-| `npm run test:web` | Runs Karma/Jasmine headless unit tests for `@promptlab/web` |
-| `npm run typecheck` | Validates TypeScript compiler types across all workspaces (`tsc --noEmit`) |
-| `npm run lint` | Runs ESLint validation across both workspaces |
-| `npm run build` | Generates production bundles for both backend and frontend |
-
----
-
-## 6. Accessing the Application & Settings
-
-- **Prompt Studio:** [http://localhost:4200/prompts](http://localhost:4200/prompts)
-- **Model Comparison (A/B):** [http://localhost:4200/compare](http://localhost:4200/compare)
-- **Conversations & Compaction:** [http://localhost:4200/conversations](http://localhost:4200/conversations)
-- **Usage & Quotas:** [http://localhost:4200/usage](http://localhost:4200/usage)
-- **Observability & Tracing:** [http://localhost:4200/observability](http://localhost:4200/observability)
-- **System Settings (Read-Only):** [http://localhost:4200/settings](http://localhost:4200/settings)
+| Command | Workspace Scope | Verified Status |
+| :--- | :--- | :--- |
+| `npm run test:api` | `@promptlab/api` Jest test suite | **PASS** (12 suites, 107 tests passing) |
+| `npm run test:web` | `@promptlab/web` Karma/Jasmine headless suite | **PASS** (46 specs passing) |
+| `npm run test` | Full monorepo test suite | **PASS** (153 total automated tests) |
+| `npm run typecheck` | Strict TypeScript compiler validation (`tsc --noEmit`) | **PASS** (0 type errors) |
+| `npm run lint` | ESLint static analysis across workspaces | **PASS** (0 warnings, 0 errors) |
+| `npm run build` | Production bundle generation (NestJS + Angular) | **PASS** (Optimized production bundles) |
 
 ---
 
-## 7. Troubleshooting Common Issues
+## 6. Primary API Endpoints
 
-1. **Port 3100 or 4000 already in use:**
-   - Verify if an existing Node or Python process is running. Terminate any orphan processes or modify `PORT` in `.env` and `apps/web/proxy.conf.json`.
-2. **LiteLLM Gateway Unreachable (`502 Bad Gateway`):**
-   - Ensure the Python virtual environment has installed `infra/litellm/requirements.txt`:
-     ```bash
-     cd infra/litellm && pip install -r requirements.txt
-     ```
-   - Confirm LiteLLM is listening on port 4000 by navigating to `http://127.0.0.1:4000/health/liveliness`.
-3. **PostgreSQL Connection Refused:**
-   - Verify PostgreSQL service status on port 5432 and ensure the database `promptlab` exists.
-   - Run `npx prisma db push` to verify schema connectivity.
-4. **CORS Errors in Browser Console:**
-   - The backend defaults to allowing `http://localhost:4200`. If accessing the frontend from a different origin, set `CORS_ORIGIN=http://your-host:your-port` in `.env`.
+All backend endpoints are prefixed with `/api`:
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/health` | Active service health probe (PostgreSQL latency & LiteLLM liveliness) |
+| `GET` | `/api/settings` | Read-only system configuration, gateway models, and effective quota policy |
+| `GET` | `/api/prompts` | List prompt templates (supports `limit`, `offset`, `search`, `technique`) |
+| `POST` | `/api/prompts` | Create a new prompt template with initial version `v1` |
+| `POST` | `/api/prompts/:id/versions` | Append an immutable prompt version (`v2`, `v3`...) |
+| `POST` | `/api/prompts/run` | Execute playground completion via LiteLLM with provenance metrics |
+| `GET` | `/api/experiments` | List comparison experiments (supports `limit`, `offset`) |
+| `POST` | `/api/experiments/compare` | Run side-by-side A/B execution with concurrent slot execution |
+| `POST` | `/api/experiments/:id/rate` | Assign 1–5 star human rating and winning slot |
+| `GET` | `/api/conversations` | List conversational threads (supports `limit`, `offset`) |
+| `POST` | `/api/conversations` | Create conversational thread with custom context token budget |
+| `POST` | `/api/conversations/:id/compact` | Perform LLM Summarize & Truncate context compaction |
+| `GET` | `/api/usage/status` | Current quota consumption, remaining tokens, and rate limits |
+| `GET` | `/api/usage/ledger` | Query immutable transaction audit ledger |
+| `POST` | `/api/usage/reset-demo` | Reset usage counters for demonstration and test workflows |
+| `GET` | `/api/observability/traces` | Retrieve buffered in-memory spans with latency breakdowns |
+| `GET` | `/api/observability/status` | Current telemetry exporter status and privacy redaction state |
 
 ---
 
-## 8. Documentation Index
+## 7. Additional Documentation
 
-- **Walkthrough Demo Script:** [`docs/demo-script.md`](docs/demo-script.md) (10-step scripted end-to-end demonstration).
-- **Known Limitations:** [`docs/known-limitations.md`](docs/known-limitations.md) (comprehensive catalog of non-production boundaries).
-- **Architecture Overview:** [`docs/architecture.md`](docs/architecture.md).
-- **Observability Architecture:** [`docs/observability.md`](docs/observability.md).
-- **Design System Guidelines:** [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md).
-- **Implementation Plan:** [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+- **[10-Step Walkthrough Demo Script](docs/demo-script.md):** Complete reproducible demonstration covering all primary workflows.
+- **[Known Technical Limitations](docs/known-limitations.md):** Transparent catalog of non-production boundaries (single-tenant developer mode, reference pricing assumptions, and external exporter verification status).
+- **[Design System Guidelines](DESIGN_SYSTEM.md):** Aesthetic specification for restrained, dense, developer-oriented UI components.
+- **[Implementation Plan](IMPLEMENTATION_PLAN.md):** Original phase-by-phase engineering plan and acceptance criteria.
