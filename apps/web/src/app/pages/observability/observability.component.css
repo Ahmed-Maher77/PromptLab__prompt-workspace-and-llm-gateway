@@ -598,3 +598,47 @@
   padding: 0 8px;
   font-size: 11px;
 }
+
+@media (max-width: 720px) {
+  .observability-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
+  .status-grid {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  }
+
+  .filter-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .filter-item {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .traces-table-container {
+    overflow-x: auto;
+  }
+
+  .data-table {
+    min-width: 760px;
+  }
+}
+
+.observability-header { align-items: center; padding-bottom: var(--space-5); }
+.observability-container .status-card,
+.observability-container .filter-card,
+.observability-container .traces-table-container {
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgb(16 24 40 / 3%);
+}
+.observability-container .data-table th { font-size: 11px; letter-spacing: .035em; text-transform: uppercase; }
+.observability-container .data-table tr:hover { background: var(--color-bg); }
+.observability-container .data-table tr.row-selected { background: var(--color-info-bg); }

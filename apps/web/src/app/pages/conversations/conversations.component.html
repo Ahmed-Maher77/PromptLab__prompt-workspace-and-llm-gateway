@@ -1,18 +1,27 @@
+<section class="conversations-page">
+  <header class="conversations-page-header">
+    <div>
+      <p class="page-eyebrow">WORKSPACE</p>
+      <h1>Conversations</h1>
+      <p class="page-description">Continue a session, inspect its context, or start a new conversation.</p>
+    </div>
+    <button class="btn btn-primary" (click)="openNewModal()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+      New conversation
+    </button>
+  </header>
+
 <div class="conversations-layout">
   <!-- Left Column: Conversations List -->
   <aside class="conversations-sidebar">
     <div class="sidebar-header">
       <div class="header-title-row">
-        <h3>Conversations</h3>
-        <button class="btn btn-primary btn-sm" (click)="openNewModal()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
-          New
-        </button>
+        <h3>All sessions</h3>
       </div>
-      <p class="sidebar-subtitle">Persistent session context & compaction</p>
+      <p class="sidebar-subtitle">{{ conversations().length }} saved</p>
     </div>
 
     <!-- Conversations List -->
@@ -599,3 +608,4 @@
     </div>
   }
 </div>
+</section>

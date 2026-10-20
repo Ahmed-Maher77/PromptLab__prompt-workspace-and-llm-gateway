@@ -2,10 +2,10 @@
   <!-- Top Bar / Breadcrumbs -->
   <header class="compare-header">
     <div class="header-left">
+      <p class="page-eyebrow">PROMPT EVALUATION</p>
+      <h1 class="compare-title">Compare prompts</h1>
       <div class="breadcrumbs">
-        <span class="breadcrumb-item">Compare</span>
-        <span class="breadcrumb-sep">/</span>
-        <span class="breadcrumb-current">{{ experimentName || 'Untitled Comparison' }}</span>
+        <span class="breadcrumb-current">{{ experimentName || 'Untitled comparison' }}</span>
       </div>
       <p class="header-sub">
         Evaluate prompt versions and models side by side using shared inputs, configurable criteria, and honest metrics.
@@ -51,7 +51,14 @@
   </div>
 
   <!-- Shared Configuration Strip -->
-  <section class="shared-config-panel">
+  <section class="shared-config-panel" aria-labelledby="experiment-setup-title">
+    <div class="setup-heading">
+      <div>
+        <p class="section-kicker">STEP 1</p>
+        <h2 id="experiment-setup-title">Experiment setup</h2>
+      </div>
+      <p>Choose shared inputs and scoring rules before comparing the two configurations.</p>
+    </div>
     <div class="config-top-row">
       <div class="form-group exp-name-group">
         <label class="form-label">Experiment Title</label>
@@ -141,6 +148,14 @@
   </section>
 
   <!-- Side-by-Side Dual Slot Engineering Grid -->
+  <section class="comparison-section" aria-labelledby="candidates-title">
+    <div class="comparison-section-heading">
+      <div>
+        <p class="section-kicker">STEP 2</p>
+        <h2 id="candidates-title">Candidate configurations</h2>
+      </div>
+      <p>Adjust each candidate, then run both against the same inputs.</p>
+    </div>
   <section class="side-by-side-grid">
     <!-- ==================== SLOT A ==================== -->
     <div class="slot-column slot-a-col" id="col-slot-a">
@@ -500,6 +515,7 @@
         </div>
       </div>
     </div>
+  </section>
   </section>
 
   <!-- Nondeterminism Disclaimer per DESIGN_SYSTEM.md -->
