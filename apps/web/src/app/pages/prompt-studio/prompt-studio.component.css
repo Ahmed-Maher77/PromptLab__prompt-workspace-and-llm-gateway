@@ -8,6 +8,143 @@
   width: 100%;
 }
 
+.form-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.form-label {
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.form-control {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.form-control-sm {
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+
+textarea.form-control {
+  min-height: 64px;
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+}
+
+.form-control:disabled {
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  cursor: not-allowed;
+}
+
+.text-muted {
+  color: var(--color-text-muted);
+}
+
+.text-xs {
+  font-size: 11px;
+}
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.alert-warning {
+  color: var(--color-warning);
+  background: var(--color-warning-bg);
+  border-color: rgba(148, 98, 0, 0.22);
+}
+
+.alert-danger {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+  border-color: rgba(180, 35, 24, 0.22);
+}
+
+.loading-state,
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.loading-state {
+  color: var(--color-text-muted);
+}
+
+.loading-state p,
+.empty-state p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.empty-state h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.empty-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: prompt-studio-spin 0.8s linear infinite;
+}
+
+.spinner-sm {
+  width: 13px;
+  height: 13px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: prompt-studio-spin 0.8s linear infinite;
+}
+
+@keyframes prompt-studio-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* Header */
 .studio-header {
   display: flex;
@@ -28,9 +165,24 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   font-size: 20px;
   font-weight: 600;
   color: var(--color-text);
+}
+
+.library-title,
+.editor-title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.breadcrumb-item.interactive {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
 }
 
 .breadcrumb-item.interactive {
@@ -139,16 +291,6 @@
   border-color: var(--color-primary);
 }
 
-/* Table */
-.interactive-row {
-  cursor: pointer;
-  transition: background-color 0.1s ease;
-}
-
-.interactive-row:hover {
-  background-color: var(--color-surface-muted);
-}
-
 .prompt-title {
   font-weight: 600;
   font-size: 14px;
@@ -160,9 +302,9 @@
   color: var(--color-text-muted);
   margin-top: 2px;
   max-width: 420px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .techniques-badges {
@@ -191,6 +333,44 @@
 .date-text {
   font-size: 12px;
   color: var(--color-text-muted);
+}
+
+/* Prompt library table */
+.table-container {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.data-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.data-table th {
+  padding: var(--space-3) var(--space-4);
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border-subtle);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 /* =========================================================================
@@ -294,12 +474,12 @@
 /* Two-Column Engineering Grid */
 .workspace-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
   gap: var(--space-4);
   align-items: start;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 960px) {
   .workspace-grid {
     grid-template-columns: 1fr;
   }
@@ -332,9 +512,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .panel-title {
+  margin: 0;
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text);
@@ -435,9 +617,9 @@
 }
 
 .variable-inputs-grid {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
 }
 
 .variable-field {
@@ -766,4 +948,252 @@
   border: 1px solid var(--color-border-subtle);
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.editor-loading {
+  min-height: 240px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+@media (max-width: 720px) {
+  .studio-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .breadcrumbs {
+    flex-wrap: wrap;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
+  .library-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .search-box {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  .editor-top-bar,
+  .meta-inputs {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .version-selector-deck {
+    width: 100%;
+  }
+
+  .workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .panel-header,
+  .deck-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .panel-stats {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .panel-header,
+  .panel-body,
+  .editor-top-bar {
+    padding: var(--space-3);
+  }
+
+  .params-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .playground-panel .params-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-drawer {
+    width: 100%;
+  }
+}
+
+/* Keep the editor focused on prompt content instead of nested card outlines. */
+.editor-top-bar {
+  padding: 0 0 var(--space-4);
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.techniques-selector-bar {
+  padding: var(--space-2) 0;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-radius: 0;
+  background: transparent;
+}
+
+.workspace-grid {
+  gap: var(--space-8);
+}
+
+.workspace-col {
+  gap: var(--space-6);
+}
+
+.editor-view .workspace-col > .panel {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.editor-view .workspace-col > .panel .panel-header {
+  padding: 0 0 var(--space-3);
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: transparent;
+}
+
+.editor-view .workspace-col > .panel .panel-body {
+  padding: var(--space-4) 0 0;
+}
+
+.editor-view .execution-col > .panel + .panel {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.editor-view .metric-pill {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.editor-view .detected-vars-strip {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.editor-view .example-card {
+  padding: var(--space-2) 0 var(--space-2) var(--space-3);
+  border: 0;
+  border-left: 2px solid var(--color-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.editor-view .preview-box,
+.editor-view .output-box {
+  border: 0;
+  border-left: 2px solid var(--color-border);
+  border-radius: 0;
+  background: var(--color-surface-muted);
+}
+
+@media (max-width: 720px) {
+  .workspace-grid {
+    gap: var(--space-6);
+  }
+
+  .editor-view .workspace-col > .panel .panel-header {
+    align-items: flex-start;
+  }
+}
+
+.technique-label-group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.examples-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.examples-disclosure {
+  min-width: 0;
+  flex: 1;
+}
+
+.examples-disclosure summary,
+.settings-disclosure summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.examples-disclosure summary::-webkit-details-marker,
+.settings-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.examples-disclosure summary::before,
+.settings-disclosure summary::before {
+  content: '+';
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.examples-disclosure[open] summary::before,
+.settings-disclosure[open] summary::before {
+  content: '−';
+}
+
+.examples-disclosure .examples-list {
+  margin-top: var(--space-3);
+}
+
+.settings-disclosure .params-row {
+  margin-top: var(--space-4);
+}
+
+.settings-disclosure .param-model {
+  grid-column: 1 / -1;
+}
+
+.playground-panel .params-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-disclosure summary .deck-title {
+  margin-right: auto;
 }

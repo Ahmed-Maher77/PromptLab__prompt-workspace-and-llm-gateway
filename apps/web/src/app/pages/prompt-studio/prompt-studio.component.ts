@@ -166,6 +166,7 @@ export class PromptStudioComponent implements OnInit {
   }
 
   createNewPromptDraft(): void {
+    this.loadingPrompt.set(false);
     this.viewMode.set('editor');
     this.selectedPromptId.set(null);
     this.activePrompt.set(null);
@@ -191,6 +192,12 @@ export class PromptStudioComponent implements OnInit {
   openPromptEditor(promptId: string): void {
     this.viewMode.set('editor');
     this.selectedPromptId.set(promptId);
+    this.activePrompt.set(null);
+    this.promptName = '';
+    this.promptDescription = '';
+    this.templateBody = '';
+    this.variableValues = {};
+    this.fewShotExamples = [];
     this.loadingPrompt.set(true);
     this.runResult.set(null);
     this.runError.set(null);
@@ -434,6 +441,7 @@ export class PromptStudioComponent implements OnInit {
   }
 
   backToLibrary(): void {
+    this.loadingPrompt.set(false);
     this.viewMode.set('library');
     this.selectedPromptId.set(null);
     this.activePrompt.set(null);

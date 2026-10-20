@@ -3,13 +3,14 @@
   <header class="studio-header">
     <div class="header-left">
       <div class="breadcrumbs">
-        <span class="breadcrumb-item" (click)="backToLibrary()" [class.interactive]="viewMode() === 'editor'">
+        <h1 class="breadcrumb-current library-title" *ngIf="viewMode() === 'library'">Prompt Studio</h1>
+        <button type="button" class="breadcrumb-item interactive" *ngIf="viewMode() === 'editor'" (click)="backToLibrary()" aria-label="Back to prompt library">
           Prompt Studio
-        </span>
+        </button>
         <span class="breadcrumb-sep" *ngIf="viewMode() === 'editor'">/</span>
-        <span class="breadcrumb-current" *ngIf="viewMode() === 'editor'">
+        <h1 class="breadcrumb-current editor-title" *ngIf="viewMode() === 'editor'">
           {{ promptName || 'Untitled Prompt' }}
-        </span>
+        </h1>
       </div>
       <p class="header-sub">
         {{ viewMode() === 'library' ? 'Manage prompt templates, compose techniques, and execute playground runs.' : 'Author templates, manage immutable versions, and test live completions.' }}
@@ -51,11 +52,11 @@
         <button
           class="btn btn-primary"
           (click)="saveAsNewVersion()"
-          [disabled]="savingVersion()"
+          [disabled]="savingVersion() || loadingPrompt() || (!!selectedPromptId() && !activePrompt())"
           id="btn-save-version"
         >
           <span *ngIf="savingVersion()" class="spinner-sm"></span>
-          {{ activePrompt() ? 'Save as Version ' + ((activePrompt()?.versions?.[0]?.versionNumber || 1) + 1) : 'Save Prompt (v1)' }}
+          {{ selectedPromptId() ? 'Save as Version ' + ((activePrompt()?.versions?.[0]?.versionNumber || selectedVersionNumber()) + 1) : 'Save Prompt (v1)' }}
         </button>
       </ng-container>
     </div>
@@ -70,6 +71,7 @@
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
         </svg>
+        <label class="visually-hidden" for="input-prompt-search">Search prompt templates</label>
         <input
           type="text"
           class="form-control search-input"
@@ -80,11 +82,12 @@
         />
       </div>
 
-      <div class="technique-filters">
+      <div class="technique-filters" role="group" aria-label="Filter prompts by technique">
         <span class="filter-label">Technique:</span>
         <button
           class="filter-chip"
           [class.active]="selectedTechniqueFilter() === 'all'"
+          [attr.aria-pressed]="selectedTechniqueFilter() === 'all'"
           (click)="onTechniqueFilterChange('all')"
         >
           All
@@ -93,6 +96,7 @@
           *ngFor="let tech of availableTechniques"
           class="filter-chip"
           [class.active]="selectedTechniqueFilter() === tech"
+          [attr.aria-pressed]="selectedTechniqueFilter() === tech"
           (click)="onTechniqueFilterChange(tech)"
         >
           {{ tech }}
@@ -101,7 +105,7 @@
     </div>
 
     <!-- Error State -->
-    <div *ngIf="promptsError()" class="alert alert-danger">
+    <div *ngIf="promptsError()" class="alert alert-danger" role="alert">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="10"></circle>
         <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -111,7 +115,7 @@
     </div>
 
     <!-- Loading State -->
-    <div *ngIf="loadingPrompts()" class="loading-state">
+    <div *ngIf="loadingPrompts()" class="loading-state" role="status">
       <div class="spinner"></div>
       <p>Loading prompt templates...</p>
     </div>
@@ -127,8 +131,8 @@
           <polyline points="10 9 9 9 8 9"></polyline>
         </svg>
       </div>
-      <h3>No prompt templates found</h3>
-      <p>Create your first structured prompt template with variables and technique metadata.</p>
+      <h3>{{ searchQuery() || selectedTechniqueFilter() !== 'all' ? 'No matching prompts' : 'No prompt templates yet' }}</h3>
+      <p>{{ searchQuery() || selectedTechniqueFilter() !== 'all' ? 'Try changing the search or technique filter.' : 'Create a prompt template with reusable variables and technique metadata.' }}</p>
       <button class="btn btn-primary" (click)="createNewPromptDraft()">
         Create New Prompt
       </button>
@@ -147,7 +151,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let p of prompts()" (click)="openPromptEditor(p.id)" class="interactive-row">
+          <tr *ngFor="let p of prompts()">
             <td>
               <div class="prompt-title">{{ p.name }}</div>
               <div class="prompt-desc">{{ p.description || 'No description provided.' }}</div>
@@ -170,8 +174,8 @@
             <td style="text-align: right;">
               <button
                 class="btn btn-secondary btn-sm"
-                (click)="$event.stopPropagation(); openPromptEditor(p.id)"
-                title="Open Editor"
+                (click)="openPromptEditor(p.id)"
+                [attr.aria-label]="'Open ' + p.name"
               >
                 Open
               </button>
@@ -184,11 +188,16 @@
 
   <!-- ======================== VIEW 2: PROMPT EDITOR & PLAYGROUND ======================== -->
   <section *ngIf="viewMode() === 'editor'" class="editor-view">
+    <div *ngIf="loadingPrompt()" class="loading-state editor-loading" role="status">
+      <div class="spinner"></div>
+      <p>Loading prompt and version history…</p>
+    </div>
+
     <!-- Version Bar & Metadata Strip -->
-    <div class="editor-top-bar">
+    <div class="editor-top-bar" *ngIf="!loadingPrompt()">
       <div class="meta-inputs">
         <div class="form-group meta-title-group">
-          <label class="form-label">Template Name</label>
+          <label class="form-label" for="input-prompt-name">Template name</label>
           <input
             type="text"
             class="form-control"
@@ -199,7 +208,7 @@
         </div>
 
         <div class="form-group meta-desc-group">
-          <label class="form-label">Description</label>
+          <label class="form-label" for="input-prompt-description">Description</label>
           <input
             type="text"
             class="form-control"
@@ -212,7 +221,7 @@
 
       <!-- Version Selector -->
       <div class="version-selector-deck" *ngIf="activePrompt()">
-        <label class="form-label">Selected Version</label>
+        <label class="form-label" for="select-prompt-version">Selected version</label>
         <select
           class="form-control select-version"
           [ngModel]="selectedVersionNumber()"
@@ -227,14 +236,18 @@
     </div>
 
     <!-- Composable Technique Tag Selector -->
-    <div class="techniques-selector-bar">
-      <span class="selector-label">Technique Metadata (composable):</span>
+    <div class="techniques-selector-bar" *ngIf="!loadingPrompt()">
+      <div class="technique-label-group">
+        <span class="selector-label">Techniques</span>
+        <span class="text-muted text-xs">Choose all that apply</span>
+      </div>
       <div class="technique-chips">
         <button
           *ngFor="let tech of availableTechniques"
           type="button"
           class="chip-button"
           [class.selected]="isTechniqueSelected(tech)"
+          [attr.aria-pressed]="isTechniqueSelected(tech)"
           (click)="toggleTechnique(tech)"
         >
           <span class="chip-check" *ngIf="isTechniqueSelected(tech)">✓</span>
@@ -244,14 +257,16 @@
     </div>
 
     <!-- Two-Column Engineering Workspace -->
-    <div class="workspace-grid">
+    <div class="workspace-grid" *ngIf="!loadingPrompt()">
       <!-- LEFT COLUMN: Prompt Template Authoring -->
       <div class="workspace-col authoring-col">
         <div class="panel">
           <div class="panel-header">
             <div class="panel-title-group">
-              <span class="panel-title">Prompt Template</span>
-              <span class="text-muted text-xs">Use <code class="inline-code">{{ '{{variable_name}}' }}</code> for dynamic inputs</span>
+              <div>
+                <h2 class="panel-title">Template body</h2>
+                <span class="text-muted text-xs">Use <code class="inline-code">{{ '{{variable_name}}' }}</code> for dynamic inputs</span>
+              </div>
             </div>
             <div class="panel-stats">
               <span class="metric-pill">~{{ estimatedTemplateTokens() }} est. tokens</span>
@@ -263,6 +278,7 @@
             <!-- Template Editor Textarea (Preserves whitespace strictly) -->
             <textarea
               class="template-editor font-mono"
+              aria-label="Prompt template body"
               rows="12"
               [(ngModel)]="templateBody"
               (ngModelChange)="onTemplateChange()"
@@ -289,7 +305,7 @@
               <div class="variable-inputs-grid">
                 <div *ngFor="let varName of detectedVariables()" class="variable-field">
                   <div class="var-field-header">
-                    <label class="font-mono var-label">{{ '{{' + varName + '}}' }}</label>
+                    <label class="font-mono var-label" [attr.for]="'input-var-' + varName">{{ '{{' + varName + '}}' }}</label>
                     <span
                       class="var-status"
                       [class.var-valid]="variableValues[varName] && variableValues[varName].trim().length > 0"
@@ -310,95 +326,39 @@
               </div>
             </div>
 
-            <!-- Few-Shot Examples Deck (Collapsible / Expandable) -->
+            <!-- Optional examples stay out of the way until expanded. -->
             <div class="examples-deck">
-              <div class="deck-header">
-                <div>
-                  <span class="deck-title">Few-Shot Examples ({{ fewShotExamples.length }})</span>
-                  <span class="text-xs text-muted" style="margin-left: var(--space-2);">Demonstration pairs</span>
-                </div>
+              <div class="examples-controls">
+                <details class="examples-disclosure" [open]="fewShotExamples.length > 0">
+                  <summary>
+                    <span class="deck-title">Examples</span>
+                    <span class="text-xs text-muted">{{ fewShotExamples.length ? fewShotExamples.length + ' configured' : 'Optional' }}</span>
+                  </summary>
+                  <div *ngIf="fewShotExamples.length > 0" class="examples-list">
+                    <div *ngFor="let ex of fewShotExamples; let idx = index" class="example-card">
+                      <div class="example-card-header">
+                        <span class="example-index">Example {{ idx + 1 }}</span>
+                        <button type="button" class="btn-text-danger" (click)="removeFewShotExample(idx)" [attr.aria-label]="'Remove example ' + (idx + 1)">
+                          Remove
+                        </button>
+                      </div>
+                      <div class="example-field">
+                        <label class="example-label" [attr.for]="'example-input-' + idx">Input</label>
+                        <textarea class="form-control form-control-sm font-mono" [id]="'example-input-' + idx" rows="2" [(ngModel)]="ex.input" (ngModelChange)="updatePreview()" placeholder="Sample user input..."></textarea>
+                      </div>
+                      <div class="example-field">
+                        <label class="example-label" [attr.for]="'example-output-' + idx">Expected output</label>
+                        <textarea class="form-control form-control-sm font-mono" [id]="'example-output-' + idx" rows="2" [(ngModel)]="ex.output" (ngModelChange)="updatePreview()" placeholder="Expected demonstration output..."></textarea>
+                      </div>
+                    </div>
+                  </div>
+                </details>
                 <button type="button" class="btn btn-secondary btn-sm" (click)="addFewShotExample()" id="btn-add-example">
-                  + Add Example
+                  Add example
                 </button>
               </div>
-
-              <div *ngIf="fewShotExamples.length > 0" class="examples-list">
-                <div *ngFor="let ex of fewShotExamples; let idx = index" class="example-card">
-                  <div class="example-card-header">
-                    <span class="example-index">Example {{ idx + 1 }}</span>
-                    <button type="button" class="btn-text-danger" (click)="removeFewShotExample(idx)" title="Remove example">
-                      Remove
-                    </button>
-                  </div>
-                  <div class="example-field">
-                    <label class="example-label">Input:</label>
-                    <textarea
-                      class="form-control form-control-sm font-mono"
-                      rows="2"
-                      [(ngModel)]="ex.input"
-                      (ngModelChange)="updatePreview()"
-                      placeholder="Sample user input..."
-                    ></textarea>
-                  </div>
-                  <div class="example-field">
-                    <label class="example-label">Expected Output:</label>
-                    <textarea
-                      class="form-control form-control-sm font-mono"
-                      rows="2"
-                      [(ngModel)]="ex.output"
-                      (ngModelChange)="updatePreview()"
-                      placeholder="Expected demonstration output..."
-                    ></textarea>
-                  </div>
-                </div>
-              </div>
             </div>
 
-            <!-- Model Defaults & Parameters -->
-            <div class="parameters-deck">
-              <div class="deck-header">
-                <span class="deck-title">Model Defaults</span>
-              </div>
-              <div class="params-row">
-                <div class="form-group param-model">
-                  <label class="form-label">Default Model</label>
-                  <select class="form-control form-control-sm" [(ngModel)]="selectedModel" id="select-model" [disabled]="availableModels().length === 0">
-                    <option value="" disabled *ngIf="availableModels().length === 0">
-                      {{ gatewayConnected() ? 'No models configured in gateway' : 'Gateway disconnected — no models' }}
-                    </option>
-                    <option *ngFor="let m of availableModels()" [value]="m.id">
-                      {{ m.name }} ({{ m.provider }})
-                    </option>
-                  </select>
-                </div>
-
-                <div class="form-group param-temp">
-                  <div class="temp-header">
-                    <label class="form-label">Temperature: {{ temperature }}</label>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    [(ngModel)]="temperature"
-                    class="range-slider"
-                  />
-                </div>
-
-                <div class="form-group param-tokens">
-                  <label class="form-label">Max Tokens</label>
-                  <input
-                    type="number"
-                    class="form-control form-control-sm"
-                    [(ngModel)]="maxTokens"
-                    min="64"
-                    max="8192"
-                    step="64"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -409,7 +369,7 @@
         <div class="panel">
           <div class="panel-header">
             <div class="panel-title-group">
-              <span class="panel-title">Resolved Prompt Preview</span>
+              <h2 class="panel-title">Resolved prompt</h2>
               <span class="badge badge-neutral">Live Assembly</span>
             </div>
             <div class="panel-stats" *ngIf="preview()">
@@ -440,7 +400,7 @@
         <div class="panel playground-panel">
           <div class="panel-header">
             <div class="panel-title-group">
-              <span class="panel-title">Playground Execution</span>
+              <h2 class="panel-title">Test run</h2>
               <span class="badge badge-neutral">Via LiteLLM Proxy</span>
             </div>
 
@@ -460,6 +420,36 @@
           </div>
 
           <div class="panel-body">
+            <details class="parameters-deck settings-disclosure">
+              <summary class="deck-header">
+                <span class="deck-title">Run settings</span>
+                <span class="text-xs text-muted">{{ selectedModel || 'No model selected' }} · {{ temperature }} temp · {{ maxTokens }} max tokens</span>
+              </summary>
+              <div class="params-row">
+                <div class="form-group param-model">
+                  <label class="form-label" for="select-model">Model</label>
+                  <select class="form-control form-control-sm" [(ngModel)]="selectedModel" id="select-model" [disabled]="availableModels().length === 0">
+                    <option value="" disabled *ngIf="availableModels().length === 0">
+                      {{ gatewayConnected() ? 'No models configured in gateway' : 'Gateway disconnected — no models' }}
+                    </option>
+                    <option *ngFor="let m of availableModels()" [value]="m.id">
+                      {{ m.name }} ({{ m.provider }})
+                    </option>
+                  </select>
+                </div>
+
+                <div class="form-group param-temp">
+                  <label class="form-label" for="input-temperature">Temperature: {{ temperature }}</label>
+                  <input type="range" min="0" max="1" step="0.05" id="input-temperature" [(ngModel)]="temperature" class="range-slider" />
+                </div>
+
+                <div class="form-group param-tokens">
+                  <label class="form-label" for="input-max-tokens">Max tokens</label>
+                  <input type="number" class="form-control form-control-sm" id="input-max-tokens" [(ngModel)]="maxTokens" min="64" max="8192" step="64" />
+                </div>
+              </div>
+            </details>
+
             <!-- Gateway Unreachable Warning -->
             <div *ngIf="!gatewayConnected()" class="alert alert-warning">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -471,7 +461,7 @@
             </div>
 
             <!-- Execution Error Alert -->
-            <div *ngIf="runError()" class="alert alert-danger" id="alert-run-error">
+            <div *ngIf="runError()" class="alert alert-danger" id="alert-run-error" role="alert">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="12" y1="8" x2="12" y2="12"></line>
@@ -509,7 +499,7 @@
               </div>
 
               <!-- Output Box (Strictly preserves formatting and whitespace) -->
-              <div class="output-box font-mono" id="output-completion-content">
+              <div class="output-box font-mono" id="output-completion-content" aria-live="polite">
                 {{ runResult()!.content }}
               </div>
             </div>
@@ -529,9 +519,9 @@
 
   <!-- ======================== VERSION HISTORY DRAWER ======================== -->
   <div class="history-drawer-backdrop" *ngIf="showVersionHistory()" (click)="toggleVersionHistory()">
-    <div class="history-drawer" (click)="$event.stopPropagation()">
+    <div class="history-drawer" role="dialog" aria-modal="true" aria-labelledby="history-drawer-title" (click)="$event.stopPropagation()">
       <div class="drawer-header">
-        <span class="drawer-title">Version Audit History</span>
+        <h2 class="drawer-title" id="history-drawer-title">Version history</h2>
         <button class="btn btn-ghost btn-sm" (click)="toggleVersionHistory()">✕</button>
       </div>
 
@@ -541,7 +531,13 @@
             *ngFor="let v of activePrompt()?.versions"
             class="timeline-item"
             [class.active]="v.versionNumber === selectedVersionNumber()"
+            [attr.aria-pressed]="v.versionNumber === selectedVersionNumber()"
+            [attr.aria-label]="'Load version ' + v.versionNumber"
+            role="button"
+            tabindex="0"
             (click)="loadVersion(v.versionNumber); toggleVersionHistory()"
+            (keydown.enter)="loadVersion(v.versionNumber); toggleVersionHistory()"
+            (keydown.space)="$event.preventDefault(); loadVersion(v.versionNumber); toggleVersionHistory()"
           >
             <div class="timeline-dot"></div>
             <div class="timeline-content">
