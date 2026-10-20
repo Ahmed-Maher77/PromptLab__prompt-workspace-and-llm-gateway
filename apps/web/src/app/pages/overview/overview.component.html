@@ -1,24 +1,27 @@
 <div class="page-container">
   <div class="page-header">
     <div>
-      <h1 class="page-title">System Status & Environment</h1>
-      <p class="page-subtitle">Real-time connectivity and service health across the PromptLab platform.</p>
+      <p class="eyebrow">WORKSPACE / STATUS</p>
+      <h1 class="page-title">Platform health</h1>
+      <p class="page-subtitle">Live checks for the API, database, and model gateway.</p>
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" (click)="refreshHealth()" [disabled]="isLoading" aria-label="Refresh status">
-        <span *ngIf="isLoading">Checking...</span>
-        <span *ngIf="!isLoading">Check Status</span>
+        <span *ngIf="isLoading">Checking…</span>
+        <span *ngIf="!isLoading">Refresh status</span>
       </button>
     </div>
   </div>
+
+  <p class="checked-at" aria-live="polite">{{ isLoading ? 'Checking services…' : 'Last checked ' + (lastChecked | date:'mediumTime') }}</p>
 
   <div class="grid-cards">
     <!-- API Status Card -->
     <div class="panel status-card">
       <div class="card-header">
-        <span class="card-label">Application Backend</span>
-        <span class="badge" [ngClass]="healthData?.status === 'ok' ? 'badge-success' : 'badge-danger'">
-          {{ healthData ? (healthData.status === 'ok' ? 'Online' : 'Degraded') : 'Offline' }}
+        <span class="card-label">Application API</span>
+        <span class="badge" [ngClass]="isLoading ? 'badge-neutral' : (healthData?.status === 'ok' ? 'badge-success' : 'badge-danger')">
+          {{ isLoading ? 'Checking' : (healthData ? (healthData.status === 'ok' ? 'Online' : 'Degraded') : 'Offline') }}
         </span>
       </div>
       <div class="card-body">
@@ -41,8 +44,8 @@
     <div class="panel status-card">
       <div class="card-header">
         <span class="card-label">PostgreSQL Database</span>
-        <span class="badge" [ngClass]="healthData?.services?.database?.status === 'connected' ? 'badge-success' : 'badge-danger'">
-          {{ healthData?.services?.database?.status === 'connected' ? 'Connected' : 'Disconnected' }}
+        <span class="badge" [ngClass]="isLoading ? 'badge-neutral' : (healthData?.services?.database?.status === 'connected' ? 'badge-success' : 'badge-danger')">
+          {{ isLoading ? 'Checking' : (healthData?.services?.database?.status === 'connected' ? 'Connected' : 'Disconnected') }}
         </span>
       </div>
       <div class="card-body">
@@ -66,9 +69,9 @@
     <!-- LiteLLM Gateway Card -->
     <div class="panel status-card">
       <div class="card-header">
-        <span class="card-label">LiteLLM Proxy Gateway</span>
-        <span class="badge" [ngClass]="healthData?.services?.gateway?.serviceAvailability === 'available' ? 'badge-success' : 'badge-neutral'">
-          {{ healthData?.services?.gateway?.serviceAvailability === 'available' ? 'Service Available' : 'Service Standby' }}
+        <span class="card-label">Model gateway</span>
+        <span class="badge" [ngClass]="isLoading ? 'badge-neutral' : (healthData?.services?.gateway?.serviceAvailability === 'available' ? 'badge-success' : 'badge-neutral')">
+          {{ isLoading ? 'Checking' : (healthData?.services?.gateway?.serviceAvailability === 'available' ? 'Available' : 'Standby') }}
         </span>
       </div>
       <div class="card-body">
@@ -92,64 +95,21 @@
     </div>
   </div>
 
-  <!-- Modules Status Section -->
-  <div class="panel modules-panel">
-    <h2 class="section-title">POC Implementation Roadmap</h2>
-    <div class="table-container">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Phase</th>
-            <th>Module Name</th>
-            <th>Scope & Deliverables</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="font-mono">Phase 0</td>
-            <td><strong>Repository & Foundation</strong></td>
-            <td>Monorepo setup, Angular + NestJS scaffold, Prisma models, health endpoint, safe envs</td>
-            <td><span class="badge badge-success">Completed</span></td>
-          </tr>
-          <tr>
-            <td class="font-mono">Phase 1</td>
-            <td>Prompt Studio</td>
-            <td>Prompt library, technique templates, immutable versioning, 1-provider playground</td>
-            <td><span class="badge badge-neutral">Planned</span></td>
-          </tr>
-          <tr>
-            <td class="font-mono">Phase 2</td>
-            <td>Compare & Experiments</td>
-            <td>Side-by-side A/B execution, latency and token metrics, manual/repeatable evaluation</td>
-            <td><span class="badge badge-neutral">Planned</span></td>
-          </tr>
-          <tr>
-            <td class="font-mono">Phase 3</td>
-            <td>Conversations & Context</td>
-            <td>Context assembly, inspection, budget estimation, manual/auto compaction, checkpoints</td>
-            <td><span class="badge badge-neutral">Planned</span></td>
-          </tr>
-          <tr>
-            <td class="font-mono">Phase 4</td>
-            <td>Monthly Quotas & Ledger</td>
-            <td>User token allowances, concurrency-safe reservations, post-call reconciliation, limits</td>
-            <td><span class="badge badge-neutral">Planned</span></td>
-          </tr>
-          <tr>
-            <td class="font-mono">Phase 5</td>
-            <td>Gateway & Observability</td>
-            <td>LiteLLM integration, correlation tracing, provider errors, OpenTelemetry/Langfuse</td>
-            <td><span class="badge badge-neutral">Planned</span></td>
-          </tr>
-          <tr>
-            <td class="font-mono">Phase 6</td>
-            <td>Hardening & Delivery</td>
-            <td>Pagination, security audit, secret redaction, end-to-end verification, demo script</td>
-            <td><span class="badge badge-neutral">Planned</span></td>
-          </tr>
-        </tbody>
-      </table>
+  <section class="workspace-section" aria-labelledby="modules-heading">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">PROMPTLAB</p>
+        <h2 class="section-title" id="modules-heading">Workspace modules</h2>
+      </div>
+      <span class="module-count">6 modules</span>
     </div>
-  </div>
+    <nav class="module-grid" aria-label="Workspace modules">
+      <a class="module-link" routerLink="/prompt-studio"><span class="module-index">01</span><span><strong>Prompt Studio</strong><small>Build and version prompt templates</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
+      <a class="module-link" routerLink="/compare"><span class="module-index">02</span><span><strong>Compare</strong><small>Run and review model experiments</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
+      <a class="module-link" routerLink="/conversations"><span class="module-index">03</span><span><strong>Conversations</strong><small>Inspect context and manage dialogue</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
+      <a class="module-link" routerLink="/usage"><span class="module-index">04</span><span><strong>Usage &amp; quotas</strong><small>Track allowance and request history</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
+      <a class="module-link" routerLink="/observability"><span class="module-index">05</span><span><strong>Observability</strong><small>Review traces and gateway activity</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
+      <a class="module-link" routerLink="/settings"><span class="module-index">06</span><span><strong>Settings</strong><small>Inspect configured services and models</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
+    </nav>
+  </section>
 </div>
