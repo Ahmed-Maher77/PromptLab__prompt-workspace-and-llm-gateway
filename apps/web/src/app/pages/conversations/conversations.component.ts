@@ -37,7 +37,7 @@ export class ConversationsComponent implements OnInit {
   newTitle = '';
   newProvider = 'openai';
   newModel = 'gpt-4o-mini';
-  newSystemPrompt = 'You are a knowledgeable and concise technical AI assistant.';
+  newSystemPrompt = 'You are a knowledgeable and concise technical software assistant.';
   creatingConversation = signal<boolean>(false);
 
   // Context Inspector Drawer/Modal

@@ -144,7 +144,7 @@ This script provides an end-to-end, reproducible walkthrough of all primary capa
 - **Route:** `/conversations` (with active conversation)
 - **Action:**
   1. Click the **Compact Context** button in the conversation header.
-  2. Choose Compaction Strategy: **Summarize & Truncate** (replaces older history with an LLM-generated summary, keeping the system prompt and last 2 user-assistant turns).
+  2. Choose Compaction Strategy: **Summarize & Truncate** (replaces older history with a distilled conversation summary, keeping the system prompt and last 2 user-assistant turns).
   3. Click **Confirm Compaction**.
 - **Expected Result:**
   - A dedicated **Summary Banner** appears at the top of the conversation thread containing the distilled memory.

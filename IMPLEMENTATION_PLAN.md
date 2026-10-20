@@ -1,7 +1,7 @@
 # PromptLab --- Implementation Plan
 
 **Product:** PromptLab --- Prompt Engineering & LLM Gateway\
-**Purpose:** Phased implementation plan for Antigravity\
+**Purpose:** Phased engineering specification and delivery roadmap\
 **Approach:** Working vertical slices, modular monolith application
 backend, separate LLM gateway\
 **Default stack:** Angular + TypeScript, NestJS, PostgreSQL, Prisma,
@@ -20,7 +20,7 @@ gateway with provider abstraction, rate limits and observability.
 The POC must demonstrate working behavior and tests---not just a
 polished UI.
 
-## 2. Rules for the implementation agent
+## 2. Engineering and implementation standards
 
 1.  **Inspect before changing.** Inspect the repository, README, package
     manifests, existing architecture, tests, lint/typecheck commands,
@@ -491,9 +491,9 @@ reduces real duplication.
 10. Open the request trace and show the application/gateway path and
     error/latency details.
 
-## 9. Final report required at the end of each phase
+## 9. Final phase acceptance checklist
 
-Antigravity must report: - What was implemented. - Key files
+Each phase delivery must verify: - What was implemented. - Key files
 created/changed. - Architecture decisions and tradeoffs. - Commands
 actually run and their real results. - Tests added and coverage of
 acceptance criteria. - Screenshots or a concise UI walkthrough where

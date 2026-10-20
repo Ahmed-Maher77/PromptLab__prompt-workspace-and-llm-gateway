@@ -530,7 +530,7 @@ export class ConversationsService {
 
     // Call LLM for summarization
     const summarizationPrompt =
-      `You are an AI assistant performing conversation history compaction.\n` +
+      `You are a specialized conversation summarizer performing context compaction.\n` +
       `Synthesize the following conversation transcript into:\n` +
       `1. A concise, comprehensive summary preserving key context, user requests, and assistant responses.\n` +
       `2. A list of important retained facts, decisions, constraints, or user preferences.\n\n` +

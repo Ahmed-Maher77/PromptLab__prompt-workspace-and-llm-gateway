@@ -1,8 +1,8 @@
 # PromptLab --- Design System
 
-**Status:** Initial implementation specification\
+**Status:** Implementation specification\
 **Product:** PromptLab --- Prompt Engineering & LLM Gateway\
-**Audience:** Antigravity and engineers implementing the POC
+**Audience:** Engineering team and platform contributors
 
 ## 1. Product principles
 
@@ -11,7 +11,7 @@ comparing experiments, managing LLM conversations and context, and
 observing/controlling usage.
 
 The interface must feel like a credible engineering tool---not a
-marketing site or a generic AI-generated dashboard.
+marketing site or a generic template dashboard.
 
 ### Design principles
 
