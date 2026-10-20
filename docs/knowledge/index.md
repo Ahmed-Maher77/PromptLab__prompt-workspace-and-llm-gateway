@@ -9,7 +9,7 @@ last_updated: "2026-10-20"
 
 # PromptLab Knowledge Base
 
-Welcome to the PromptLab Knowledge Base, structured in accordance with the **Open Knowledge Format (OKF v0.2)**. This repository provides structured, traversable documentation, architectural decision records, domain concept definitions, and operational runbooks for the engineering team.
+Welcome to the PromptLab Knowledge Base, structured in accordance with the **Open Knowledge Format (OKF v0.2)**. This repository provides structured, traversable documentation, architectural decision records, domain concept definitions, and operational runbooks for software engineers, automated tooling, and RAG architectures.
 
 ---
 
@@ -63,7 +63,7 @@ docs/knowledge/
 
 ---
 
-## How to Navigate This Knowledge Base
+## Knowledge Traversal Guidance
 
 When inspecting this repository:
 1. **Locate Intent:** Use this root `index.md` to identify the appropriate category before reading individual documents.

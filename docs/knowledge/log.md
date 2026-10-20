@@ -5,7 +5,7 @@ This log chronologically records architectural milestones, specification evoluti
 ---
 
 ## 2026-10-20 — Open Knowledge Format (OKF v0.2) Adoption & Final Delivery
-- **Scope:** Adopted Google Open Knowledge Format (OKF v0.2) to structure repository documentation into a linked, navigable knowledge base.
+- **Scope:** Adopted Google Open Knowledge Format (OKF v0.2) to structure repository documentation into a traversable, machine-readable knowledge bundle.
 - **Artifacts Created:**
   - Root `docs/knowledge/index.md` and `log.md`.
   - Architecture Decision Records (`adr-001` through `adr-008`) under `docs/knowledge/decisions/`.

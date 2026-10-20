@@ -13,11 +13,11 @@ PromptLab is an enterprise-grade developer workspace for prompt engineering, sid
 
 ## 1. Open Knowledge Base (OKF v0.2)
 
-This repository adopts the **Google Open Knowledge Format (OKF v0.2)**, organizing domain knowledge, architectural choices, and operational runbooks into a linked, navigable documentation graph.
+This repository adopts the **Google Open Knowledge Format (OKF v0.2)**, organizing domain knowledge, architectural choices, and operational runbooks into a traversable, machine-readable documentation graph.
 
 | Knowledge Area | Description | Direct Link |
 | :--- | :--- | :--- |
-| **Root Index** | Master entry point for the documentation | [`docs/knowledge/index.md`](docs/knowledge/index.md) |
+| **Root Index** | Master entry point for engineers, automated tooling, and RAG architectures | [`docs/knowledge/index.md`](docs/knowledge/index.md) |
 | **Architecture Decisions (ADRs)** | Formal records documenting 8 core architectural decisions (ADR-001 through ADR-008) | [`docs/knowledge/decisions/`](docs/knowledge/decisions/index.md) |
 | **Domain Concepts** | Comprehensive specifications for templates, experiments, context compaction, quotas, and traces | [`docs/knowledge/concepts/`](docs/knowledge/concepts/index.md) |
 | **System Architecture** | Multi-tier network topology, component interactions, and relational data schemas | [`docs/knowledge/architecture/`](docs/knowledge/architecture/index.md) |
