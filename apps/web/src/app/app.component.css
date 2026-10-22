@@ -121,9 +121,7 @@
 }
 
 .sidebar-heading {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.6px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-text-muted);
   padding: 0 var(--space-3);

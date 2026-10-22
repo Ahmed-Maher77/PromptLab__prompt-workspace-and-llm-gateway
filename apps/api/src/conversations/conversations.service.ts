@@ -23,6 +23,7 @@ import {
   ContextInspectionResult,
 } from './context-policy';
 import { Prisma } from '@prisma/client';
+import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
 
 @Injectable()
 export class ConversationsService {
@@ -39,17 +40,39 @@ export class ConversationsService {
    * Ensures a default developer user exists.
    */
   private async getOrCreateDefaultUser(): Promise<string> {
-    const existing = await this.prisma.user.findFirst();
+    const existing =
+      typeof this.prisma.user.findUnique === 'function'
+        ? await this.prisma.user.findUnique({ where: { id: DEFAULT_DEV_USER.id } })
+        : null;
     if (existing) {
       return existing.id;
     }
 
+    const first = await this.prisma.user.findFirst();
+    if (first) {
+      return first.id;
+    }
+
+    if (typeof this.prisma.user.upsert === 'function') {
+      const created = await this.prisma.user.upsert({
+        where: { id: DEFAULT_DEV_USER.id },
+        update: {},
+        create: {
+          id: DEFAULT_DEV_USER.id,
+          email: DEFAULT_DEV_USER.email,
+          displayName: DEFAULT_DEV_USER.displayName,
+          role: DEFAULT_DEV_USER.role,
+        },
+      });
+      return created.id;
+    }
+
     const created = await this.prisma.user.create({
       data: {
-        id: 'u-developer-1',
-        email: 'developer@promptlab.local',
-        displayName: 'Developer',
-        role: 'developer',
+        id: DEFAULT_DEV_USER.id,
+        email: DEFAULT_DEV_USER.email,
+        displayName: DEFAULT_DEV_USER.displayName,
+        role: DEFAULT_DEV_USER.role,
       },
     });
     return created.id;
@@ -173,6 +196,7 @@ export class ConversationsService {
 
     return {
       id: conversation.id,
+      ownerId: conversation.ownerId,
       title: conversation.title,
       provider: conversation.provider,
       model: conversation.model,
@@ -377,6 +401,7 @@ export class ConversationsService {
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
+        userId: conv.ownerId || DEFAULT_DEV_USER.id,
         model: conv.model,
         provider: conv.provider,
         estimatedTokens,
@@ -542,11 +567,67 @@ export class ConversationsService {
     let summaryText = '';
     let retainedFacts: string[] = [];
 
+    const estimatedCompactionTokens = estimateTokens(summarizationPrompt) + 1024;
+    const requestId = `req-comp-${conv.id}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    const trace = this.observabilityService?.startTrace({
+      name: `Compaction Summarization (${conv.model})`,
+      operation: 'conversation.turn',
+      model: conv.model,
+      provider: conv.provider,
+      metadata: { conversationId: conv.id, requestId, targetSeq },
+    });
+
+    const reserveSpan = trace?.startSpan('quota.reserve', { estimatedTokens: estimatedCompactionTokens, requestId });
+    if (this.usageService) {
+      await this.usageService.reserveUsage({
+        requestId,
+        userId: conv.ownerId || DEFAULT_DEV_USER.id,
+        model: conv.model,
+        provider: conv.provider,
+        estimatedTokens: estimatedCompactionTokens,
+        conversationId: conv.id,
+      });
+    }
+    reserveSpan?.end('ok');
+
+    const llmSpan = trace?.startSpan('litellm.chat_completion', { model: conv.model });
     const llmResult = await this.providersService.executeChatCompletion({
       model: conv.model,
       messages: [{ role: 'user', content: summarizationPrompt }],
       temperature: 0.3,
       maxTokens: 1024,
+      traceId: trace?.traceId,
+      spanId: llmSpan?.id,
+      requestId,
+    });
+    llmSpan?.end(llmResult.success ? 'ok' : 'error', {
+      latencyMs: llmResult.latencyMs,
+      errorCode: llmResult.errorType,
+    });
+
+    const reconcileSpan = trace?.startSpan('quota.reconcile', { requestId });
+    if (this.usageService) {
+      await this.usageService.reconcileUsage({
+        requestId,
+        success: llmResult.success,
+        usage: llmResult.usage,
+        latencyMs: llmResult.latencyMs,
+        error: llmResult.errorMessage,
+      });
+    }
+    reconcileSpan?.end('ok');
+
+    const promptTokens = llmResult.usage?.promptTokens || 0;
+    const completionTokens = llmResult.usage?.completionTokens || 0;
+    const cost = calculateCost(conv.model, promptTokens, completionTokens);
+
+    trace?.complete({
+      status: llmResult.success ? 'success' : 'error',
+      usage: llmResult.usage,
+      cost,
+      errorCode: llmResult.errorType,
+      errorMessage: llmResult.errorMessage,
     });
 
     if (llmResult.success && llmResult.content) {

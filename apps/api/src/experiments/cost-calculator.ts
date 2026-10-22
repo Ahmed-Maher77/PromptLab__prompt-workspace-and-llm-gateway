@@ -46,8 +46,19 @@ export function registerModelPricing(model: string, pricing: ModelPricing): void
   KNOWN_MODEL_PRICING[model.toLowerCase()] = pricing;
 }
 
+/**
+ * Strips known vendor prefixes (e.g. openai/gpt-4o -> gpt-4o).
+ */
+export function normalizeModelName(model: string): string {
+  const lower = (model || '').toLowerCase().trim();
+  const slashIdx = lower.lastIndexOf('/');
+  return slashIdx !== -1 ? lower.substring(slashIdx + 1) : lower;
+}
+
 export function getModelPricing(model: string): ModelPricing | null {
-  return KNOWN_MODEL_PRICING[model.toLowerCase()] || null;
+  const key = (model || '').toLowerCase().trim();
+  const normalized = normalizeModelName(model);
+  return KNOWN_MODEL_PRICING[key] || KNOWN_MODEL_PRICING[normalized] || null;
 }
 
 export interface CostCalculationResult {

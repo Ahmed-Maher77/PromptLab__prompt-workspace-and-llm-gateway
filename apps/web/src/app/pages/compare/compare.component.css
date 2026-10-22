@@ -202,11 +202,9 @@
 
 .slot-badge {
   font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
+  font-weight: 600;
   padding: 2px 8px;
   border-radius: var(--radius-sm);
-  letter-spacing: 0.5px;
 }
 
 .badge-slot-a {
@@ -346,11 +344,9 @@
 }
 
 .criteria-deck-heading {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 .criteria-badges {
@@ -577,13 +573,11 @@
 
 .header-left { gap: var(--space-1); }
 .header-sub { max-width: 680px; line-height: 1.55; }
-.page-eyebrow,
 .section-kicker {
   margin: 0;
-  color: var(--color-primary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .1em;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .breadcrumbs { font-size: 12px; }

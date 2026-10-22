@@ -136,11 +136,9 @@
 }
 
 .stat-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .stat-value {
@@ -443,10 +441,8 @@
 .table th {
   background: var(--color-bg);
   padding: var(--space-3) var(--space-4);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--color-text-muted);
   border-bottom: 1px solid var(--color-border);
   white-space: nowrap;
@@ -613,13 +609,6 @@
 }
 
 .usage-header { align-items: center; padding-bottom: var(--space-5); }
-.usage-header .page-eyebrow {
-  margin: 0 0 3px;
-  color: var(--color-primary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .1em;
-}
 .usage-header .page-title {
   margin: 0;
   font-size: clamp(24px, 2vw, 30px);

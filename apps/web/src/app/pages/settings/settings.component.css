@@ -157,11 +157,9 @@
 }
 
 .section-subheading {
-  font-size: 0.75rem;
-  text-transform: uppercase;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.05em;
-  color: var(--color-text-muted, #667085);
+  color: var(--color-text-muted);
 }
 
 .model-item {

@@ -8,6 +8,7 @@ import { CreatePromptDto, PromptVariableDto, FewShotExampleDto } from './dto/cre
 import { CreateVersionDto } from './dto/create-version.dto';
 import { PreviewPromptDto, RunPlaygroundDto } from './dto/run-prompt.dto';
 import { Prisma } from '@prisma/client';
+import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
 
 export interface PromptSummary {
   id: string;
@@ -85,13 +86,13 @@ export class PromptsService implements OnModuleInit {
   async ensureDefaultUserAndSeeds() {
     try {
       const defaultUser = await this.prisma.user.upsert({
-        where: { id: 'dev-user-001' },
+        where: { id: DEFAULT_DEV_USER.id },
         update: {},
         create: {
-          id: 'dev-user-001',
-          email: 'developer@promptlab.local',
-          displayName: 'Developer',
-          role: 'admin',
+          id: DEFAULT_DEV_USER.id,
+          email: DEFAULT_DEV_USER.email,
+          displayName: DEFAULT_DEV_USER.displayName,
+          role: DEFAULT_DEV_USER.role,
         },
       });
 
@@ -214,6 +215,10 @@ export class PromptsService implements OnModuleInit {
       ];
     }
 
+    const hasTechniqueFilter = Boolean(params?.technique);
+    const offset = params?.offset !== undefined ? Math.max(0, params.offset) : 0;
+    const limit = params?.limit !== undefined ? Math.min(Math.max(1, params.limit), 100) : 50;
+
     const prompts = await this.prisma.prompt.findMany({
       where,
       include: {
@@ -225,6 +230,9 @@ export class PromptsService implements OnModuleInit {
         },
       },
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      ...(!hasTechniqueFilter && (params?.limit !== undefined || params?.offset !== undefined)
+        ? { skip: offset, take: limit }
+        : {}),
     });
 
     const result: PromptSummary[] = [];
@@ -257,8 +265,9 @@ export class PromptsService implements OnModuleInit {
     }
 
     if (params?.limit !== undefined || params?.offset !== undefined) {
-      const offset = params.offset !== undefined ? Math.max(0, params.offset) : 0;
-      const limit = params.limit !== undefined ? Math.min(Math.max(1, params.limit), 100) : 50;
+      if (!hasTechniqueFilter) {
+        return result;
+      }
       return result.slice(offset, offset + limit);
     }
 
@@ -458,9 +467,9 @@ export class PromptsService implements OnModuleInit {
       if (val === undefined || val === null || val === '') {
         missing.push(varName);
       } else {
-        // Replace all occurrences of {{varName}} with the exact string
+        // Replace all occurrences of {{varName}} with the exact string without dollar pattern expansion
         const pattern = new RegExp(`\\{\\{\\s*${varName}\\s*\\}\\}`, 'g');
-        resolved = resolved.replace(pattern, val);
+        resolved = resolved.replace(pattern, () => val);
       }
     }
 

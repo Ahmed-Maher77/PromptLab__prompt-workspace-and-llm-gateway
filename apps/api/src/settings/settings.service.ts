@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
 
 export interface SystemSettingsResponse {
   application: {
@@ -74,16 +75,16 @@ export class SettingsService {
     const dbHealth = await this.prisma.checkHealth();
 
     // 3. Quota policy
-    let quotaPolicy = {
+    let quotaPolicy: SystemSettingsResponse['quotaPolicy'] = {
       scope: 'user',
-      scopeId: 'dev-user-001',
+      scopeId: DEFAULT_DEV_USER.id,
       monthlyTokenLimit: 100_000,
       requestRateLimit: 60,
       effectiveFrom: new Date().toISOString(),
     };
     if (this.usageService) {
       try {
-        const policy = await this.usageService.getPolicy('dev-user-001');
+        const policy = await this.usageService.getPolicy(DEFAULT_DEV_USER.id);
         quotaPolicy = {
           scope: policy.scope,
           scopeId: policy.scopeId,
@@ -158,7 +159,7 @@ export class SettingsService {
       observability: obsStatus,
       security: {
         authMode: 'single-tenant-developer',
-        defaultUser: 'dev-user-001 (Developer)',
+        defaultUser: `${DEFAULT_DEV_USER.id} (${DEFAULT_DEV_USER.displayName})`,
         corsOrigins,
         secretsExposed: false,
       },

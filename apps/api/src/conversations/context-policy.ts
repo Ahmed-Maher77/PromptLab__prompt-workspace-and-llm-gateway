@@ -42,17 +42,7 @@ export function getModelContextPolicy(model: string): ModelContextPolicy {
   };
 }
 
-/**
- * Token count estimator.
- * Explicitly labeled as 'estimated'.
- * Uses a heuristic of ~3.8 characters per token for English text.
- */
-export function estimateTokens(text: string): number {
-  if (!text || text.trim().length === 0) {
-    return 0;
-  }
-  return Math.max(1, Math.ceil(text.length / 3.8));
-}
+export { estimateTokens } from '../common/utils/token-estimator';
 
 export interface AssembledContextMessage {
   role: 'system' | 'user' | 'assistant';

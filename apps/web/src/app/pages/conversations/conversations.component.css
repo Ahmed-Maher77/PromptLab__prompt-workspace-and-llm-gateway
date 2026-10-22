@@ -331,8 +331,6 @@
 
 .role-badge {
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .badge-user {
@@ -1043,13 +1041,7 @@
   flex: 0 0 auto;
 }
 
-.conversations-page-header .page-eyebrow {
-  margin: 0 0 3px;
-  color: var(--color-primary);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .1em;
-}
+
 
 .conversations-page-header h1 {
   margin: 0;

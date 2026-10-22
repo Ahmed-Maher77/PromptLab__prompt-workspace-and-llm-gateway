@@ -129,5 +129,16 @@ export class RateExperimentDto {
 
   @IsArray()
   @IsOptional()
-  criteriaScores?: Array<{ criterionId: string; passed: boolean }>;
+  @ValidateNested({ each: true })
+  @Type(() => CriterionScoreDto)
+  criteriaScores?: CriterionScoreDto[];
+}
+
+export class CriterionScoreDto {
+  @IsString()
+  @IsNotEmpty()
+  criterionId!: string;
+
+  @IsBoolean()
+  passed!: boolean;
 }

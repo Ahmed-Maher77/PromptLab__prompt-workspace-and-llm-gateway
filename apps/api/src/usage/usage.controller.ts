@@ -20,7 +20,8 @@ export class UsageController {
 
   @Get('ledger')
   async getLedger(@Query('limit') limit?: string) {
-    const numLimit = limit ? parseInt(limit, 10) : 50;
+    const parsed = limit ? parseInt(limit, 10) : 50;
+    const numLimit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 100) : 50;
     return this.usageService.getUsageLedger(undefined, numLimit);
   }
 
