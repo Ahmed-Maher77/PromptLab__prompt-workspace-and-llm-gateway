@@ -10,7 +10,9 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { FewShotExampleDto } from './create-prompt.dto';
 
 export class PreviewPromptDto {
@@ -25,6 +27,8 @@ export class PreviewPromptDto {
 
   @IsArray()
   @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => FewShotExampleDto)
   examples?: FewShotExampleDto[];
 }
 
@@ -49,6 +53,8 @@ export class RunPlaygroundDto {
 
   @IsArray()
   @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => FewShotExampleDto)
   examples?: FewShotExampleDto[];
 
   @IsString()

@@ -12,8 +12,10 @@ describe('ConversationsService', () => {
   beforeEach(async () => {
     mockPrisma = {
       user: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'u-1', email: 'dev@test.com' }),
         findFirst: jest.fn().mockResolvedValue({ id: 'u-1', email: 'dev@test.com' }),
         create: jest.fn(),
+        upsert: jest.fn().mockResolvedValue({ id: 'u-1', email: 'dev@test.com' }),
       },
       conversation: {
         create: jest.fn(),

@@ -1,7 +1,6 @@
 <section class="conversations-page">
   <header class="conversations-page-header">
     <div>
-      <p class="page-eyebrow">WORKSPACE</p>
       <h1>Conversations</h1>
       <p class="page-description">Continue a session, inspect its context, or start a new conversation.</p>
     </div>
@@ -412,7 +411,7 @@
                 <div class="payload-message-card" [class.payload-system]="msg.role === 'system'" [class.payload-user]="msg.role === 'user'" [class.payload-assistant]="msg.role === 'assistant'">
                   <div class="payload-card-header">
                     <span class="badge" [class.badge-system]="msg.role === 'system'" [class.badge-user]="msg.role === 'user'" [class.badge-assistant]="msg.role === 'assistant'">
-                      {{ msg.role | uppercase }}
+                      {{ msg.role | titlecase }}
                     </span>
                     <span class="payload-source-badge">{{ msg.source }}</span>
                     <span class="payload-tokens">~{{ msg.estimatedTokens }} estimated tokens</span>

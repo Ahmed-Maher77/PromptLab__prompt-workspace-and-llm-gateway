@@ -98,11 +98,9 @@
 }
 
 .status-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .status-value {
@@ -285,9 +283,8 @@
   padding: 1px 4px;
   background: var(--color-surface-muted);
   border-radius: var(--radius-xs);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--color-text-muted);
-  text-transform: uppercase;
 }
 
 .token-source-badge {
@@ -385,10 +382,9 @@
 }
 
 .meta-key {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-text-muted);
-  text-transform: uppercase;
 }
 
 .meta-val {
@@ -639,6 +635,6 @@
   border-radius: var(--radius-lg);
   box-shadow: 0 1px 2px rgb(16 24 40 / 3%);
 }
-.observability-container .data-table th { font-size: 11px; letter-spacing: .035em; text-transform: uppercase; }
+.observability-container .data-table th { font-size: 12px; font-weight: 600; }
 .observability-container .data-table tr:hover { background: var(--color-bg); }
 .observability-container .data-table tr.row-selected { background: var(--color-info-bg); }

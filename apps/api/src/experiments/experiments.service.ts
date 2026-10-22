@@ -502,9 +502,22 @@ export class ExperimentsService {
           break;
         }
         case 'regex': {
+          const pattern = (c.expectedValue || '').trim();
+          if (pattern.length > 256) {
+            passed = false;
+            notes = 'Regex pattern exceeds maximum allowed length of 256 characters';
+            break;
+          }
+          // Detect dangerous nested repetition patterns causing catastrophic backtracking (ReDoS)
+          if (/([+*]|\{\d+,?\d*\})\s*([+*]|\{\d+,?\d*\})|\([^)]*[+*]\)[+*]/.test(pattern)) {
+            passed = false;
+            notes = 'Regex rejected: contains nested quantifiers prone to catastrophic backtracking (ReDoS)';
+            break;
+          }
           try {
-            const re = new RegExp(c.expectedValue || '', 'i');
-            passed = re.test(output);
+            const re = new RegExp(pattern, 'i');
+            const target = output.length > 65536 ? output.slice(0, 65536) : output;
+            passed = re.test(target);
             notes = passed ? 'Matches regex pattern' : 'Did not match regex pattern';
           } catch {
             passed = false;

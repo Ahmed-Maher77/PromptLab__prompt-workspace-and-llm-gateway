@@ -270,7 +270,11 @@ export class ObservabilityService {
           ],
         };
 
-        await fetch(`${otelEndpoint}`, {
+        const tracesUrl = otelEndpoint.endsWith('/v1/traces')
+          ? otelEndpoint
+          : `${otelEndpoint.replace(/\/+$/, '')}/v1/traces`;
+
+        await fetch(tracesUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(otlpPayload),

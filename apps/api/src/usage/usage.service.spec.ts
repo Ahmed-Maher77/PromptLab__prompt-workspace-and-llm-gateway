@@ -408,7 +408,7 @@ describe('UsageService', () => {
 
       const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
       expect(periodUpdate.where.id).toBe('period-1');
-      expect(periodUpdate.data.reservedTokens).toBe(0);
+      expect(periodUpdate.data.reservedTokens).toEqual({ decrement: 1_500 });
       expect(periodUpdate.data.actualTokens).toEqual({ increment: 1200 });
 
       const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
@@ -446,7 +446,7 @@ describe('UsageService', () => {
 
       const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
       expect(periodUpdate.where.id).toBe('period-1');
-      expect(periodUpdate.data.reservedTokens).toBe(0); // 100% reservation released!
+      expect(periodUpdate.data.reservedTokens).toEqual({ decrement: 2_000 }); // 100% reservation released atomically!
       expect(periodUpdate.data.actualTokens).toBeUndefined(); // Zero tokens deducted!
 
       const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
@@ -481,7 +481,7 @@ describe('UsageService', () => {
 
       const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
       expect(periodUpdate.where.id).toBe('period-1');
-      expect(periodUpdate.data.reservedTokens).toBe(0);
+      expect(periodUpdate.data.reservedTokens).toEqual({ decrement: 2_000 });
       // Conservative deduction: retains 50% of reservation (1,000 tokens)
       expect(periodUpdate.data.actualTokens).toEqual({ increment: 1_000 });
 

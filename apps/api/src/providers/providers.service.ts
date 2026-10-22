@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DEFAULT_LITELLM_GATEWAY_URL } from '../common/config/env.validation';
+import { estimateTokens as estimateTokensUtil } from '../common/utils/token-estimator';
 
 export interface ModelMetadata {
   id: string;
@@ -264,7 +265,6 @@ export class ProvidersService {
    * Fallback character-based token estimation (~4 characters per token).
    */
   estimateTokens(text: string): number {
-    if (!text) return 0;
-    return Math.max(1, Math.ceil(text.length / 4));
+    return estimateTokensUtil(text);
   }
 }

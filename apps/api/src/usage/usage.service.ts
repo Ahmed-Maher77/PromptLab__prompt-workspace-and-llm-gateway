@@ -18,6 +18,7 @@ import {
   UsageRecordItem,
   ReservationResult,
 } from './usage.types';
+import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
 
 @Injectable()
 export class UsageService {
@@ -32,16 +33,20 @@ export class UsageService {
    * Returns default user ID ('dev-user-001') or ensures one exists.
    */
   async getDefaultUserId(): Promise<string> {
-    const existing = await this.prisma.user.findFirst();
+    const existing =
+      (await this.prisma.user.findUnique({ where: { id: DEFAULT_DEV_USER.id } })) ||
+      (await this.prisma.user.findFirst());
     if (existing) {
       return existing.id;
     }
-    const created = await this.prisma.user.create({
-      data: {
-        id: 'dev-user-001',
-        email: 'developer@promptlab.local',
-        displayName: 'Developer',
-        role: 'admin',
+    const created = await this.prisma.user.upsert({
+      where: { id: DEFAULT_DEV_USER.id },
+      update: {},
+      create: {
+        id: DEFAULT_DEV_USER.id,
+        email: DEFAULT_DEV_USER.email,
+        displayName: DEFAULT_DEV_USER.displayName,
+        role: DEFAULT_DEV_USER.role,
       },
     });
     return created.id;
@@ -328,32 +333,42 @@ export class UsageService {
       }
 
       // Row-level lock to serialize concurrent requests and eliminate stale reads
+      let activeActual = period.actualTokens;
+      let activeReserved = period.reservedTokens;
+      let activeLimit = period.tokenLimit;
+
       if (typeof tx.$queryRawUnsafe === 'function') {
         try {
-          await tx.$queryRawUnsafe(
-            `SELECT id FROM "quota_periods" WHERE id = $1 FOR UPDATE`,
+          const rows = (await tx.$queryRawUnsafe(
+            `SELECT id, "tokenLimit", "reservedTokens", "actualTokens" FROM "quota_periods" WHERE id = $1 FOR UPDATE`,
             period.id,
-          );
+          )) as Array<{ id: string; tokenLimit: number; reservedTokens: number; actualTokens: number }>;
+
+          if (rows && rows.length > 0) {
+            activeLimit = rows[0].tokenLimit ?? activeLimit;
+            activeReserved = rows[0].reservedTokens ?? activeReserved;
+            activeActual = rows[0].actualTokens ?? activeActual;
+          }
         } catch {
           // Continues safely in environments or mocks without raw SQL support
         }
       }
 
-      const totalProjected = period.actualTokens + period.reservedTokens + estimatedTokens;
+      const totalProjected = activeActual + activeReserved + estimatedTokens;
 
-      if (totalProjected > period.tokenLimit) {
+      if (totalProjected > activeLimit) {
         const remaining = Math.max(
           0,
-          period.tokenLimit - (period.actualTokens + period.reservedTokens),
+          activeLimit - (activeActual + activeReserved),
         );
         throw new HttpException(
           {
             statusCode: HttpStatus.TOO_MANY_REQUESTS,
             error: 'QUOTA_EXCEEDED',
             message: `Monthly token quota exceeded. Available: ${remaining.toLocaleString()} tokens, Requested reservation: ${estimatedTokens.toLocaleString()} tokens.`,
-            tokenLimit: period.tokenLimit,
-            actualTokens: period.actualTokens,
-            reservedTokens: period.reservedTokens,
+            tokenLimit: activeLimit,
+            actualTokens: activeActual,
+            reservedTokens: activeReserved,
             requestedTokens: estimatedTokens,
             remainingTokens: remaining,
             resetDate: period.periodEnd.toISOString(),
@@ -440,11 +455,10 @@ export class UsageService {
 
         // Update quota period: release reserved amount and add actual tokens
         if (period) {
-          const newReserved = Math.max(0, period.reservedTokens - reservedAmount);
           await tx.quotaPeriod.update({
             where: { id: period.id },
             data: {
-              reservedTokens: newReserved,
+              reservedTokens: { decrement: reservedAmount },
               actualTokens: { increment: totalTokens },
             },
           });
@@ -478,11 +492,10 @@ export class UsageService {
           const conservativeConsumed = Math.max(1, Math.floor(reservedAmount * 0.5));
 
           if (period) {
-            const newReserved = Math.max(0, period.reservedTokens - reservedAmount);
             await tx.quotaPeriod.update({
               where: { id: period.id },
               data: {
-                reservedTokens: newReserved,
+                reservedTokens: { decrement: reservedAmount },
                 actualTokens: { increment: conservativeConsumed },
               },
             });
@@ -508,11 +521,10 @@ export class UsageService {
         // Definitive pre-dispatch error (e.g. auth failure, unreachable gateway, bad request):
         // 100% of reserved tokens are released with zero actual tokens charged
         if (period) {
-          const newReserved = Math.max(0, period.reservedTokens - reservedAmount);
           await tx.quotaPeriod.update({
             where: { id: period.id },
             data: {
-              reservedTokens: newReserved,
+              reservedTokens: { decrement: reservedAmount },
             },
           });
         }

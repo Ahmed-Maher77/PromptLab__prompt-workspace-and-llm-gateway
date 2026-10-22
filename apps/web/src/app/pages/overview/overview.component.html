@@ -1,9 +1,8 @@
 <div class="page-container">
   <div class="page-header">
     <div>
-      <p class="eyebrow">WORKSPACE / STATUS</p>
       <h1 class="page-title">Platform health</h1>
-      <p class="page-subtitle">Live checks for the API, database, and model gateway.</p>
+      <p class="page-subtitle">Live status checks for the API, database, and model gateway.</p>
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" (click)="refreshHealth()" [disabled]="isLoading" aria-label="Refresh status">
@@ -98,18 +97,53 @@
   <section class="workspace-section" aria-labelledby="modules-heading">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">PROMPTLAB</p>
         <h2 class="section-title" id="modules-heading">Workspace modules</h2>
       </div>
       <span class="module-count">6 modules</span>
     </div>
     <nav class="module-grid" aria-label="Workspace modules">
-      <a class="module-link" routerLink="/prompt-studio"><span class="module-index">01</span><span><strong>Prompt Studio</strong><small>Build and version prompt templates</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
-      <a class="module-link" routerLink="/compare"><span class="module-index">02</span><span><strong>Compare</strong><small>Run and review model experiments</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
-      <a class="module-link" routerLink="/conversations"><span class="module-index">03</span><span><strong>Conversations</strong><small>Inspect context and manage dialogue</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
-      <a class="module-link" routerLink="/usage"><span class="module-index">04</span><span><strong>Usage &amp; quotas</strong><small>Track allowance and request history</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
-      <a class="module-link" routerLink="/observability"><span class="module-index">05</span><span><strong>Observability</strong><small>Review traces and gateway activity</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
-      <a class="module-link" routerLink="/settings"><span class="module-index">06</span><span><strong>Settings</strong><small>Inspect configured services and models</small></span><span class="module-arrow" aria-hidden="true">↗</span></a>
+      <a class="module-link" routerLink="/prompt-studio">
+        <span class="module-info">
+          <strong>Prompt Studio</strong>
+          <small>Author templates, test variables, and manage immutable versions</small>
+        </span>
+        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+      <a class="module-link" routerLink="/compare">
+        <span class="module-info">
+          <strong>Compare</strong>
+          <small>Run side-by-side experiments across models and prompts</small>
+        </span>
+        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+      <a class="module-link" routerLink="/conversations">
+        <span class="module-info">
+          <strong>Conversations</strong>
+          <small>Inspect dialogue turns, token budgets, and compaction</small>
+        </span>
+        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+      <a class="module-link" routerLink="/usage">
+        <span class="module-info">
+          <strong>Usage &amp; quotas</strong>
+          <small>Monitor monthly token limits, reservations, and audit ledger</small>
+        </span>
+        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+      <a class="module-link" routerLink="/observability">
+        <span class="module-info">
+          <strong>Observability</strong>
+          <small>Inspect distributed traces, gateway latency, and telemetry</small>
+        </span>
+        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+      </a>
+      <a class="module-link" routerLink="/settings">
+        <span class="module-info">
+          <strong>Settings</strong>
+          <small>Inspect configured model routes and service connectivity</small>
+        </span>
+        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+      </a>
     </nav>
   </section>
 </div>

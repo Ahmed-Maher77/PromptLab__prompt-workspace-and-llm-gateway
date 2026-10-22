@@ -1,4 +1,5 @@
-import { IsArray, IsNotEmpty, IsOptional, IsString, IsObject, MaxLength } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsObject, MaxLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PromptVariableDto, FewShotExampleDto } from './create-prompt.dto';
 
 export class CreateVersionDto {
@@ -9,10 +10,14 @@ export class CreateVersionDto {
 
   @IsArray()
   @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => PromptVariableDto)
   variables?: PromptVariableDto[];
 
   @IsArray()
   @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => FewShotExampleDto)
   examples?: FewShotExampleDto[];
 
   @IsObject()
