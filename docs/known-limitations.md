@@ -20,7 +20,7 @@ This document provides an honest, rigorous catalog of known technical limitation
   - The OpenTelemetry (`OtlpHttpSpanExporter`) and Langfuse (`LangfuseSpanExporter`) exporters are fully implemented, unit-tested, and validated against W3C trace context format (`traceparent: 00-{traceId}-{spanId}-{flags}`), span parent-child relationships, and timing metrics.
   - **Limitation:** Telemetry export has **not** been pointed to or verified against a live OpenTelemetry Collector instance or live Langfuse SaaS/self-hosted deployment. Live collector ingestion tests remain a post-POC operational validation item.
 - **In-Memory Buffer Retention:**
-  - In-memory trace history is capped at 100 traces with FIFO eviction.
+  - In-memory trace history is capped at 500 traces with FIFO eviction (configurable in `ObservabilityService`).
   - If the backend process restarts, buffered in-memory traces not exported externally are reset.
 
 ---
