@@ -138,12 +138,14 @@ All quality gates are automated and executed from the repository root:
 
 | Command | Workspace Scope | Verified Status |
 | :--- | :--- | :--- |
-| `npm run test:api` | `@promptlab/api` Jest test suite | **PASS** (12 suites, 107 tests passing) |
-| `npm run test:web` | `@promptlab/web` Karma/Jasmine headless suite | **PASS** (46 specs passing) |
-| `npm run test` | Full monorepo test suite | **PASS** (153 total automated tests) |
+| `npm run test:api` | `@promptlab/api` Jest test suite | **PASS** (24 suites, 155 unit & integration tests) |
+| `npm run test:web` | `@promptlab/web` Karma/Jasmine headless suite | **PASS** (15 suites, 80 unit tests) |
+| `npm run test` | Full monorepo unit test suite | **PASS** (235 total automated tests) |
+| `npm run test:e2e` | Playwright E2E UI flow suite | **PASS** (6 automated user journeys) |
+| `npm run test:flows` | Playwright flow runner & telemetry capture | **PASS** (Structured flow reports & screenshots) |
 | `npm run typecheck` | Strict TypeScript compiler validation (`tsc --noEmit`) | **PASS** (0 type errors) |
 | `npm run lint` | ESLint static analysis across workspaces | **PASS** (0 warnings, 0 errors) |
-| `npm run build` | Production bundle generation (NestJS + Angular) | **PASS** (Optimized production bundles) |
+| `npm run build` | Production bundle generation (NestJS + Angular) | **PASS** (Optimized lazy chunks) |
 
 ---
 
