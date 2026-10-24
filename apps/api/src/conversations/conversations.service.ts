@@ -81,8 +81,8 @@ export class ConversationsService {
   /**
    * Creates a new conversation with optional initial system instructions.
    */
-  async create(dto: CreateConversationDto) {
-    const userId = await this.getOrCreateDefaultUser();
+  async create(dto: CreateConversationDto, userId?: string) {
+    const ownerId = userId || (await this.getOrCreateDefaultUser());
 
     const title =
       dto.title?.trim() ||
@@ -90,7 +90,7 @@ export class ConversationsService {
 
     const conversation = await this.prisma.conversation.create({
       data: {
-        ownerId: userId,
+        ownerId,
         title,
         provider: dto.provider,
         model: dto.model,
@@ -112,8 +112,9 @@ export class ConversationsService {
       });
     }
 
-    return this.findOne(conversation.id);
+    return this.findOne(conversation.id, ownerId);
   }
+
 
   /**
    * Lists all conversations.
@@ -174,9 +175,12 @@ export class ConversationsService {
   /**
    * Finds a conversation by ID with all messages and checkpoints.
    */
-  async findOne(id: string) {
-    const conversation = await this.prisma.conversation.findUnique({
-      where: { id },
+  async findOne(id: string, userId?: string) {
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        id,
+        ...(userId ? { ownerId: userId } : {}),
+      },
       include: {
         messages: {
           orderBy: { sequenceNumber: 'asc' },
@@ -212,9 +216,12 @@ export class ConversationsService {
   /**
    * Deletes a conversation by ID.
    */
-  async delete(id: string) {
-    const conversation = await this.prisma.conversation.findUnique({
-      where: { id },
+  async delete(id: string, userId?: string) {
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        id,
+        ...(userId ? { ownerId: userId } : {}),
+      },
     });
     if (!conversation) {
       throw new NotFoundException(`Conversation with ID "${id}" was not found.`);
@@ -224,6 +231,7 @@ export class ConversationsService {
     return { success: true, id };
   }
 
+
   /**
    * Assembles the active context that will be sent to the LLM
    * and calculates honest token estimates and context limit comparisons.
@@ -231,9 +239,11 @@ export class ConversationsService {
   async inspectContext(
     id: string,
     proposedInput?: string,
+    userId?: string,
   ): Promise<ContextInspectionResult> {
-    const conv = await this.findOne(id);
+    const conv = await this.findOne(id, userId);
     const policy = getModelContextPolicy(conv.model);
+
 
     const activeCheckpoint = conv.activeCheckpoint;
     const isCompacted = !!activeCheckpoint;
@@ -352,12 +362,12 @@ export class ConversationsService {
    * Appends a user message, dispatches the assembled context to the model,
    * and appends the assistant response with usage metadata.
    */
-  async sendMessage(id: string, dto: SendMessageDto) {
+  async sendMessage(id: string, dto: SendMessageDto, userId?: string) {
     if (!dto.content || dto.content.trim().length === 0) {
       throw new BadRequestException('Message content cannot be empty.');
     }
 
-    const conv = await this.findOne(id);
+    const conv = await this.findOne(id, userId);
 
     // Concurrency safety: find current max sequence number
     const maxSeq = conv.messages.reduce(
@@ -379,11 +389,12 @@ export class ConversationsService {
     });
 
     // 2. Build assembled context payload
-    const inspection = await this.inspectContext(id);
+    const inspection = await this.inspectContext(id, undefined, userId);
     const messagesPayload = inspection.assembledMessages.map((m) => ({
       role: m.role,
       content: m.content,
     }));
+
 
     const estimatedTokens = inspection.totalEstimatedInputTokens + 1024;
     const requestId = `req-conv-${conv.id}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
@@ -496,8 +507,8 @@ export class ConversationsService {
   /**
    * Generates a proposed compaction summary and facts list for manual user review.
    */
-  async previewCompaction(id: string, dto?: PreviewCompactionDto) {
-    const conv = await this.findOne(id);
+  async previewCompaction(id: string, dto?: PreviewCompactionDto, userId?: string) {
+    const conv = await this.findOne(id, userId);
     const nonSystemMessages = conv.messages.filter(
       (m) => !(m.role === 'system' && m.sequenceNumber === 1),
     );
@@ -683,8 +694,8 @@ export class ConversationsService {
    * Applies and persists a conversation compaction checkpoint.
    * Crucially, all original conversation messages remain stored in PostgreSQL.
    */
-  async applyCompaction(id: string, dto: ApplyCompactionDto) {
-    const conv = await this.findOne(id);
+  async applyCompaction(id: string, dto: ApplyCompactionDto, userId?: string) {
+    const conv = await this.findOne(id, userId);
 
     if (!dto.summary || dto.summary.trim().length === 0) {
       throw new BadRequestException('Compaction summary cannot be empty.');
@@ -717,7 +728,8 @@ export class ConversationsService {
       data: { updatedAt: new Date() },
     });
 
-    const inspection = await this.inspectContext(conv.id);
+    const inspection = await this.inspectContext(conv.id, undefined, userId);
+
 
     return {
       success: true,
@@ -736,8 +748,8 @@ export class ConversationsService {
    * Resumes conversation from a selected checkpoint.
    * Confirms active checkpoint and provides context inspection.
    */
-  async resume(id: string, checkpointId?: string) {
-    const conv = await this.findOne(id);
+  async resume(id: string, checkpointId?: string, userId?: string) {
+    const conv = await this.findOne(id, userId);
 
     let targetCheckpoint = conv.activeCheckpoint;
     if (checkpointId) {
@@ -748,7 +760,8 @@ export class ConversationsService {
       targetCheckpoint = found;
     }
 
-    const inspection = await this.inspectContext(conv.id);
+    const inspection = await this.inspectContext(conv.id, undefined, userId);
+
 
     return {
       success: true,

@@ -14,67 +14,88 @@ import {
   PreviewCompactionDto,
   ApplyCompactionDto,
 } from './dto/compact-conversation.dto';
-
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('conversations')
 export class ConversationsController {
   constructor(private readonly conversationsService: ConversationsService) {}
 
   @Post()
-  async create(@Body() dto: CreateConversationDto) {
-    return this.conversationsService.create(dto);
+  async create(
+    @Body() dto: CreateConversationDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.conversationsService.create(dto, userId);
   }
 
   @Get()
-  async findAll(@Query() pagination: PaginationQueryDto) {
-    return this.conversationsService.findAll(undefined, pagination);
+  async findAll(
+    @CurrentUser('id') userId: string,
+    @Query() pagination: PaginationQueryDto,
+  ) {
+    return this.conversationsService.findAll(userId, pagination);
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.conversationsService.findOne(id);
+  async findOne(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.conversationsService.findOne(id, userId);
   }
 
   @Delete(':id')
-  async delete(@Param('id') id: string) {
-    return this.conversationsService.delete(id);
+  async delete(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.conversationsService.delete(id, userId);
   }
 
   @Get(':id/context')
   async inspectContext(
     @Param('id') id: string,
+    @CurrentUser('id') userId: string,
     @Query('proposedInput') proposedInput?: string,
   ) {
-    return this.conversationsService.inspectContext(id, proposedInput);
+    return this.conversationsService.inspectContext(id, proposedInput, userId);
   }
 
   @Post(':id/messages')
-  async sendMessage(@Param('id') id: string, @Body() dto: SendMessageDto) {
-    return this.conversationsService.sendMessage(id, dto);
+  async sendMessage(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SendMessageDto,
+  ) {
+    return this.conversationsService.sendMessage(id, dto, userId);
   }
 
   @Post(':id/compact/preview')
   async previewCompaction(
     @Param('id') id: string,
+    @CurrentUser('id') userId: string,
     @Body() dto?: PreviewCompactionDto,
   ) {
-    return this.conversationsService.previewCompaction(id, dto);
+    return this.conversationsService.previewCompaction(id, dto, userId);
   }
 
   @Post(':id/compact/apply')
   async applyCompaction(
     @Param('id') id: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: ApplyCompactionDto,
   ) {
-    return this.conversationsService.applyCompaction(id, dto);
+    return this.conversationsService.applyCompaction(id, dto, userId);
   }
 
   @Post(':id/resume')
   async resume(
     @Param('id') id: string,
+    @CurrentUser('id') userId: string,
     @Query('checkpointId') checkpointId?: string,
   ) {
-    return this.conversationsService.resume(id, checkpointId);
+    return this.conversationsService.resume(id, checkpointId, userId);
   }
 }
+

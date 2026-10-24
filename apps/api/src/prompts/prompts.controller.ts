@@ -4,6 +4,7 @@ import { CreatePromptDto } from './dto/create-prompt.dto';
 import { CreateVersionDto } from './dto/create-version.dto';
 import { PreviewPromptDto, RunPlaygroundDto } from './dto/run-prompt.dto';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 @Controller('prompts')
 export class PromptsController {
@@ -29,16 +30,20 @@ export class PromptsController {
   }
 
   @Post()
-  async create(@Body() dto: CreatePromptDto) {
-    return this.promptsService.create(dto);
+  async create(
+    @Body() dto: CreatePromptDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.promptsService.create(dto, userId);
   }
 
   @Post(':id/versions')
   async createVersion(
     @Param('id') id: string,
     @Body() dto: CreateVersionDto,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.promptsService.createVersion(id, dto);
+    return this.promptsService.createVersion(id, dto, userId);
   }
 
   @Post('preview')
@@ -47,7 +52,11 @@ export class PromptsController {
   }
 
   @Post('run')
-  async runPlayground(@Body() dto: RunPlaygroundDto) {
-    return this.promptsService.runPlayground(dto);
+  async runPlayground(
+    @Body() dto: RunPlaygroundDto,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.promptsService.runPlayground(dto, userId);
   }
 }
+

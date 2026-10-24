@@ -5,8 +5,10 @@ import {
   Param,
   Query,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ObservabilityService } from './observability.service';
+import { Roles } from '../common/decorators/roles.decorator';
 
 /**
  * Controller for retrieving in-memory distributed traces and telemetry status.
@@ -52,8 +54,13 @@ export class ObservabilityController {
   }
 
   @Post('clear')
+  @Roles('admin')
   clearTraces() {
+    if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEMO_ENDPOINTS !== 'true') {
+      throw new ForbiddenException('Demo endpoints are disabled in this environment.');
+    }
     this.observabilityService.clearTraces();
     return { success: true, message: 'In-memory trace buffer cleared.' };
   }
 }
+

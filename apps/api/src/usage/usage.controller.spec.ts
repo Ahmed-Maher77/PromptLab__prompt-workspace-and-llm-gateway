@@ -42,28 +42,29 @@ describe('UsageController', () => {
   });
 
   it('delegates getStatus to service', async () => {
-    const status = await controller.getStatus();
-    expect(mockService.getStatus).toHaveBeenCalled();
+    const status = await controller.getStatus('dev-user-001');
+    expect(mockService.getStatus).toHaveBeenCalledWith('dev-user-001');
     expect(status.tokenLimit).toBe(100000);
   });
 
   it('delegates getLedger with bounded limit parameter', async () => {
-    await controller.getLedger('25');
-    expect(mockService.getUsageLedger).toHaveBeenCalledWith(undefined, 25);
+    await controller.getLedger('dev-user-001', '25');
+    expect(mockService.getUsageLedger).toHaveBeenCalledWith('dev-user-001', 25);
 
     // Limit cap at 100
-    await controller.getLedger('500');
-    expect(mockService.getUsageLedger).toHaveBeenCalledWith(undefined, 100);
+    await controller.getLedger('dev-user-001', '500');
+    expect(mockService.getUsageLedger).toHaveBeenCalledWith('dev-user-001', 100);
 
     // Invalid fallback to 50
-    await controller.getLedger('invalid');
-    expect(mockService.getUsageLedger).toHaveBeenCalledWith(undefined, 50);
+    await controller.getLedger('dev-user-001', 'invalid');
+    expect(mockService.getUsageLedger).toHaveBeenCalledWith('dev-user-001', 50);
   });
 
   it('delegates getPolicy and updatePolicy to service', async () => {
-    const policy = await controller.getPolicy();
-    expect(mockService.getPolicy).toHaveBeenCalled();
+    const policy = await controller.getPolicy('dev-user-001');
+    expect(mockService.getPolicy).toHaveBeenCalledWith('dev-user-001');
     expect(policy.monthlyTokenLimit).toBe(100000);
+
 
     const dto: UpdateQuotaPolicyDto = {
       monthlyTokenLimit: 200000,
@@ -75,8 +76,11 @@ describe('UsageController', () => {
   });
 
   it('delegates resetPeriod to service', async () => {
+    process.env.ENABLE_DEMO_ENDPOINTS = 'true';
+    process.env.NODE_ENV = 'development';
     const res = await controller.resetPeriod();
     expect(mockService.resetPeriodForDemo).toHaveBeenCalled();
     expect(res.success).toBe(true);
   });
+
 });

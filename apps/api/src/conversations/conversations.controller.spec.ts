@@ -41,47 +41,48 @@ describe('ConversationsController', () => {
       model: 'gpt-4o-mini',
       provider: 'openai',
     };
-    const result = await controller.create(dto);
-    expect(mockService.create).toHaveBeenCalledWith(dto);
+    const result = await controller.create(dto, 'dev-user-001');
+    expect(mockService.create).toHaveBeenCalledWith(dto, 'dev-user-001');
     expect(result).toMatchObject({ id: 'c-1', title: 'Test Conv' });
   });
 
   it('delegates findAll with pagination query', async () => {
     const pagination = { limit: 10, offset: 0 };
-    await controller.findAll(pagination);
-    expect(mockService.findAll).toHaveBeenCalledWith(undefined, pagination);
+    await controller.findAll('dev-user-001', pagination);
+    expect(mockService.findAll).toHaveBeenCalledWith('dev-user-001', pagination);
   });
 
   it('delegates findOne, inspectContext, and delete by ID', async () => {
-    await controller.findOne('c-1');
-    expect(mockService.findOne).toHaveBeenCalledWith('c-1');
+    await controller.findOne('c-1', 'dev-user-001');
+    expect(mockService.findOne).toHaveBeenCalledWith('c-1', 'dev-user-001');
 
-    await controller.inspectContext('c-1', 'what is next?');
-    expect(mockService.inspectContext).toHaveBeenCalledWith('c-1', 'what is next?');
+    await controller.inspectContext('c-1', 'dev-user-001', 'what is next?');
+    expect(mockService.inspectContext).toHaveBeenCalledWith('c-1', 'what is next?', 'dev-user-001');
 
-    await controller.delete('c-1');
-    expect(mockService.delete).toHaveBeenCalledWith('c-1');
+    await controller.delete('c-1', 'dev-user-001');
+    expect(mockService.delete).toHaveBeenCalledWith('c-1', 'dev-user-001');
   });
 
   it('delegates sendMessage to service', async () => {
     const dto: SendMessageDto = { content: 'Hello assistant' };
-    await controller.sendMessage('c-1', dto);
-    expect(mockService.sendMessage).toHaveBeenCalledWith('c-1', dto);
+    await controller.sendMessage('c-1', 'dev-user-001', dto);
+    expect(mockService.sendMessage).toHaveBeenCalledWith('c-1', dto, 'dev-user-001');
   });
 
   it('delegates previewCompaction, applyCompaction, and resume', async () => {
-    await controller.previewCompaction('c-1');
-    expect(mockService.previewCompaction).toHaveBeenCalledWith('c-1', undefined);
+    await controller.previewCompaction('c-1', 'dev-user-001');
+    expect(mockService.previewCompaction).toHaveBeenCalledWith('c-1', undefined, 'dev-user-001');
 
     const applyDto: ApplyCompactionDto = {
       summary: 'Summary',
       retainedFacts: ['Fact 1'],
       compactedThroughSequence: 3,
     };
-    await controller.applyCompaction('c-1', applyDto);
-    expect(mockService.applyCompaction).toHaveBeenCalledWith('c-1', applyDto);
+    await controller.applyCompaction('c-1', 'dev-user-001', applyDto);
+    expect(mockService.applyCompaction).toHaveBeenCalledWith('c-1', applyDto, 'dev-user-001');
 
-    await controller.resume('c-1', 'chk-1');
-    expect(mockService.resume).toHaveBeenCalledWith('c-1', 'chk-1');
+    await controller.resume('c-1', 'dev-user-001', 'chk-1');
+    expect(mockService.resume).toHaveBeenCalledWith('c-1', 'chk-1', 'dev-user-001');
   });
+
 });

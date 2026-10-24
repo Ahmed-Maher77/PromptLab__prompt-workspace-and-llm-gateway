@@ -58,15 +58,15 @@ describe('PromptsController', () => {
       templateBody: 'Do {{task}}',
       variables: [{ name: 'task', required: true }],
     };
-    await controller.create(createDto);
-    expect(mockService.create).toHaveBeenCalledWith(createDto);
+    await controller.create(createDto, 'dev-user-001');
+    expect(mockService.create).toHaveBeenCalledWith(createDto, 'dev-user-001');
 
     const versionDto: CreateVersionDto = {
       templateBody: 'Do {{task}} carefully',
       variables: [{ name: 'task', required: true }],
     };
-    await controller.createVersion('p-1', versionDto);
-    expect(mockService.createVersion).toHaveBeenCalledWith('p-1', versionDto);
+    await controller.createVersion('p-1', versionDto, 'dev-user-001');
+    expect(mockService.createVersion).toHaveBeenCalledWith('p-1', versionDto, 'dev-user-001');
   });
 
   it('delegates preview and runPlayground to service', async () => {
@@ -84,7 +84,8 @@ describe('PromptsController', () => {
       templateBody: 'Hello {{name}}',
       model: 'gpt-4o-mini',
     };
-    await controller.runPlayground(runDto);
-    expect(mockService.runPlayground).toHaveBeenCalledWith(runDto);
+    await controller.runPlayground(runDto, 'dev-user-001');
+    expect(mockService.runPlayground).toHaveBeenCalledWith(runDto, 'dev-user-001');
   });
+
 });

@@ -7,6 +7,7 @@ import { validateEnvironment } from './common/config/env.validation';
 
 describe('HTTP Routing & App Integration (E2E)', () => {
   let app: INestApplication;
+  const authHeader = { Authorization: 'Bearer dev-admin-token' };
   jest.setTimeout(30000);
 
   beforeAll(async () => {
@@ -47,6 +48,26 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     }
   });
 
+  describe('Authentication & Authorization Guards (SEC-01)', () => {
+    it('allows public route /api/health without credentials', async () => {
+      await request(app.getHttpServer()).get('/api/health').expect(200);
+    });
+
+    it('rejects unauthenticated requests to protected endpoints with 401 Unauthorized', async () => {
+      await request(app.getHttpServer()).get('/api/conversations').expect(401);
+      await request(app.getHttpServer()).get('/api/prompts').expect(401);
+      await request(app.getHttpServer()).get('/api/usage/status').expect(401);
+    });
+
+    it('rejects non-admin users attempting admin routes with 403 Forbidden', async () => {
+      await request(app.getHttpServer())
+        .put('/api/usage/policy')
+        .set('Authorization', 'Bearer dev-user-token')
+        .send({ monthlyTokenLimit: 50000 })
+        .expect(403);
+    });
+  });
+
   describe('Global Prefix and Routing', () => {
     it('returns 404 for routes missing the global /api prefix', async () => {
       await request(app.getHttpServer())
@@ -70,6 +91,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('resolves GET /api/usage/status without duplicated prefix', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/usage/status')
+        .set(authHeader)
         .expect(200);
 
       expect(res.body.tokenLimit).toBeDefined();
@@ -80,6 +102,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('resolves GET /api/usage/ledger with limit', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/usage/ledger?limit=10')
+        .set(authHeader)
         .expect(200);
 
       expect(Array.isArray(res.body)).toBe(true);
@@ -88,6 +111,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('resolves GET /api/observability/status without duplicated prefix', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/observability/status')
+        .set(authHeader)
         .expect(200);
 
       expect(res.body.telemetryEnabled).toBeDefined();
@@ -97,16 +121,19 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('resolves GET /api/observability/traces', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/observability/traces')
+        .set(authHeader)
         .expect(200);
 
       expect(Array.isArray(res.body)).toBe(true);
     });
   });
 
+
   describe('Validation Pipeline and Exception Filter', () => {
     it('rejects POST /api/prompts with 400 Bad Request when mandatory fields are missing', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/prompts')
+        .set(authHeader)
         .send({})
         .expect(400);
 
@@ -117,6 +144,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('rejects forbidden non-whitelisted properties with 400 Bad Request', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/prompts')
+        .set(authHeader)
         .send({
           name: 'Test Prompt',
           templateBody: 'Hello {{name}}',
@@ -131,6 +159,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       const oversizedBody = 'A'.repeat(32769);
       const res = await request(app.getHttpServer())
         .post('/api/prompts')
+        .set(authHeader)
         .send({
           name: 'Oversized Prompt',
           templateBody: oversizedBody,
@@ -144,6 +173,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('rejects playground run with invalid model identifier pattern with 400 Bad Request', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/prompts/run')
+        .set(authHeader)
         .send({
           templateBody: 'Hello world',
           model: 'invalid model; with spaces and semicolon',
@@ -158,6 +188,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // Temperature > 2
       await request(app.getHttpServer())
         .post('/api/prompts/run')
+        .set(authHeader)
         .send({
           templateBody: 'Hello world',
           model: 'gpt-4o-mini',
@@ -168,6 +199,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // Temperature < 0
       await request(app.getHttpServer())
         .post('/api/prompts/run')
+        .set(authHeader)
         .send({
           templateBody: 'Hello world',
           model: 'gpt-4o-mini',
@@ -178,6 +210,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // Temperature string
       await request(app.getHttpServer())
         .post('/api/prompts/run')
+        .set(authHeader)
         .send({
           templateBody: 'Hello world',
           model: 'gpt-4o-mini',
@@ -190,6 +223,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // maxTokens < 1
       await request(app.getHttpServer())
         .post('/api/prompts/run')
+        .set(authHeader)
         .send({
           templateBody: 'Hello world',
           model: 'gpt-4o-mini',
@@ -200,6 +234,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // maxTokens > 32768
       await request(app.getHttpServer())
         .post('/api/prompts/run')
+        .set(authHeader)
         .send({
           templateBody: 'Hello world',
           model: 'gpt-4o-mini',
@@ -210,6 +245,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // Decimal maxTokens
       await request(app.getHttpServer())
         .post('/api/prompts/run')
+        .set(authHeader)
         .send({
           templateBody: 'Hello world',
           model: 'gpt-4o-mini',
@@ -220,6 +256,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // String maxTokens
       await request(app.getHttpServer())
         .post('/api/prompts/run')
+        .set(authHeader)
         .send({
           templateBody: 'Hello world',
           model: 'gpt-4o-mini',
@@ -231,6 +268,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('rejects experiment comparison with invalid evaluation criterion type with 400 Bad Request', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/experiments/run')
+        .set(authHeader)
         .send({
           name: 'Invalid Criterion Test',
           commonInput: { test: 'val' },
@@ -253,6 +291,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('rejects experiment rating with invalid slot with 400 Bad Request', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/experiments/exp-123/rate')
+        .set(authHeader)
         .send({
           slot: 'C', // Allowed: 'A' | 'B'
           rating: 4,
@@ -267,6 +306,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // rating > 5
       await request(app.getHttpServer())
         .post('/api/experiments/exp-123/rate')
+        .set(authHeader)
         .send({
           slot: 'A',
           rating: 6,
@@ -276,6 +316,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // rating < 1
       await request(app.getHttpServer())
         .post('/api/experiments/exp-123/rate')
+        .set(authHeader)
         .send({
           slot: 'A',
           rating: 0,
@@ -286,6 +327,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('rejects conversation creation with invalid model format with 400 Bad Request', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/conversations')
+        .set(authHeader)
         .send({
           provider: 'openai',
           model: 'malicious $(whoami) model',
@@ -300,6 +342,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       const oversizedMsg = 'X'.repeat(32769);
       const res = await request(app.getHttpServer())
         .post('/api/conversations/conv-123/messages')
+        .set(authHeader)
         .send({
           content: oversizedMsg,
         })
@@ -313,6 +356,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // Boundary test: temperature=0, maxTokens=1
       const res1 = await request(app.getHttpServer())
         .post('/api/prompts/preview')
+        .set(authHeader)
         .send({
           templateBody: 'Valid template with length 100 ' + 'A'.repeat(70),
           variables: { name: 'Alice' },
@@ -324,6 +368,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // Boundary test: templateBody length exactly 32768
       const res2 = await request(app.getHttpServer())
         .post('/api/prompts/preview')
+        .set(authHeader)
         .send({
           templateBody: 'A'.repeat(32768),
         })
@@ -348,6 +393,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('resolves GET /api/settings with 200 OK and safe environment status', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/settings')
+        .set(authHeader)
         .expect(200);
 
       expect(res.body.application).toBeDefined();
@@ -373,6 +419,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
 
       const settingsRes = await request(app.getHttpServer())
         .get('/api/settings')
+        .set(authHeader)
         .expect(200);
 
       expect(healthRes.body.services.gateway.url).toBe(settingsRes.body.gateway.url);
@@ -383,6 +430,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('supports limit and offset pagination on GET /api/prompts', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/prompts?limit=2&offset=0')
+        .set(authHeader)
         .expect(200);
 
       expect(Array.isArray(res.body)).toBe(true);
@@ -393,27 +441,32 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // limit < 1
       await request(app.getHttpServer())
         .get('/api/prompts?limit=0')
+        .set(authHeader)
         .expect(400);
 
       // limit > 100
       await request(app.getHttpServer())
         .get('/api/prompts?limit=101')
+        .set(authHeader)
         .expect(400);
 
       // offset < 0
       await request(app.getHttpServer())
         .get('/api/prompts?offset=-1')
+        .set(authHeader)
         .expect(400);
 
       // non-numeric limit
       await request(app.getHttpServer())
         .get('/api/prompts?limit=abc')
+        .set(authHeader)
         .expect(400);
     });
 
     it('supports limit and offset pagination on GET /api/experiments', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/experiments?limit=5&offset=0')
+        .set(authHeader)
         .expect(200);
 
       expect(Array.isArray(res.body)).toBe(true);
@@ -423,10 +476,12 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('supports limit and offset pagination on GET /api/conversations', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/conversations?limit=5&offset=0')
+        .set(authHeader)
         .expect(200);
 
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBeLessThanOrEqual(5);
     });
   });
+
 });

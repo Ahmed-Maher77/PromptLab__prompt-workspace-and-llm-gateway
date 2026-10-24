@@ -324,7 +324,8 @@ export class PromptsService implements OnModuleInit {
   /**
    * Creates a prompt and its initial immutable version (v1).
    */
-  async create(dto: CreatePromptDto, userId = 'dev-user-001'): Promise<PromptDetail> {
+  async create(dto: CreatePromptDto, userId?: string): Promise<PromptDetail> {
+    const effectiveUserId = userId || DEFAULT_DEV_USER.id;
     const autoVariables = this.extractVariables(dto.templateBody);
     const variables = dto.variables && dto.variables.length > 0
       ? dto.variables
@@ -334,7 +335,7 @@ export class PromptsService implements OnModuleInit {
 
     const prompt = await this.prisma.prompt.create({
       data: {
-        ownerId: userId,
+        ownerId: effectiveUserId,
         name: dto.name,
         description: dto.description || null,
         techniqueMetadata: {
@@ -348,7 +349,7 @@ export class PromptsService implements OnModuleInit {
             examples: (dto.examples || []) as unknown as Prisma.InputJsonValue,
             outputSchema: (dto.outputSchema || null) as unknown as Prisma.InputJsonValue,
             modelDefaults: (dto.modelDefaults || { model: 'gpt-4o-mini' }) as unknown as Prisma.InputJsonValue,
-            createdBy: userId,
+            createdBy: effectiveUserId,
           },
         },
       },
@@ -368,8 +369,10 @@ export class PromptsService implements OnModuleInit {
    * Concurrency-safe against race conditions via DB unique constraint [promptId, versionNumber].
    * Historical versions remain strictly immutable.
    */
-  async createVersion(promptId: string, dto: CreateVersionDto, userId = 'dev-user-001'): Promise<PromptDetail> {
+  async createVersion(promptId: string, dto: CreateVersionDto, userId?: string): Promise<PromptDetail> {
+    const effectiveUserId = userId || DEFAULT_DEV_USER.id;
     const autoVariables = this.extractVariables(dto.templateBody);
+
     const variables = dto.variables && dto.variables.length > 0
       ? dto.variables
       : autoVariables.map((v) => ({ name: v, required: true }));
@@ -410,7 +413,7 @@ export class PromptsService implements OnModuleInit {
             examples: (dto.examples || []) as unknown as Prisma.InputJsonValue,
             outputSchema: (dto.outputSchema || null) as unknown as Prisma.InputJsonValue,
             modelDefaults: (dto.modelDefaults || { model: 'gpt-4o-mini' }) as unknown as Prisma.InputJsonValue,
-            createdBy: userId,
+            createdBy: effectiveUserId,
           },
         });
 
@@ -494,7 +497,8 @@ export class PromptsService implements OnModuleInit {
   /**
    * Executes a prompt run through LiteLLM Gateway after validating variables.
    */
-  async runPlayground(dto: RunPlaygroundDto): Promise<PlaygroundRunResult> {
+  async runPlayground(dto: RunPlaygroundDto, userId?: string): Promise<PlaygroundRunResult> {
+    const effectiveUserId = userId || DEFAULT_DEV_USER.id;
     const preview = this.resolveTemplate({
       templateBody: dto.templateBody,
       variables: dto.variables,
@@ -516,6 +520,7 @@ export class PromptsService implements OnModuleInit {
       operation: 'playground.execute',
       model: dto.model,
       provider: 'gateway',
+      userId: effectiveUserId,
       metadata: { requestId },
     });
 
@@ -523,12 +528,14 @@ export class PromptsService implements OnModuleInit {
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
+        userId: effectiveUserId,
         model: dto.model,
         provider: 'gateway',
         estimatedTokens,
       });
     }
     reserveSpan?.end('ok');
+
 
     const llmSpan = trace?.startSpan('litellm.chat_completion', { model: dto.model });
     const completionResult = await this.providersService.executeChatCompletion({

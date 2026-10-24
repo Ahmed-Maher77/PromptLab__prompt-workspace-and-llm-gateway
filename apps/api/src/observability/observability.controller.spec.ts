@@ -60,6 +60,8 @@ describe('ObservabilityController', () => {
   });
 
   it('delegates getStatus and clearTraces', () => {
+    process.env.ENABLE_DEMO_ENDPOINTS = 'true';
+    process.env.NODE_ENV = 'development';
     const status = controller.getStatus();
     expect(status.telemetryEnabled).toBe(true);
 
@@ -67,4 +69,5 @@ describe('ObservabilityController', () => {
     expect(mockService.clearTraces).toHaveBeenCalled();
     expect(clearRes.success).toBe(true);
   });
+
 });
