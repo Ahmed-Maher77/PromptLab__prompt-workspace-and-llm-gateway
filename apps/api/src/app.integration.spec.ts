@@ -15,6 +15,9 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     if (!process.env.DATABASE_URL) {
       process.env.DATABASE_URL = 'postgresql://postgres:admin@localhost:5432/promptlab?schema=public';
     }
+    process.env.AUTH_DEV_TOKENS_ENABLED = 'true';
+    process.env.AUTH_DEV_ADMIN_TOKEN = 'dev-admin-token';
+    process.env.AUTH_DEV_USER_TOKEN = 'dev-user-token';
     const envConfig = validateEnvironment();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({

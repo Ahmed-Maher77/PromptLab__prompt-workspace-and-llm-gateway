@@ -12,6 +12,7 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { UsageModule } from './usage/usage.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { SettingsModule } from './settings/settings.module';
+import { JwtModule } from '@nestjs/jwt';
 import { AuthGuard } from './common/guards/auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -20,6 +21,9 @@ import { RolesGuard } from './common/guards/roles.guard';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', '../../.env'],
+    }),
+    JwtModule.register({
+      global: true,
     }),
     // SEC-04: per-IP rate limiting — 60 requests per 60 s window, burst cap of 20/s
     ThrottlerModule.forRoot([{

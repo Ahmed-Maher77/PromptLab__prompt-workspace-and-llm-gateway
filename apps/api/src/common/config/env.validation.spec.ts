@@ -1,4 +1,4 @@
-import { validateEnvironment, DEV_MASTER_KEY } from './env.validation';
+import { validateEnvironment, DEV_MASTER_KEY, parseApiKeys } from './env.validation';
 
 describe('validateEnvironment', () => {
   it('throws an error when DATABASE_URL is missing or empty', () => {
@@ -62,6 +62,7 @@ describe('validateEnvironment', () => {
     const baseEnv = {
       DATABASE_URL: 'postgresql://localhost:5432/promptlab',
       NODE_ENV: 'production',
+      AUTH_API_KEYS: 'prod-key:admin-001:admin',
     };
 
     it('throws in production when LITELLM_MASTER_KEY is absent', () => {
@@ -91,5 +92,56 @@ describe('validateEnvironment', () => {
       ).not.toThrow();
     });
   });
-});
 
+  describe('SEC-01a: production fail-fast for authentication configuration', () => {
+    const baseProdEnv = {
+      DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+      NODE_ENV: 'production',
+      LITELLM_MASTER_KEY: 'sk-real-prod-master-key',
+    };
+
+    it('throws in production when no auth method is configured', () => {
+      expect(() => validateEnvironment({ ...baseProdEnv })).toThrow(
+        /In production, a secure authentication configuration is mandatory/,
+      );
+    });
+
+    it('throws in production when AUTH_JWT_SECRET is less than 32 characters', () => {
+      expect(() =>
+        validateEnvironment({
+          ...baseProdEnv,
+          AUTH_JWT_SECRET: 'short-secret-less-than-32-char',
+        }),
+      ).toThrow(/AUTH_JWT_SECRET must be at least 32 characters long in production/);
+    });
+
+    it('succeeds in production when valid AUTH_API_KEYS are provided', () => {
+      const config = validateEnvironment({
+        ...baseProdEnv,
+        AUTH_API_KEYS: 'my-strong-api-key:prod-admin:admin',
+      });
+      expect(config.AUTH_API_KEYS.length).toBe(1);
+      expect(config.AUTH_API_KEYS[0].user.id).toBe('prod-admin');
+      expect(config.AUTH_API_KEYS[0].user.role).toBe('admin');
+    });
+
+    it('succeeds in production when valid AUTH_JWT_SECRET (>= 32 chars) is provided', () => {
+      const config = validateEnvironment({
+        ...baseProdEnv,
+        AUTH_JWT_SECRET: 'super-secure-production-jwt-secret-min-32-chars',
+      });
+      expect(config.AUTH_JWT_SECRET).toBe('super-secure-production-jwt-secret-min-32-chars');
+    });
+
+    it('parses multiple API keys correctly', () => {
+      const parsed = parseApiKeys(
+        'key1:user-1:admin, key2:user-2:user, invalid-entry',
+      );
+      expect(parsed.length).toBe(2);
+      expect(parsed[0].user.id).toBe('user-1');
+      expect(parsed[0].user.role).toBe('admin');
+      expect(parsed[1].user.id).toBe('user-2');
+      expect(parsed[1].user.role).toBe('user');
+    });
+  });
+});
