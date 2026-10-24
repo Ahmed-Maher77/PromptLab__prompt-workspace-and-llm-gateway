@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 
@@ -20,6 +21,12 @@ import { RolesGuard } from './common/guards/roles.guard';
       isGlobal: true,
       envFilePath: ['.env', '../../.env'],
     }),
+    // SEC-04: per-IP rate limiting — 60 requests per 60 s window, burst cap of 20/s
+    ThrottlerModule.forRoot([{
+      name: 'default',
+      ttl: 60_000,
+      limit: 60,
+    }]),
     PrismaModule,
     HealthModule,
     ProvidersModule,
@@ -38,6 +45,11 @@ import { RolesGuard } from './common/guards/roles.guard';
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
+    },
+    {
+      // SEC-04: global rate limiting via ThrottlerGuard
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
   ],
 })

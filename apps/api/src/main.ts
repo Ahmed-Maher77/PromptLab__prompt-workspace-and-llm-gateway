@@ -1,13 +1,13 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { validateEnvironment } from './common/config/env.validation';
+import { configureApp } from './configure-app';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
 
-  // Validate critical environment configuration early
+  // Validate critical environment configuration early — fails loudly on misconfiguration
   let envConfig;
   try {
     envConfig = validateEnvironment();
@@ -19,22 +19,8 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
-  app.setGlobalPrefix('api');
-  app.enableCors({
-    origin: envConfig.CORS_ORIGIN,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-  });
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
-
-  app.useGlobalFilters(new AllExceptionsFilter());
+  // SEC-04: apply full HTTP hardening pipeline (helmet, CORS, body limit, pipes, etc.)
+  configureApp(app, envConfig);
 
   const port = envConfig.PORT;
   await app.listen(port);

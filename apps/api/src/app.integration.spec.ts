@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { validateEnvironment } from './common/config/env.validation';
+import { configureApp } from './configure-app';
 
 describe('HTTP Routing & App Integration (E2E)', () => {
   let app: INestApplication;
@@ -23,21 +23,8 @@ describe('HTTP Routing & App Integration (E2E)', () => {
 
     app = moduleFixture.createNestApplication();
 
-    // Configure exact production pipeline: global prefix, pipes, filters, CORS
-    app.setGlobalPrefix('api');
-    app.enableCors({
-      origin: envConfig.CORS_ORIGIN,
-      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-      credentials: true,
-    });
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
-    app.useGlobalFilters(new AllExceptionsFilter());
+    // SEC-04: use the shared configureApp() so the test exercises the real production pipeline
+    configureApp(app, envConfig);
 
     await app.init();
   }, 30000);
@@ -386,6 +373,17 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         .expect(200);
 
       expect(res.headers['access-control-allow-origin']).toBe('http://localhost:4200');
+    });
+
+    it('SEC-04: response contains helmet security headers', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/health')
+        .expect(200);
+
+      // helmet sets these headers by default
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+      expect(res.headers['x-frame-options']).toBeDefined();
+      expect(res.headers['x-dns-prefetch-control']).toBeDefined();
     });
   });
 
