@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { PromptsService } from '../prompts/prompts.service';
 import { NotFoundException } from '@nestjs/common';
+import { validate } from 'class-validator';
+import { EvaluationCriterionDto } from './dto/run-comparison.dto';
 
 describe('ExperimentsService', () => {
   let service: ExperimentsService;
@@ -247,6 +249,50 @@ describe('ExperimentsService', () => {
       const invalidOutput = service.evaluateCriteria('Any content', invalidRegexCriteria);
       expect(invalidOutput[0].passed).toBe(false);
       expect(invalidOutput[0].notes).toBe('Invalid regular expression');
+    });
+
+    it('SEC-02: should evaluate ReDoS patterns safely in linear time without event loop freeze (<50ms)', () => {
+      const tenKbOutput = 'a'.repeat(10000) + '!';
+      const redosCriteria = [
+        { id: 'c-redos-1', name: 'Alternation overlap 1', type: 'regex' as const, expectedValue: '(a|aa)+$' },
+        { id: 'c-redos-2', name: 'Alternation overlap 2', type: 'regex' as const, expectedValue: '(\\w|\\d)+$' },
+      ];
+
+      const start = Date.now();
+      const results = service.evaluateCriteria(tenKbOutput, redosCriteria);
+      const elapsed = Date.now() - start;
+
+      expect(results.length).toBe(2);
+      expect(results[0].passed).toBe(false);
+      expect(results[1].passed).toBe(false);
+      expect(elapsed).toBeLessThan(50);
+    });
+
+    it('SEC-02: should validate regex pattern at DTO level and reject invalid or unsupported patterns', async () => {
+      const validDto = new EvaluationCriterionDto();
+      validDto.id = 'c-valid';
+      validDto.name = 'Valid Regex';
+      validDto.type = 'regex';
+      validDto.expectedValue = 'order\\d+';
+      const validErrors = await validate(validDto);
+      expect(validErrors.length).toBe(0);
+
+      const invalidLookaheadDto = new EvaluationCriterionDto();
+      invalidLookaheadDto.id = 'c-lookahead';
+      invalidLookaheadDto.name = 'Unsupported lookahead';
+      invalidLookaheadDto.type = 'regex';
+      invalidLookaheadDto.expectedValue = '(?=abc).*';
+      const lookaheadErrors = await validate(invalidLookaheadDto);
+      expect(lookaheadErrors.length).toBeGreaterThan(0);
+      expect(lookaheadErrors[0].constraints?.isValidCriterionPattern).toBeDefined();
+
+      const emptyRegexDto = new EvaluationCriterionDto();
+      emptyRegexDto.id = 'c-empty';
+      emptyRegexDto.name = 'Empty pattern';
+      emptyRegexDto.type = 'regex';
+      emptyRegexDto.expectedValue = '   ';
+      const emptyErrors = await validate(emptyRegexDto);
+      expect(emptyErrors.length).toBeGreaterThan(0);
     });
   });
 

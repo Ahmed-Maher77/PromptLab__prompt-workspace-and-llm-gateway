@@ -7,6 +7,7 @@ import { ObservabilityService } from '../observability/observability.service';
 import { RunComparisonDto, SlotConfigDto, EvaluationCriterionDto, RateExperimentDto } from './dto/run-comparison.dto';
 import { calculateCost } from './cost-calculator';
 import { Prisma } from '@prisma/client';
+import RE2 = require('re2');
 
 export interface CriterionResult {
   criterionId: string;
@@ -508,14 +509,8 @@ export class ExperimentsService {
             notes = 'Regex pattern exceeds maximum allowed length of 256 characters';
             break;
           }
-          // Detect dangerous nested repetition patterns causing catastrophic backtracking (ReDoS)
-          if (/([+*]|\{\d+,?\d*\})\s*([+*]|\{\d+,?\d*\})|\([^)]*[+*]\)[+*]/.test(pattern)) {
-            passed = false;
-            notes = 'Regex rejected: contains nested quantifiers prone to catastrophic backtracking (ReDoS)';
-            break;
-          }
           try {
-            const re = new RegExp(pattern, 'i');
+            const re = new RE2(pattern, 'i');
             const target = output.length > 65536 ? output.slice(0, 65536) : output;
             passed = re.test(target);
             notes = passed ? 'Matches regex pattern' : 'Did not match regex pattern';
