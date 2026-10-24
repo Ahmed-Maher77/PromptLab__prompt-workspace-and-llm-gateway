@@ -12,52 +12,9 @@ import {
   Max,
   MaxLength,
   Min,
-  Validate,
-  ValidateIf,
   ValidateNested,
-  ValidationArguments,
-  ValidatorConstraint,
-  ValidatorConstraintInterface,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import RE2 = require('re2');
-
-@ValidatorConstraint({ name: 'isValidCriterionPattern', async: false })
-export class IsValidCriterionPatternConstraint implements ValidatorConstraintInterface {
-  validate(value: any, args: ValidationArguments) {
-    const obj = args.object as EvaluationCriterionDto;
-    if (obj?.type === 'regex') {
-      if (typeof value !== 'string' || value.trim().length === 0) {
-        return false;
-      }
-      if (value.trim().length > 256) {
-        return false;
-      }
-      try {
-        new RE2(value.trim(), 'i');
-        return true;
-      } catch {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  defaultMessage(args: ValidationArguments) {
-    const obj = args.object as EvaluationCriterionDto;
-    if (obj?.type === 'regex') {
-      const val = args.value;
-      if (!val || typeof val !== 'string' || val.trim().length === 0) {
-        return 'expectedValue is required when criterion type is regex';
-      }
-      if (val.trim().length > 256) {
-        return 'Regex pattern exceeds maximum allowed length of 256 characters';
-      }
-      return 'Invalid regular expression for regex evaluation criterion (must be valid linear-time RE2 syntax)';
-    }
-    return 'Invalid expectedValue';
-  }
-}
 
 export class SlotConfigDto {
   @IsString()
@@ -119,10 +76,9 @@ export class EvaluationCriterionDto {
   })
   type!: 'contains_text' | 'regex' | 'json_validity' | 'max_length' | 'manual';
 
-  @ValidateIf((o: EvaluationCriterionDto) => o.type === 'regex' || o.expectedValue != null)
   @IsString()
+  @IsOptional()
   @MaxLength(4096, { message: 'expectedValue must not exceed 4096 characters' })
-  @Validate(IsValidCriterionPatternConstraint)
   expectedValue?: string;
 }
 

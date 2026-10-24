@@ -6,6 +6,9 @@
   "workspaces": [
     "apps/*"
   ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "start:api": "npm --workspace=@promptlab/api run start:dev",
     "start:web": "npm --workspace=@promptlab/web run start",

@@ -7,7 +7,11 @@ import { ObservabilityService } from '../observability/observability.service';
 import { RunComparisonDto, SlotConfigDto, EvaluationCriterionDto, RateExperimentDto } from './dto/run-comparison.dto';
 import { calculateCost } from './cost-calculator';
 import { Prisma } from '@prisma/client';
-import RE2 = require('re2');
+import { compileSafeRegex, CompiledRegexResult } from '../common/utils/regex.util';
+
+export interface PreparedCriterion extends EvaluationCriterionDto {
+  compiledRegex?: CompiledRegexResult;
+}
 
 export interface CriterionResult {
   criterionId: string;
@@ -205,10 +209,13 @@ export class ExperimentsService {
     const resolvedSlotA = await this.prepareSlot(dto.slotA, dto.commonInput);
     const resolvedSlotB = await this.prepareSlot(dto.slotB, dto.commonInput);
 
-    // 2. Execute both slots independently via Promise.allSettled for partial failure tolerance
+    // 2. Pre-compile evaluation criteria once for both slots
+    const preparedCriteria = this.prepareCriteria(dto.evaluationCriteria || []);
+
+    // 3. Execute both slots independently via Promise.allSettled for partial failure tolerance
     const [resultA, resultB] = await Promise.allSettled([
-      this.executeSlot('A', dto.slotA, resolvedSlotA, dto.evaluationCriteria || []),
-      this.executeSlot('B', dto.slotB, resolvedSlotB, dto.evaluationCriteria || []),
+      this.executeSlot('A', dto.slotA, resolvedSlotA, preparedCriteria),
+      this.executeSlot('B', dto.slotB, resolvedSlotB, preparedCriteria),
     ]);
 
     const runA: SlotRunResult =
@@ -370,7 +377,7 @@ export class ExperimentsService {
     slotLabel: 'A' | 'B',
     config: SlotConfigDto,
     prepared: { templateBody: string; resolvedPrompt: string; promptId?: string; promptName?: string; versionNumber?: number },
-    criteria: EvaluationCriterionDto[],
+    criteria: (EvaluationCriterionDto | PreparedCriterion)[],
   ): Promise<SlotRunResult> {
     const promptEst =
       typeof this.providersService?.estimateTokens === 'function'
@@ -477,9 +484,24 @@ export class ExperimentsService {
   }
 
   /**
+   * Pre-compiles regex criteria once to avoid repeated compilation across slots.
+   */
+  prepareCriteria(criteria: EvaluationCriterionDto[]): PreparedCriterion[] {
+    return (criteria || []).map((c) => {
+      if (c.type === 'regex') {
+        return {
+          ...c,
+          compiledRegex: compileSafeRegex(c.expectedValue),
+        };
+      }
+      return c;
+    });
+  }
+
+  /**
    * Evaluates repeatable evaluation criteria against model output.
    */
-  evaluateCriteria(output: string | null, criteria: EvaluationCriterionDto[]): CriterionResult[] {
+  evaluateCriteria(output: string | null, criteria: (EvaluationCriterionDto | PreparedCriterion)[]): CriterionResult[] {
     if (!criteria || criteria.length === 0) return [];
     if (!output) {
       return criteria.map((c) => ({
@@ -503,16 +525,15 @@ export class ExperimentsService {
           break;
         }
         case 'regex': {
-          const pattern = (c.expectedValue || '').trim();
-          if (pattern.length > 256) {
+          const prep = c as PreparedCriterion;
+          const compiled = prep.compiledRegex ?? compileSafeRegex(c.expectedValue);
+          if (compiled.error) {
             passed = false;
-            notes = 'Regex pattern exceeds maximum allowed length of 256 characters';
+            notes = compiled.error;
             break;
           }
           try {
-            const re = new RE2(pattern, 'i');
-            const target = output.length > 65536 ? output.slice(0, 65536) : output;
-            passed = re.test(target);
+            passed = compiled.test ? compiled.test(output) : false;
             notes = passed ? 'Matches regex pattern' : 'Did not match regex pattern';
           } catch {
             passed = false;
