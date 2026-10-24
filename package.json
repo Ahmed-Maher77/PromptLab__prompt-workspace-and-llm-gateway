@@ -18,6 +18,8 @@
     "test:web": "npm --workspace=@promptlab/web run test",
     "typecheck": "npm --workspace=@promptlab/api run typecheck && npm --workspace=@promptlab/web run typecheck",
     "lint": "npm --workspace=@promptlab/api run lint && npm --workspace=@promptlab/web run lint",
+    "test:e2e": "playwright test -c e2e/playwright.config.ts",
+    "test:flows": "node scripts/run-e2e-flows.mjs --all",
     "prisma:generate": "npm --workspace=@promptlab/api run prisma:generate",
     "prisma:push": "npm --workspace=@promptlab/api run prisma:push",
     "prisma:migrate": "npm --workspace=@promptlab/api run prisma:migrate"
@@ -30,5 +32,8 @@
     "angular"
   ],
   "author": "PromptLab Team",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
 }
