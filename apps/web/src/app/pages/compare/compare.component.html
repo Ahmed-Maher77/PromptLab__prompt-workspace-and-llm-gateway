@@ -52,11 +52,13 @@
   <!-- Shared Configuration Strip -->
   <section class="shared-config-panel" aria-labelledby="experiment-setup-title">
     <div class="setup-heading">
-      <div>
-        <p class="section-kicker">STEP 1</p>
-        <h2 id="experiment-setup-title">Experiment setup</h2>
+      <div class="step-header-wrap">
+        <span class="step-badge">1</span>
+        <div>
+          <h2 id="experiment-setup-title">Experiment setup</h2>
+          <p class="step-sub">Define shared inputs and automated scoring criteria for both candidate configurations.</p>
+        </div>
       </div>
-      <p>Choose shared inputs and scoring rules before comparing the two configurations.</p>
     </div>
     <div class="config-top-row">
       <div class="form-group exp-name-group">
@@ -112,7 +114,11 @@
           <span class="text-xs text-muted" style="margin-left: var(--space-2);">Configurable criteria evaluated automatically against both outputs</span>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" (click)="addEvaluationCriterion()" id="btn-add-criterion">
-          + Add Criterion
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          Add Criterion
         </button>
       </div>
 
@@ -138,8 +144,11 @@
             [(ngModel)]="crit.expectedValue"
             placeholder="Expected value / keyword..."
           />
-          <button type="button" class="btn-text-danger" (click)="removeEvaluationCriterion(idx)" title="Remove criterion">
-            ✕
+          <button type="button" class="btn-remove-criterion" (click)="removeEvaluationCriterion(idx)" title="Remove criterion" aria-label="Remove criterion">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
           </button>
         </div>
       </div>
@@ -149,11 +158,13 @@
   <!-- Side-by-Side Dual Slot Engineering Grid -->
   <section class="comparison-section" aria-labelledby="candidates-title">
     <div class="comparison-section-heading">
-      <div>
-        <p class="section-kicker">STEP 2</p>
-        <h2 id="candidates-title">Candidate configurations</h2>
+      <div class="step-header-wrap">
+        <span class="step-badge">2</span>
+        <div>
+          <h2 id="candidates-title">Candidate configurations</h2>
+          <p class="step-sub">Select prompt templates, versions, and model parameters to evaluate side by side.</p>
+        </div>
       </div>
-      <p>Adjust each candidate, then run both against the same inputs.</p>
     </div>
   <section class="side-by-side-grid">
     <!-- ==================== SLOT A ==================== -->

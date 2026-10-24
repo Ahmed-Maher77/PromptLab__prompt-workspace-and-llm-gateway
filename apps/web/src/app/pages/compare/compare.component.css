@@ -60,11 +60,47 @@
 .shared-config-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--space-4);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
+  box-shadow: none;
+}
+
+.setup-heading, .comparison-section-heading {
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-1);
+}
+
+.step-header-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.step-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #EFF6FF;
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #BFDBFE;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.step-sub {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 2px 0 0;
+  line-height: 1.4;
 }
 
 .config-top-row {
@@ -105,7 +141,7 @@
 .common-input-deck, .criteria-deck {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border-subtle);
 }
@@ -143,23 +179,33 @@
 
 .criterion-row {
   display: grid;
-  grid-template-columns: 2fr 1.5fr 2fr auto;
-  gap: var(--space-2);
+  grid-template-columns: 2fr 1.5fr 2fr 34px;
+  gap: 8px;
   align-items: center;
+  background: #F8FAFC;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
 }
 
-.btn-text-danger {
-  background: none;
-  border: none;
-  color: var(--color-danger);
-  font-size: 14px;
-  font-weight: 600;
+.btn-remove-criterion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
   cursor: pointer;
-  padding: 0 var(--space-2);
+  transition: all 0.15s ease;
 }
 
-.btn-text-danger:hover {
-  opacity: 0.8;
+.btn-remove-criterion:hover {
+  background: #FEF2F2;
+  border-color: #FECACA;
+  color: var(--color-danger);
 }
 
 /* Side-by-Side Dual Slot Grid */
@@ -179,18 +225,19 @@
 .slot-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  box-shadow: none;
 }
 
 .slot-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-surface-muted);
+  padding: 12px 16px;
+  background: #F8FAFC;
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -208,25 +255,25 @@
 }
 
 .badge-slot-a {
-  background: #EBF1FF;
-  color: #175CD3;
-  border: 1px solid #B2CCFF;
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
 }
 
 .badge-slot-b {
-  background: #F4EBFF;
-  color: #6941C6;
-  border: 1px solid #D9D6FE;
+  background: #F5F3FF;
+  color: #6D28D9;
+  border: 1px solid #DDD6FE;
 }
 
 .slot-prompt-display {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .slot-config-deck {
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-4);
   border-bottom: 1px solid var(--color-border-subtle);
   display: flex;
   flex-direction: column;
@@ -235,8 +282,10 @@
 }
 
 .config-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
   gap: var(--space-3);
+  align-items: start;
 }
 
 .flex-1 { flex: 1; }
@@ -244,7 +293,7 @@
 
 .range-slider {
   width: 100%;
-  accent-color: var(--color-primary);
+  margin-top: 8px;
 }
 
 /* Slot Output Section */
@@ -585,7 +634,7 @@
   gap: var(--space-4);
   padding: var(--space-5);
   border-radius: var(--radius-lg);
-  box-shadow: 0 1px 2px rgb(16 24 40 / 3%);
+  box-shadow: none;
 }
 
 .setup-heading,
@@ -627,7 +676,7 @@
 .side-by-side-grid { gap: var(--space-3); }
 .slot-card {
   border-radius: var(--radius-lg);
-  box-shadow: 0 1px 2px rgb(16 24 40 / 3%);
+  box-shadow: none;
 }
 .slot-header {
   padding: var(--space-4);
