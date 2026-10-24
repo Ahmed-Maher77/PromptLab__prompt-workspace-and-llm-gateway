@@ -56,7 +56,9 @@ export class ObservabilityController {
   @Post('clear')
   @Roles('admin')
   clearTraces() {
-    if (process.env.NODE_ENV === 'production' || process.env.ENABLE_DEMO_ENDPOINTS !== 'true') {
+    const isDevOrTest =
+      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+    if (!isDevOrTest || process.env.ENABLE_DEMO_ENDPOINTS !== 'true') {
       throw new ForbiddenException('Demo endpoints are disabled in this environment.');
     }
     this.observabilityService.clearTraces();

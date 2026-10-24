@@ -24,6 +24,11 @@ Ensure required parameters are present:
 - `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/promptlab?schema=public`
 - `LITELLM_PROXY_URL=http://localhost:4000`
 - `LITELLM_MASTER_KEY=sk-promptlab-dev-key`
+- `AUTH_DEV_TOKENS_ENABLED=true`
+- `AUTH_DEV_ADMIN_TOKEN=dev-admin-token`
+- `AUTH_DEV_USER_TOKEN=dev-user-token`
+- `AUTH_API_KEYS=dev-admin-key:dev-user-001:admin,dev-user-key:user-002:user`
+- `AUTH_JWT_SECRET=promptlab-dev-jwt-secret-at-least-32-chars-long!`
 
 ## Step 2: Install Workspace Dependencies
 ```bash

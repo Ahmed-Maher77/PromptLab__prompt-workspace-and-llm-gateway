@@ -8,9 +8,12 @@ import { configureApp } from './configure-app';
 describe('HTTP Routing & App Integration (E2E)', () => {
   let app: INestApplication;
   const authHeader = { Authorization: 'Bearer dev-admin-token' };
+  const origEnv = process.env;
   jest.setTimeout(30000);
 
   beforeAll(async () => {
+    process.env = { ...origEnv };
+    process.env.NODE_ENV = 'test';
     // Ensure test environment satisfies startup validation
     if (!process.env.DATABASE_URL) {
       process.env.DATABASE_URL = 'postgresql://postgres:admin@localhost:5432/promptlab?schema=public';
@@ -33,6 +36,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
   }, 30000);
 
   afterAll(async () => {
+    process.env = origEnv;
     if (app) {
       await app.close();
     }

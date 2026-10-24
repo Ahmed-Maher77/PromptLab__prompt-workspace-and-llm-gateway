@@ -1,10 +1,25 @@
 import * as crypto from 'crypto';
+import { Logger } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/authenticated-user.interface';
 
 export const DEFAULT_LITELLM_GATEWAY_URL = 'http://127.0.0.1:4000';
 
-/** The insecure dev-only master key. Never acceptable in production. */
+/** The insecure dev-only master key. Never acceptable in production or non-dev environments. */
 export const DEV_MASTER_KEY = 'sk-promptlab-dev-key';
+
+/**
+ * List of known sample and example secrets that must be rejected in production-like environments.
+ */
+export const KNOWN_EXAMPLE_SECRETS: readonly string[] = Object.freeze([
+  'sk-promptlab-dev-key',
+  'promptlab-dev-jwt-secret-at-least-32-chars-long!',
+  'dev-admin-key',
+  'dev-user-key',
+  'dev-admin-token',
+  'dev-user-token',
+]);
+
+export const AUTH_CONFIG = Symbol('AUTH_CONFIG');
 
 export interface ParsedApiKey {
   digest: Buffer;
@@ -19,10 +34,14 @@ export interface ValidatedEnvironment {
   LITELLM_MASTER_KEY: string;
   TELEMETRY_ENABLED: boolean;
   NODE_ENV: string;
+  IS_DEV_OR_TEST: boolean;
   AUTH_DEV_TOKENS_ENABLED: boolean;
   AUTH_DEV_ADMIN_TOKEN?: string;
   AUTH_DEV_USER_TOKEN?: string;
   AUTH_JWT_SECRET?: string;
+  AUTH_JWT_ISSUER?: string;
+  AUTH_JWT_AUDIENCE?: string;
+  AUTH_JWT_MAX_LIFETIME_SECONDS: number;
   AUTH_API_KEYS: ParsedApiKey[];
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   LANGFUSE_HOST?: string;
@@ -30,39 +49,77 @@ export interface ValidatedEnvironment {
 
 /**
  * Parses comma-separated API keys in format `<key>:<userId>:<role>`.
- * Returns parsed entries with SHA-256 digests for timing-safe comparison.
+ * Throws on malformed entries, duplicates, or insecure keys in production.
  */
-export function parseApiKeys(raw: string | undefined): ParsedApiKey[] {
+export function parseApiKeys(
+  raw: string | undefined,
+  isProductionLike: boolean = false,
+): ParsedApiKey[] {
   if (!raw || !raw.trim()) return [];
-  const entries = raw.split(',').map((e) => e.trim()).filter(Boolean);
+  const entries = raw
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean);
   const keys: ParsedApiKey[] = [];
+  const seenKeys = new Set<string>();
+
   for (const entry of entries) {
-    const parts = entry.split(':');
-    if (parts.length >= 3) {
-      const [key, userId, role] = parts;
-      if (key && userId && (role === 'admin' || role === 'user')) {
-        keys.push({
-          digest: crypto.createHash('sha256').update(key).digest(),
-          user: {
-            id: userId,
-            email: `${userId}@promptlab.local`,
-            displayName: userId === 'dev-user-001' ? 'Developer Admin' : userId,
-            role: role as 'admin' | 'user',
-          },
-        });
+    const parts = entry.split(':').map((p) => p.trim());
+    if (parts.length !== 3) {
+      throw new Error(
+        `[Startup Error] Malformed AUTH_API_KEYS entry: "${entry}". Format must be <key>:<userId>:<role> where role is 'admin' or 'user'.`,
+      );
+    }
+
+    const [key, userId, role] = parts;
+    if (!key || !userId || (role !== 'admin' && role !== 'user')) {
+      throw new Error(
+        `[Startup Error] Malformed AUTH_API_KEYS entry: "${entry}". Format must be <key>:<userId>:<role> where role is 'admin' or 'user'.`,
+      );
+    }
+
+    if (seenKeys.has(key)) {
+      throw new Error(
+        `[Startup Error] Duplicate API key detected in AUTH_API_KEYS. Each configured key must be unique.`,
+      );
+    }
+    seenKeys.add(key);
+
+    if (isProductionLike) {
+      if (key.length < 32) {
+        throw new Error(
+          `[Startup Error] In production, each API key in AUTH_API_KEYS must be at least 32 characters long. Key for user "${userId}" has length ${key.length}.`,
+        );
+      }
+      if (KNOWN_EXAMPLE_SECRETS.includes(key)) {
+        throw new Error(
+          `[Startup Error] In production, API key cannot use an insecure example or default secret ("${key}").`,
+        );
       }
     }
+
+    keys.push({
+      digest: crypto.createHash('sha256').update(key).digest(),
+      user: {
+        id: userId,
+        email: `${userId}@promptlab.local`,
+        displayName: userId === 'dev-user-001' ? 'Developer Admin' : userId,
+        role: role as 'admin' | 'user',
+      },
+    });
   }
   return keys;
 }
 
 /**
  * Validates required and optional runtime environment variables at application startup.
- * Throws a clear, informative error if mandatory variables are missing or insecure for production.
+ * SEC-01a-2: Treats any environment other than 'development' or 'test' (including unset)
+ * as production-like for all security guarantees (fail-safe default).
  */
 export function validateEnvironment(
   env: Record<string, string | undefined> = process.env,
 ): ValidatedEnvironment {
+  const logger = new Logger('EnvironmentValidation');
   const missing: string[] = [];
 
   if (!env.DATABASE_URL || env.DATABASE_URL.trim() === '') {
@@ -76,25 +133,40 @@ export function validateEnvironment(
     );
   }
 
-  const isProduction = env.NODE_ENV === 'production';
-  const masterKey = env.LITELLM_MASTER_KEY;
-  if (isProduction && (!masterKey || masterKey === DEV_MASTER_KEY)) {
-    throw new Error(
-      '[Startup Error] LITELLM_MASTER_KEY must be set to a strong, unique secret in production. ' +
-        'The default dev key "sk-promptlab-dev-key" is not acceptable.',
-    );
+  // SEC-01a-2: Allow-list for development and test. Everything else is treated as production.
+  const rawNodeEnv = env.NODE_ENV?.trim();
+  const isDevOrTest = rawNodeEnv === 'development' || rawNodeEnv === 'test';
+  const isProductionLike = !isDevOrTest;
+
+  const masterKey = env.LITELLM_MASTER_KEY?.trim();
+  if (isProductionLike) {
+    if (!masterKey || masterKey === '') {
+      throw new Error(
+        '[Startup Error] LITELLM_MASTER_KEY must be set to a strong, unique secret in production.',
+      );
+    }
+    if (KNOWN_EXAMPLE_SECRETS.includes(masterKey)) {
+      throw new Error(
+        `[Startup Error] LITELLM_MASTER_KEY cannot use an insecure example secret ("${masterKey}") in production.`,
+      );
+    }
   }
 
-  // SEC-01a: Production startup validation for authentication
-  const parsedApiKeys = parseApiKeys(env.AUTH_API_KEYS);
+  // SEC-01a-2: Production startup validation for authentication
+  const parsedApiKeys = parseApiKeys(env.AUTH_API_KEYS, isProductionLike);
   const jwtSecret = env.AUTH_JWT_SECRET?.trim();
   const hasApiKeys = parsedApiKeys.length > 0;
   const hasJwtSecret = Boolean(jwtSecret && jwtSecret.length >= 32);
 
-  if (isProduction) {
+  if (isProductionLike) {
     if (jwtSecret && jwtSecret.length < 32) {
       throw new Error(
         '[Startup Error] AUTH_JWT_SECRET must be at least 32 characters long in production.',
+      );
+    }
+    if (jwtSecret && KNOWN_EXAMPLE_SECRETS.includes(jwtSecret)) {
+      throw new Error(
+        '[Startup Error] AUTH_JWT_SECRET cannot use an insecure example secret in production.',
       );
     }
     if (!hasApiKeys && !hasJwtSecret) {
@@ -110,11 +182,35 @@ export function validateEnvironment(
 
   const rawCors = env.CORS_ORIGIN || 'http://localhost:4200';
   const corsOrigins = rawCors.includes(',')
-    ? rawCors.split(',').map((o) => o.trim()).filter(Boolean)
+    ? rawCors
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
     : rawCors.trim();
 
+  // SEC-01a-2: Dev tokens work ONLY when isDevOrTest AND AUTH_DEV_TOKENS_ENABLED is strictly 'true'
   const authDevTokensEnabled =
-    !isProduction && env.AUTH_DEV_TOKENS_ENABLED === 'true';
+    isDevOrTest && env.AUTH_DEV_TOKENS_ENABLED === 'true';
+
+  let devAdminToken: string | undefined;
+  let devUserToken: string | undefined;
+
+  if (authDevTokensEnabled) {
+    devAdminToken = env.AUTH_DEV_ADMIN_TOKEN?.trim() || undefined;
+    devUserToken = env.AUTH_DEV_USER_TOKEN?.trim() || undefined;
+
+    if (!devAdminToken && !devUserToken) {
+      logger.warn(
+        'AUTH_DEV_TOKENS_ENABLED is true, but neither AUTH_DEV_ADMIN_TOKEN nor AUTH_DEV_USER_TOKEN is set. No dev tokens will be accepted.',
+      );
+    }
+  }
+
+  const maxLifetimeRaw = env.AUTH_JWT_MAX_LIFETIME_SECONDS
+    ? parseInt(env.AUTH_JWT_MAX_LIFETIME_SECONDS, 10)
+    : 86400;
+  const authJwtMaxLifetimeSeconds =
+    !isNaN(maxLifetimeRaw) && maxLifetimeRaw > 0 ? maxLifetimeRaw : 86400;
 
   return {
     DATABASE_URL: env.DATABASE_URL!,
@@ -126,15 +222,15 @@ export function validateEnvironment(
       DEFAULT_LITELLM_GATEWAY_URL,
     LITELLM_MASTER_KEY: masterKey ?? DEV_MASTER_KEY,
     TELEMETRY_ENABLED: env.TELEMETRY_ENABLED !== 'false',
-    NODE_ENV: env.NODE_ENV || 'development',
+    NODE_ENV: rawNodeEnv || 'production', // default to production when unset for security
+    IS_DEV_OR_TEST: isDevOrTest,
     AUTH_DEV_TOKENS_ENABLED: authDevTokensEnabled,
-    AUTH_DEV_ADMIN_TOKEN: authDevTokensEnabled
-      ? env.AUTH_DEV_ADMIN_TOKEN || 'dev-admin-token'
-      : undefined,
-    AUTH_DEV_USER_TOKEN: authDevTokensEnabled
-      ? env.AUTH_DEV_USER_TOKEN || 'dev-user-token'
-      : undefined,
+    AUTH_DEV_ADMIN_TOKEN: devAdminToken,
+    AUTH_DEV_USER_TOKEN: devUserToken,
     AUTH_JWT_SECRET: jwtSecret,
+    AUTH_JWT_ISSUER: env.AUTH_JWT_ISSUER?.trim() || undefined,
+    AUTH_JWT_AUDIENCE: env.AUTH_JWT_AUDIENCE?.trim() || undefined,
+    AUTH_JWT_MAX_LIFETIME_SECONDS: authJwtMaxLifetimeSeconds,
     AUTH_API_KEYS: parsedApiKeys,
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
     LANGFUSE_HOST: env.LANGFUSE_HOST,

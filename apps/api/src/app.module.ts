@@ -13,6 +13,7 @@ import { UsageModule } from './usage/usage.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { SettingsModule } from './settings/settings.module';
 import { JwtModule } from '@nestjs/jwt';
+import { AUTH_CONFIG, validateEnvironment } from './common/config/env.validation';
 import { AuthGuard } from './common/guards/auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -42,6 +43,10 @@ import { RolesGuard } from './common/guards/roles.guard';
     SettingsModule,
   ],
   providers: [
+    {
+      provide: AUTH_CONFIG,
+      useFactory: () => validateEnvironment(),
+    },
     {
       provide: APP_GUARD,
       useClass: AuthGuard,
