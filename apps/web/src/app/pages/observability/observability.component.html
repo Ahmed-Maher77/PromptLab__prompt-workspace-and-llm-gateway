@@ -95,57 +95,55 @@
     </div>
   </div>
 
-  <!-- Filters -->
-  <div class="filter-card">
-    <div class="filter-row">
-      <div class="form-group filter-item">
-        <label for="statusFilter" class="form-label">Status</label>
-        <select
-          id="statusFilter"
-          class="form-select"
-          [(ngModel)]="statusFilter"
-          (change)="applyFilters()"
-        >
-          <option value="all">All Statuses</option>
-          <option value="success">Success</option>
-          <option value="error">Error</option>
-          <option value="rate_limited">Rate Limited</option>
-        </select>
-      </div>
+  <!-- Filters Toolbar (Borderless inline controls) -->
+  <div class="filter-toolbar">
+    <div class="form-group filter-item">
+      <label for="statusFilter" class="form-label">Status</label>
+      <select
+        id="statusFilter"
+        class="form-control"
+        [(ngModel)]="statusFilter"
+        (change)="applyFilters()"
+      >
+        <option value="all">All Statuses</option>
+        <option value="success">Success</option>
+        <option value="error">Error</option>
+        <option value="rate_limited">Rate Limited</option>
+      </select>
+    </div>
 
-      <div class="form-group filter-item">
-        <label for="operationFilter" class="form-label">Operation</label>
-        <select
-          id="operationFilter"
-          class="form-select"
-          [(ngModel)]="operationFilter"
-          (change)="applyFilters()"
-        >
-          <option value="all">All Operations</option>
-          <option value="playground.execute">Playground Execution</option>
-          <option value="comparison.slot">Comparison Slot Run</option>
-          <option value="conversation.turn">Conversation Turn</option>
-          <option value="gateway.request">Direct Gateway Request</option>
-        </select>
-      </div>
+    <div class="form-group filter-item">
+      <label for="operationFilter" class="form-label">Operation</label>
+      <select
+        id="operationFilter"
+        class="form-control"
+        [(ngModel)]="operationFilter"
+        (change)="applyFilters()"
+      >
+        <option value="all">All Operations</option>
+        <option value="playground.execute">Playground Execution</option>
+        <option value="comparison.slot">Comparison Slot Run</option>
+        <option value="conversation.turn">Conversation Turn</option>
+        <option value="gateway.request">Direct Gateway Request</option>
+      </select>
+    </div>
 
-      <div class="form-group filter-item">
-        <label for="modelFilter" class="form-label">Model Filter</label>
-        <input
-          id="modelFilter"
-          type="text"
-          class="form-input"
-          placeholder="e.g. gpt-4o, claude"
-          [(ngModel)]="modelFilter"
-          (input)="applyFilters()"
-        />
-      </div>
+    <div class="form-group filter-item">
+      <label for="modelFilter" class="form-label">Model Filter</label>
+      <input
+        id="modelFilter"
+        type="text"
+        class="form-control"
+        placeholder="e.g. gpt-4o, claude"
+        [(ngModel)]="modelFilter"
+        (input)="applyFilters()"
+      />
+    </div>
 
-      <div class="filter-actions">
-        <button class="btn btn-ghost" (click)="statusFilter = 'all'; operationFilter = 'all'; modelFilter = ''; applyFilters()">
-          Reset
-        </button>
-      </div>
+    <div class="filter-actions">
+      <button class="btn btn-secondary btn-sm" (click)="statusFilter = 'all'; operationFilter = 'all'; modelFilter = ''; applyFilters()">
+        Reset
+      </button>
     </div>
   </div>
 
@@ -160,11 +158,13 @@
     <!-- Table View -->
     <div class="traces-table-container">
       <div *ngIf="traces.length === 0 && !loading" class="empty-state">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-        </svg>
-        <p class="empty-title">No traces recorded yet</p>
-        <p class="empty-sub">
+        <div class="empty-icon-circle">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+        </div>
+        <h3 class="empty-title">No traces recorded yet</h3>
+        <p class="empty-desc">
           Execute a prompt in Prompt Studio, run a comparison experiment, or send a message in Conversations to generate traces.
         </p>
       </div>
