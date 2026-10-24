@@ -1,4 +1,4 @@
-import { validateEnvironment } from './env.validation';
+import { validateEnvironment, DEV_MASTER_KEY } from './env.validation';
 
 describe('validateEnvironment', () => {
   it('throws an error when DATABASE_URL is missing or empty', () => {
@@ -19,7 +19,7 @@ describe('validateEnvironment', () => {
     expect(config.PORT).toBe(3100);
     expect(config.CORS_ORIGIN).toBe('http://localhost:4200');
     expect(config.LITELLM_GATEWAY_URL).toBe('http://127.0.0.1:4000');
-    expect(config.LITELLM_MASTER_KEY).toBe('sk-promptlab-dev-key');
+    expect(config.LITELLM_MASTER_KEY).toBe(DEV_MASTER_KEY);
     expect(config.TELEMETRY_ENABLED).toBe(true);
   });
 
@@ -57,4 +57,39 @@ describe('validateEnvironment', () => {
     });
     expect(configWithBoth.LITELLM_GATEWAY_URL).toBe('http://gateway.internal:4000');
   });
+
+  describe('SEC-03: production fail-fast for LITELLM_MASTER_KEY', () => {
+    const baseEnv = {
+      DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+      NODE_ENV: 'production',
+    };
+
+    it('throws in production when LITELLM_MASTER_KEY is absent', () => {
+      expect(() => validateEnvironment({ ...baseEnv })).toThrow(
+        /LITELLM_MASTER_KEY must be set to a strong, unique secret in production/,
+      );
+    });
+
+    it('throws in production when LITELLM_MASTER_KEY equals the dev default', () => {
+      expect(() =>
+        validateEnvironment({ ...baseEnv, LITELLM_MASTER_KEY: DEV_MASTER_KEY }),
+      ).toThrow(/LITELLM_MASTER_KEY must be set to a strong, unique secret in production/);
+    });
+
+    it('does NOT throw in production when a proper key is supplied', () => {
+      expect(() =>
+        validateEnvironment({ ...baseEnv, LITELLM_MASTER_KEY: 'sk-super-secret-prod-key' }),
+      ).not.toThrow();
+    });
+
+    it('does NOT throw in development when LITELLM_MASTER_KEY is absent (uses dev default)', () => {
+      expect(() =>
+        validateEnvironment({
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          NODE_ENV: 'development',
+        }),
+      ).not.toThrow();
+    });
+  });
 });
+

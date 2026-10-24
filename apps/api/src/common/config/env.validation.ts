@@ -1,5 +1,8 @@
 export const DEFAULT_LITELLM_GATEWAY_URL = 'http://127.0.0.1:4000';
 
+/** The insecure dev-only master key. Never acceptable in production. */
+export const DEV_MASTER_KEY = 'sk-promptlab-dev-key';
+
 export interface ValidatedEnvironment {
   DATABASE_URL: string;
   PORT: number;
@@ -13,7 +16,7 @@ export interface ValidatedEnvironment {
 
 /**
  * Validates required and optional runtime environment variables at application startup.
- * Throws a clear, informative error if mandatory variables are missing.
+ * Throws a clear, informative error if mandatory variables are missing or insecure for production.
  */
 export function validateEnvironment(
   env: Record<string, string | undefined> = process.env,
@@ -31,6 +34,16 @@ export function validateEnvironment(
     );
   }
 
+  // Fail fast in production when LITELLM_MASTER_KEY is missing or uses the insecure dev default.
+  const isProduction = env.NODE_ENV === 'production';
+  const masterKey = env.LITELLM_MASTER_KEY;
+  if (isProduction && (!masterKey || masterKey === DEV_MASTER_KEY)) {
+    throw new Error(
+      '[Startup Error] LITELLM_MASTER_KEY must be set to a strong, unique secret in production. ' +
+        'The default dev key "sk-promptlab-dev-key" is not acceptable.',
+    );
+  }
+
   const rawPort = env.PORT ? parseInt(env.PORT, 10) : 3100;
   const port = isNaN(rawPort) || rawPort <= 0 ? 3100 : rawPort;
 
@@ -44,7 +57,7 @@ export function validateEnvironment(
     PORT: port,
     CORS_ORIGIN: corsOrigins,
     LITELLM_GATEWAY_URL: env.LITELLM_GATEWAY_URL || env.LITELLM_PROXY_URL || DEFAULT_LITELLM_GATEWAY_URL,
-    LITELLM_MASTER_KEY: env.LITELLM_MASTER_KEY || 'sk-promptlab-dev-key',
+    LITELLM_MASTER_KEY: masterKey ?? DEV_MASTER_KEY,
     TELEMETRY_ENABLED: env.TELEMETRY_ENABLED !== 'false',
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
     LANGFUSE_HOST: env.LANGFUSE_HOST,

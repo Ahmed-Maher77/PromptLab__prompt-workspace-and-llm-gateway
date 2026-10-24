@@ -43,10 +43,8 @@ export class ProvidersService {
   }
 
   getMasterKey(): string {
-    return (
-      this.configService.get<string>('LITELLM_MASTER_KEY') ||
-      'sk-promptlab-dev-key'
-    );
+    // Read from validated config; env.validation.ts supplies the dev default in non-prod.
+    return this.configService.get<string>('LITELLM_MASTER_KEY', { infer: true }) ?? 'sk-promptlab-dev-key';
   }
 
   /**

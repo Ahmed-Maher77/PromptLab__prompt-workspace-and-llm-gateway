@@ -5,10 +5,12 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin}
+      # Use ${POSTGRES_PASSWORD:?} so docker compose fails loudly if the variable is unset.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
       POSTGRES_DB: promptlab
     ports:
-      - "5432:5432"
+      # Bind to loopback only — do not expose the DB on all network interfaces.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,11 +24,13 @@ services:
     container_name: promptlab-litellm
     restart: unless-stopped
     ports:
-      - "4000:4000"
+      # Bind to loopback only — the API reaches LiteLLM via localhost; external access is not needed.
+      - "127.0.0.1:4000:4000"
     volumes:
       - ./infra/litellm/config.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
     environment:
-      LITELLM_MASTER_KEY: sk-promptlab-dev-key
       STORE_MODEL_IN_DB: "False"
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     depends_on:

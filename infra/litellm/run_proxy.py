@@ -28,8 +28,8 @@ dotenv.load_dotenv = _safe_load_dotenv
 
 os.environ.pop("DATABASE_URL", None)
 os.environ["STORE_MODEL_IN_DB"] = "False"
-if "LITELLM_MASTER_KEY" not in os.environ:
-    os.environ["LITELLM_MASTER_KEY"] = "sk-promptlab-dev-key"
+# LITELLM_MASTER_KEY must be provided via the environment (e.g. .env or CI secret).
+# Do not set a fallback here — an unset key should fail loudly, not use a dev default.
 
 # Suppress banner unicode output on Windows console
 try:
