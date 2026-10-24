@@ -83,12 +83,20 @@
     @if (!selectedConversation()) {
       <div class="no-selection-state">
         <div class="empty-card">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-          <h4>No Conversation Selected</h4>
-          <p>Select a conversation from the left sidebar or start a new session with an initial prompt.</p>
-          <button class="btn btn-primary" (click)="openNewModal()">New Conversation</button>
+          <div class="empty-icon-circle">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <h4>No conversation selected</h4>
+          <p>Choose an existing session from the list on the left, or launch a new conversation with an initial prompt.</p>
+          <button class="btn btn-primary" (click)="openNewModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            New Conversation
+          </button>
         </div>
       </div>
     } @else {

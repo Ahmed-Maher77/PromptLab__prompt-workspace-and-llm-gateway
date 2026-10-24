@@ -54,6 +54,21 @@
   padding: 8px;
 }
 
+.empty-state-sidebar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 16px;
+  gap: 12px;
+}
+
+.empty-state-sidebar p {
+  font-size: 13px;
+  color: var(--text-muted, #64748B);
+  margin: 0;
+}
+
 .conv-items {
   display: flex;
   flex-direction: column;
@@ -143,7 +158,42 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--bg-canvas, #0f1117);
+  background-color: var(--color-bg);
+}
+
+.no-selection-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  background-color: var(--color-bg);
+}
+
+.empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 440px;
+  padding: 0;
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.empty-card h4 {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0 0 var(--space-2);
+}
+
+.empty-card p {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin: 0 0 var(--space-5);
 }
 
 .chat-header {
@@ -297,7 +347,7 @@
   max-width: 80%;
   border-radius: 8px;
   padding: 12px 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
 }
 
 .message-user .message-bubble {
@@ -1063,7 +1113,7 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  box-shadow: 0 1px 2px rgb(16 24 40 / 3%);
+  box-shadow: none;
 }
 
 .conversations-page .conversations-sidebar {
