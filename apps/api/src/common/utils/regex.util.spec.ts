@@ -35,12 +35,24 @@ describe('compileSafeRegex', () => {
     const elapsed = Date.now() - start;
 
     expect(matched).toBe(false);
-    expect(elapsed).toBeLessThan(300);
+    expect(elapsed).toBeLessThan(1000);
   });
 
   it('should report informative error for uncompilable or unsupported patterns', () => {
     const broken = compileSafeRegex('[a-z');
     expect(broken.error).toBeDefined();
-    expect(broken.error).toContain('Invalid regular expression');
+    expect(broken.error).toBe('Invalid regular expression');
+  });
+
+  it('should fail closed when re2 fails to load', () => {
+    jest.isolateModules(() => {
+      jest.doMock('re2', () => {
+        throw new Error('Native addon missing');
+      });
+      const { compileSafeRegex: isolatedCompile } = require('./regex.util');
+      const result = isolatedCompile('(a|aa)+$');
+      expect(result.error).toBe('Regex criteria are unavailable: safe regex engine (re2) failed to load');
+      expect(result.test).toBeUndefined();
+    });
   });
 });

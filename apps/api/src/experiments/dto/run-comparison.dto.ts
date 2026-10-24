@@ -12,9 +12,43 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
+  ValidationArguments,
+  ValidationOptions,
+  registerDecorator,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { compileSafeRegex } from '../../common/utils/regex.util';
+
+export function IsValidCriterionPattern(validationOptions?: ValidationOptions) {
+  return function (object: object, propertyName: string) {
+    registerDecorator({
+      name: 'isValidCriterionPattern',
+      target: object.constructor,
+      propertyName: propertyName,
+      options: validationOptions,
+      validator: {
+        validate(value: any, args: ValidationArguments) {
+          const obj = args.object as EvaluationCriterionDto;
+          if (obj?.type === 'regex') {
+            const compiled = compileSafeRegex(value);
+            return !compiled.error;
+          }
+          return true;
+        },
+        defaultMessage(args: ValidationArguments) {
+          const obj = args.object as EvaluationCriterionDto;
+          if (obj?.type === 'regex') {
+            const compiled = compileSafeRegex(args.value);
+            return compiled.error || 'Invalid regular expression for regex evaluation criterion';
+          }
+          return 'Invalid expectedValue';
+        },
+      },
+    });
+  };
+}
 
 export class SlotConfigDto {
   @IsString()
@@ -76,9 +110,10 @@ export class EvaluationCriterionDto {
   })
   type!: 'contains_text' | 'regex' | 'json_validity' | 'max_length' | 'manual';
 
+  @ValidateIf((o: EvaluationCriterionDto) => o.type === 'regex' || o.expectedValue != null)
   @IsString()
-  @IsOptional()
   @MaxLength(4096, { message: 'expectedValue must not exceed 4096 characters' })
+  @IsValidCriterionPattern()
   expectedValue?: string;
 }
 
