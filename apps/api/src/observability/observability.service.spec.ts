@@ -2,12 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ObservabilityService } from './observability.service';
 import { sanitizeTelemetry } from './redaction.util';
+import { AUTH_CONFIG } from '../common/config/env.validation';
 
 describe('ObservabilityService', () => {
   let service: ObservabilityService;
   let configServiceMock: { get: jest.Mock };
+  let authConfigMock: { ENABLE_TELEMETRY: boolean };
 
   beforeEach(async () => {
+    authConfigMock = { ENABLE_TELEMETRY: true };
     configServiceMock = {
       get: jest.fn((key: string) => {
         if (key === 'ENABLE_TELEMETRY') return 'true';
@@ -24,6 +27,10 @@ describe('ObservabilityService', () => {
         {
           provide: ConfigService,
           useValue: configServiceMock,
+        },
+        {
+          provide: AUTH_CONFIG,
+          useValue: authConfigMock,
         },
       ],
     }).compile();
@@ -111,10 +118,7 @@ describe('ObservabilityService', () => {
 
   describe('disabled telemetry', () => {
     it('does not record traces when ENABLE_TELEMETRY is false', () => {
-      configServiceMock.get.mockImplementation((key: string) => {
-        if (key === 'ENABLE_TELEMETRY') return 'false';
-        return null;
-      });
+      authConfigMock.ENABLE_TELEMETRY = false;
 
       const trace = service.startTrace({
         name: 'disabled-run',
@@ -128,16 +132,16 @@ describe('ObservabilityService', () => {
       expect(traces.length).toBe(0);
     });
 
-    it('respects validated authConfig.ENABLE_TELEMETRY when provided (OBS-01)', () => {
+    it('respects validated authConfig.ENABLE_TELEMETRY (OBS-01)', () => {
       const serviceWithConfig = new ObservabilityService(
-        configServiceMock as any,
         { ENABLE_TELEMETRY: false } as any,
+        configServiceMock as any,
       );
       expect(serviceWithConfig.isTelemetryEnabled()).toBe(false);
 
       const serviceWithConfigTrue = new ObservabilityService(
-        configServiceMock as any,
         { ENABLE_TELEMETRY: true } as any,
+        configServiceMock as any,
       );
       expect(serviceWithConfigTrue.isTelemetryEnabled()).toBe(true);
     });

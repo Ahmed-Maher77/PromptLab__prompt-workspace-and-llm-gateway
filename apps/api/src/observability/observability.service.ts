@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AUTH_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import {
@@ -48,16 +48,12 @@ export class ObservabilityService {
   private readonly maxBufferSize = 500;
 
   constructor(
+    @Inject(AUTH_CONFIG) private readonly authConfig: ValidatedEnvironment,
     private readonly configService: ConfigService,
-    @Optional() @Inject(AUTH_CONFIG) private readonly authConfig?: ValidatedEnvironment,
   ) {}
 
   isTelemetryEnabled(): boolean {
-    if (this.authConfig !== undefined) {
-      return this.authConfig.ENABLE_TELEMETRY;
-    }
-    const val = this.configService.get<string>('ENABLE_TELEMETRY');
-    return val === undefined || val === '' || val === 'true' || val === '1';
+    return this.authConfig.ENABLE_TELEMETRY;
   }
 
   getOtelEndpoint(): string | null {
