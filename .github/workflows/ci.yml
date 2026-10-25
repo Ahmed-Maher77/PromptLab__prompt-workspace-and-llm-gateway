@@ -1,0 +1,75 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build, Lint, Test & Audit
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: admin
+          POSTGRES_DB: promptlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:admin@localhost:5432/promptlab?schema=public
+      NODE_ENV: test
+      AUTH_DEV_TOKENS_ENABLED: "true"
+      AUTH_DEV_ADMIN_TOKEN: dev-admin-token
+      AUTH_DEV_USER_TOKEN: dev-user-token
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Lint codebase
+        run: npm run lint
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+      - name: API unit tests
+        run: npm run test:unit
+
+      - name: Web unit tests
+        run: npm run test:web
+
+      - name: Build applications (API & Web)
+        run: npm run build
+
+      - name: Apply database migrations
+        run: npm run prisma:push
+
+      - name: API integration tests
+        run: npm run test:integration
+
+      - name: Dependency security audit
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
