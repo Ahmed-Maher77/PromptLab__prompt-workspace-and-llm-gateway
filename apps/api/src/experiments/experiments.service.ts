@@ -219,8 +219,8 @@ export class ExperimentsService {
 
     // 3. Execute both slots independently via Promise.allSettled for partial failure tolerance
     const [resultA, resultB] = await Promise.allSettled([
-      this.executeSlot('A', dto.slotA, resolvedSlotA, preparedCriteria),
-      this.executeSlot('B', dto.slotB, resolvedSlotB, preparedCriteria),
+      this.executeSlot('A', dto.slotA, resolvedSlotA, preparedCriteria, userId),
+      this.executeSlot('B', dto.slotB, resolvedSlotB, preparedCriteria, userId),
     ]);
 
     const runA: SlotRunResult =
@@ -383,6 +383,7 @@ export class ExperimentsService {
     config: SlotConfigDto,
     prepared: { templateBody: string; resolvedPrompt: string; promptId?: string; promptName?: string; versionNumber?: number },
     criteria: (EvaluationCriterionDto | PreparedCriterion)[],
+    userId: string,
   ): Promise<SlotRunResult> {
     const promptEst =
       typeof this.providersService?.estimateTokens === 'function'
@@ -403,6 +404,7 @@ export class ExperimentsService {
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
+        userId,
         model: config.model,
         provider: config.provider,
         estimatedTokens,

@@ -252,7 +252,10 @@ export class UsageService {
    * Atomically checks quota boundaries and increments reservedTokens.
    */
   async reserveUsage(dto: ReserveUsageDto): Promise<ReservationResult> {
-    const uid = dto.userId || 'dev-user-001';
+    if (!dto.userId) {
+      throw new BadRequestException('userId is required for reserveUsage');
+    }
+    const uid = dto.userId;
     const policy = await this.getPolicy(uid);
 
     // 1. Enforce rate limit (independent from monthly token quota)

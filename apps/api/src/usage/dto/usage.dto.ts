@@ -16,7 +16,7 @@ export class UpdateQuotaPolicyDto {
 
 export class ReserveUsageDto {
   requestId!: string;
-  userId?: string;
+  userId!: string;
   model!: string;
   provider!: string;
   estimatedTokens!: number;

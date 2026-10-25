@@ -3,6 +3,7 @@ import { ExperimentsService } from './experiments.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { PromptsService } from '../prompts/prompts.service';
+import { UsageService } from '../usage/usage.service';
 import { NotFoundException } from '@nestjs/common';
 
 describe('ExperimentsService', () => {
@@ -10,6 +11,7 @@ describe('ExperimentsService', () => {
   let mockPrisma: any;
   let mockProviders: any;
   let mockPrompts: any;
+  let mockUsage: any;
 
   beforeEach(async () => {
     mockPrisma = {
@@ -41,12 +43,18 @@ describe('ExperimentsService', () => {
       }),
     };
 
+    mockUsage = {
+      reserveUsage: jest.fn().mockResolvedValue({ success: true, remainingTokens: 1000 }),
+      reconcileUsage: jest.fn().mockResolvedValue({ success: true }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ExperimentsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ProvidersService, useValue: mockProviders },
         { provide: PromptsService, useValue: mockPrompts },
+        { provide: UsageService, useValue: mockUsage },
       ],
     }).compile();
 
@@ -190,6 +198,55 @@ describe('ExperimentsService', () => {
       expect(result.slotB.output).toBe('Successful output from Claude');
       expect(result.slotB.latencyMs).toBe(380);
       expect(result.slotB.tokenUsageSource).toBe('provider-reported');
+    });
+
+    it('should pass caller userId to reserveUsage for both comparison slots (SEC-01d)', async () => {
+      mockPrisma.promptVersion.findUnique.mockResolvedValue({
+        id: 'pv-1',
+        versionNumber: 1,
+        templateBody: 'Template: {{input}}',
+        prompt: { id: 'p-1', name: 'Prompt A' },
+      });
+
+      mockProviders.executeChatCompletion.mockResolvedValue({
+        success: true,
+        model: 'gpt-4o-mini',
+        content: 'Slot output',
+        latencyMs: 100,
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, source: 'provider-reported' },
+      });
+
+      mockPrisma.experiment.create.mockResolvedValueOnce({
+        id: 'exp-quota-user',
+        name: 'Quota user test',
+        createdAt: new Date(),
+        runs: [],
+      });
+
+      await service.runComparison({
+        name: 'Quota user test',
+        commonInput: { input: 'test' },
+        slotA: {
+          promptVersionId: 'pv-1',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+        },
+        slotB: {
+          promptVersionId: 'pv-1',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+        },
+      }, 'caller-user-456');
+
+      expect(mockUsage.reserveUsage).toHaveBeenCalledTimes(2);
+      expect(mockUsage.reserveUsage).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ userId: 'caller-user-456' }),
+      );
+      expect(mockUsage.reserveUsage).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ userId: 'caller-user-456' }),
+      );
     });
   });
 
