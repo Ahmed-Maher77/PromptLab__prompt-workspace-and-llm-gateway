@@ -3,6 +3,8 @@ import {
   ExecutionContext,
   Inject,
   Injectable,
+  Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -14,6 +16,7 @@ import {
   AUTH_CONFIG,
   ValidatedEnvironment,
 } from '../config/env.validation';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * SEC-01a-2: Production-grade, secure-by-default authentication guard.
@@ -27,9 +30,12 @@ import {
  *  - JWTs verified cryptographically with pinned HS256 algorithm.
  *  - JWTs require 'exp' claim and enforce maximum lifetime (exp - iat <= maxLifetime).
  *  - Checks issuer and audience when configured.
+ *  - SEC-01e: Upserts authenticated user into DB on first request to ensure FK integrity.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly logger = new Logger(AuthGuard.name);
+  private readonly ensuredUserIds = new Set<string>();
   private devAdminDigest?: Buffer;
   private devUserDigest?: Buffer;
 
@@ -37,6 +43,7 @@ export class AuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     @Inject(AUTH_CONFIG) private readonly authConfig: ValidatedEnvironment,
     private readonly jwtService: JwtService,
+    @Optional() private readonly prisma?: PrismaService,
   ) {
     this.initDevDigests();
   }
@@ -96,7 +103,40 @@ export class AuthGuard implements CanActivate {
     }
 
     request.user = user;
+    if (this.prisma) {
+      await this.ensureUserPersisted(user);
+    }
     return true;
+  }
+
+  private async ensureUserPersisted(user: AuthenticatedUser): Promise<void> {
+    if (this.ensuredUserIds.has(user.id)) {
+      return;
+    }
+    const email = user.email || `${user.id}@promptlab.local`;
+    const displayName = user.displayName || user.id;
+    const role = user.role || 'user';
+
+    try {
+      await this.prisma!.user.upsert({
+        where: { id: user.id },
+        update: {
+          role,
+          displayName,
+        },
+        create: {
+          id: user.id,
+          email,
+          displayName,
+          role,
+        },
+      });
+      this.ensuredUserIds.add(user.id);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to upsert authenticated user ${user.id}: ${(err as Error).message}`,
+      );
+    }
   }
 
   private async resolveUserFromToken(

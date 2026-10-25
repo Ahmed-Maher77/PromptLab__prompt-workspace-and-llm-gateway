@@ -47,10 +47,13 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
     jest.restoreAllMocks();
   });
 
-  function createAuthGuard(envOverrides: Record<string, string | undefined> = {}) {
+  function createAuthGuard(
+    envOverrides: Record<string, string | undefined> = {},
+    prismaService?: any,
+  ) {
     const mergedEnv = { ...process.env, ...envOverrides };
     const validatedConfig = validateEnvironment(mergedEnv);
-    return new AuthGuard(reflector, validatedConfig, jwtService);
+    return new AuthGuard(reflector, validatedConfig, jwtService, prismaService);
   }
 
   function createMockContext(
@@ -463,6 +466,44 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
 
       expect(() => controller.clearTraces()).toThrow(ForbiddenException);
       expect(obsService.clearTraces).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('User Auto-Provisioning on Authentication (SEC-01e)', () => {
+    it('upserts authenticated user into database on first request and caches it for subsequent calls', async () => {
+      const mockPrisma = {
+        user: {
+          upsert: jest.fn().mockResolvedValue({
+            id: 'user-002',
+            email: 'user2@promptlab.local',
+            displayName: 'Test User',
+            role: 'user',
+          }),
+        },
+      };
+
+      const guard = createAuthGuard({}, mockPrisma);
+      const ctx = createMockContext({ authorization: 'Bearer dev-user-token' });
+
+      // First request -> should trigger upsert
+      const allowed1 = await guard.canActivate(ctx);
+      expect(allowed1).toBe(true);
+      expect(mockPrisma.user.upsert).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.user.upsert).toHaveBeenCalledWith({
+        where: { id: 'user-002' },
+        update: { role: 'user', displayName: 'Test User' },
+        create: {
+          id: 'user-002',
+          email: 'user2@promptlab.local',
+          displayName: 'Test User',
+          role: 'user',
+        },
+      });
+
+      // Second request -> cached in memory, should NOT call upsert again
+      const allowed2 = await guard.canActivate(ctx);
+      expect(allowed2).toBe(true);
+      expect(mockPrisma.user.upsert).toHaveBeenCalledTimes(1);
     });
   });
 });

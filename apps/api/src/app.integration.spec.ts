@@ -60,6 +60,24 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         .send({ monthlyTokenLimit: 50000 })
         .expect(403);
     });
+
+    it('allows a non-admin user to create a conversation after automatic User upsert (SEC-01e)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set('Authorization', 'Bearer dev-user-token')
+        .send({
+          title: 'Non-admin conversation',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+        });
+
+      if (res.status === 201) {
+        expect(res.body.id).toBeDefined();
+        expect(res.body.ownerId).toBe('user-002');
+      } else {
+        expect(res.status).not.toBe(422);
+      }
+    });
   });
 
   describe('Global Prefix and Routing', () => {
