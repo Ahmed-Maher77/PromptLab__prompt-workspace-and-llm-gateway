@@ -24,9 +24,11 @@ describe('ExperimentsService', () => {
       },
       promptVersion: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
     };
     mockPrisma.experiment.findFirst = mockPrisma.experiment.findUnique;
+    mockPrisma.promptVersion.findFirst = mockPrisma.promptVersion.findUnique;
 
 
     mockProviders = {
@@ -270,6 +272,37 @@ describe('ExperimentsService', () => {
       ).rejects.toThrow(NotFoundException);
 
       // Verify no LLM calls and no usage reservations were made
+      expect(mockProviders.executeChatCompletion).not.toHaveBeenCalled();
+      expect(mockUsage.reserveUsage).not.toHaveBeenCalled();
+    });
+
+    it("should throw NotFoundException (404) if user B uses user A's promptVersionId, with zero LLM and quota calls (EXP-01b)", async () => {
+      mockPrisma.promptVersion.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.runComparison({
+          name: 'IDOR attempt test',
+          commonInput: { input: 'test' },
+          slotA: {
+            promptVersionId: 'pv-user-a',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+          },
+          slotB: {
+            templateBody: 'Valid template {{input}}',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+          },
+        }, 'user-b'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrisma.promptVersion.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: 'pv-user-a',
+          prompt: { ownerId: 'user-b' },
+        },
+        include: { prompt: true },
+      });
       expect(mockProviders.executeChatCompletion).not.toHaveBeenCalled();
       expect(mockUsage.reserveUsage).not.toHaveBeenCalled();
     });

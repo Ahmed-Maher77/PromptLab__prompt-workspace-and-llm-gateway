@@ -211,9 +211,9 @@ export class ExperimentsService {
     }
 
     // 1. Prepare templates and resolve prompt text for Slot A and Slot B
-    // EXP-01: validate both slots before any LLM calls: unknown promptVersionId -> 404, neither version nor non-empty templateBody -> 400
-    const resolvedSlotA = await this.prepareSlot(dto.slotA, dto.commonInput, 'slotA');
-    const resolvedSlotB = await this.prepareSlot(dto.slotB, dto.commonInput, 'slotB');
+    // EXP-01b: validate both slots and scope prompt-version lookup to caller
+    const resolvedSlotA = await this.prepareSlot(dto.slotA, dto.commonInput, 'slotA', userId);
+    const resolvedSlotB = await this.prepareSlot(dto.slotB, dto.commonInput, 'slotB', userId);
 
     // 2. Pre-compile evaluation criteria once for both slots
     const preparedCriteria = this.prepareCriteria(dto.evaluationCriteria || []);
@@ -341,14 +341,15 @@ export class ExperimentsService {
 
   /**
    * Resolves template text and metadata for a slot configuration.
-   * EXP-01: Validates slot configuration before executing LLM completions:
-   * - Unknown promptVersionId throws NotFoundException (404)
+   * EXP-01b: Validates slot configuration before executing LLM completions:
+   * - Unknown promptVersionId or version owned by another user throws NotFoundException (404)
    * - Missing or empty templateBody when promptVersionId is omitted throws BadRequestException (400)
    */
   private async prepareSlot(
     slot: SlotConfigDto,
     commonInput: Record<string, string>,
     slotLabel: 'slotA' | 'slotB',
+    userId: string,
   ) {
     let templateBody = slot.templateBody?.trim() || '';
     let promptId: string | undefined = slot.promptId;
@@ -356,8 +357,11 @@ export class ExperimentsService {
     let versionNumber: number | undefined = slot.versionNumber;
 
     if (slot.promptVersionId) {
-      const version = await this.prisma.promptVersion.findUnique({
-        where: { id: slot.promptVersionId },
+      const version = await this.prisma.promptVersion.findFirst({
+        where: {
+          id: slot.promptVersionId,
+          prompt: { ownerId: userId },
+        },
         include: { prompt: true },
       });
 
