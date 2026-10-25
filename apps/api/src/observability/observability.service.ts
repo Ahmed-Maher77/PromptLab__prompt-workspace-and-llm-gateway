@@ -65,8 +65,8 @@ export class ObservabilityService {
       publicKey: this.configService.get<string>('LANGFUSE_PUBLIC_KEY') || null,
       secretKey: this.configService.get<string>('LANGFUSE_SECRET_KEY') || null,
       baseUrl:
-        this.configService.get<string>('LANGFUSE_BASEURL') ||
-        this.configService.get<string>('LANGFUSE_HOST') ||
+        this.authConfig.LANGFUSE_BASEURL ||
+        this.authConfig.LANGFUSE_HOST ||
         'http://localhost:3000',
     };
   }
@@ -242,7 +242,7 @@ export class ObservabilityService {
               resource: {
                 attributes: [
                   { key: 'service.name', value: { stringValue: 'promptlab-gateway' } },
-                  { key: 'service.version', value: { stringValue: '0.1.0' } },
+                  { key: 'service.version', value: { stringValue: this.authConfig.APP_VERSION } },
                 ],
               },
               scopeSpans: [
@@ -303,7 +303,7 @@ export class ObservabilityService {
                 name: trace.name,
                 userId: trace.userId,
                 metadata: trace.metadata,
-                release: '0.1.0',
+                release: this.authConfig.APP_VERSION,
               },
             },
             {

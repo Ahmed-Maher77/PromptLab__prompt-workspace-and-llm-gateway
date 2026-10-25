@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { DEFAULT_LITELLM_GATEWAY_URL } from '../common/config/env.validation';
+import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 
 export interface HealthCheckResult {
   status: 'ok' | 'degraded';
@@ -33,17 +33,15 @@ export class HealthService {
   private readonly startTime = Date.now();
 
   constructor(
+    @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
   ) {}
 
   async getHealth(): Promise<HealthCheckResult> {
     const dbHealth = await this.prisma.checkHealth();
-    const rawLitellmUrl =
-      this.configService.get<string>('LITELLM_GATEWAY_URL') ||
-      this.configService.get<string>('LITELLM_PROXY_URL') ||
-      DEFAULT_LITELLM_GATEWAY_URL;
-    const environment = this.configService.get<string>('NODE_ENV', 'development');
+    const rawLitellmUrl = this.appConfig.LITELLM_GATEWAY_URL;
+    const environment = this.appConfig.NODE_ENV;
 
     const gatewayHealth = await this.checkGateway(rawLitellmUrl);
 
@@ -55,7 +53,7 @@ export class HealthService {
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor((Date.now() - this.startTime) / 1000),
       environment,
-      version: '0.1.0',
+      version: this.appConfig.APP_VERSION,
       services: {
         database: dbHealth,
         gateway: {

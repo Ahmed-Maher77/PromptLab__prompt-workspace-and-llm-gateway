@@ -2,13 +2,21 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HealthService } from './health.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { APP_CONFIG } from '../common/config/env.validation';
 
 describe('HealthService', () => {
   let service: HealthService;
   let mockPrismaService: { checkHealth: jest.Mock };
   let mockConfigService: { get: jest.Mock };
+  let mockAppConfig: { LITELLM_GATEWAY_URL: string; NODE_ENV: string; APP_VERSION: string };
 
   beforeEach(async () => {
+    mockAppConfig = {
+      LITELLM_GATEWAY_URL: 'http://localhost:4000',
+      NODE_ENV: 'test',
+      APP_VERSION: '0.1.0',
+    };
+
     mockPrismaService = {
       checkHealth: jest.fn().mockResolvedValue({
         status: 'connected',
@@ -41,6 +49,10 @@ describe('HealthService', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: APP_CONFIG,
+          useValue: mockAppConfig,
         },
       ],
     }).compile();
@@ -97,23 +109,15 @@ describe('HealthService', () => {
     expect(health.services.database.error).toBe('Database connection or query failed');
   });
 
-  it('prefers LITELLM_GATEWAY_URL over LITELLM_PROXY_URL for gateway health check', async () => {
-    mockConfigService.get.mockImplementation((key: string, defaultValue?: string) => {
-      if (key === 'LITELLM_GATEWAY_URL') return 'http://gateway.test:4000';
-      if (key === 'LITELLM_PROXY_URL') return 'http://proxy.test:4000';
-      if (key === 'NODE_ENV') return 'test';
-      return defaultValue;
-    });
+  it('reports gateway URL from appConfig', async () => {
+    mockAppConfig.LITELLM_GATEWAY_URL = 'http://gateway.test:4000';
 
     const health = await service.getHealth();
     expect(health.services.gateway.url).toBe('http://gateway.test:4000');
   });
 
-  it('falls back to default http://127.0.0.1:4000 when neither gateway variable is set', async () => {
-    mockConfigService.get.mockImplementation((key: string, defaultValue?: string) => {
-      if (key === 'NODE_ENV') return 'test';
-      return defaultValue;
-    });
+  it('falls back to default http://127.0.0.1:4000 when configured on appConfig', async () => {
+    mockAppConfig.LITELLM_GATEWAY_URL = 'http://127.0.0.1:4000';
 
     const health = await service.getHealth();
     expect(health.services.gateway.url).toBe('http://127.0.0.1:4000');

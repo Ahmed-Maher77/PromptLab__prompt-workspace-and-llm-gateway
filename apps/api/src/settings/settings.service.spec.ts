@@ -6,6 +6,7 @@ import { ProvidersService } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
+import { APP_CONFIG } from '../common/config/env.validation';
 
 describe('SettingsService', () => {
   let service: SettingsService;
@@ -69,6 +70,14 @@ describe('SettingsService', () => {
         { provide: ProvidersService, useValue: mockProviders },
         { provide: UsageService, useValue: mockUsage },
         { provide: ObservabilityService, useValue: mockObservability },
+        {
+          provide: APP_CONFIG,
+          useValue: {
+            APP_VERSION: '0.1.0',
+            NODE_ENV: 'development',
+            CORS_ORIGIN: ['http://localhost:4200', 'http://127.0.0.1:4200'],
+          },
+        },
       ],
     }).compile();
 

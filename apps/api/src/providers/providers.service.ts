@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DEFAULT_LITELLM_GATEWAY_URL } from '../common/config/env.validation';
+import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import { estimateTokens as estimateTokensUtil } from '../common/utils/token-estimator';
 
 export interface ModelMetadata {
@@ -32,18 +32,17 @@ export interface CompletionResult {
 export class ProvidersService {
   private readonly logger = new Logger(ProvidersService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
+    private readonly configService: ConfigService,
+  ) {}
 
   getGatewayUrl(): string {
-    return (
-      this.configService.get<string>('LITELLM_GATEWAY_URL') ||
-      this.configService.get<string>('LITELLM_PROXY_URL') ||
-      DEFAULT_LITELLM_GATEWAY_URL
-    );
+    return this.appConfig.LITELLM_GATEWAY_URL;
   }
 
   getMasterKey(): string {
-    return this.configService.get<string>('LITELLM_MASTER_KEY') || '';
+    return this.appConfig.LITELLM_MASTER_KEY;
   }
 
   /**

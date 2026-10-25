@@ -1,8 +1,24 @@
 import * as crypto from 'crypto';
+import * as path from 'path';
 import { Logger } from '@nestjs/common';
 import { AuthenticatedUser } from '../auth/authenticated-user.interface';
 
 export const DEFAULT_LITELLM_GATEWAY_URL = 'http://127.0.0.1:4000';
+
+let packageVersion = '0.1.0';
+try {
+  const pkg = require(path.resolve(__dirname, '../../../package.json'));
+  if (pkg?.version) packageVersion = pkg.version;
+} catch {
+  try {
+    const pkg = require(path.resolve(__dirname, '../../package.json'));
+    if (pkg?.version) packageVersion = pkg.version;
+  } catch {
+    // fallback
+  }
+}
+
+export const APP_VERSION = packageVersion;
 
 /** The insecure dev-only master key. Never acceptable in production or non-dev environments. */
 export const DEV_MASTER_KEY = 'sk-promptlab-dev-key';
@@ -19,6 +35,7 @@ export const KNOWN_EXAMPLE_SECRETS: readonly string[] = Object.freeze([
   'dev-user-token',
 ]);
 
+export const APP_CONFIG = Symbol('APP_CONFIG');
 export const AUTH_CONFIG = Symbol('AUTH_CONFIG');
 
 export interface ParsedApiKey {
@@ -27,6 +44,7 @@ export interface ParsedApiKey {
 }
 
 export interface ValidatedEnvironment {
+  APP_VERSION: string;
   DATABASE_URL: string;
   PORT: number;
   CORS_ORIGIN: string | string[];
@@ -47,6 +65,7 @@ export interface ValidatedEnvironment {
   TRUST_PROXY: string | number | false;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   LANGFUSE_HOST?: string;
+  LANGFUSE_BASEURL?: string;
 }
 
 /**
@@ -215,6 +234,7 @@ export function validateEnvironment(
     !isNaN(maxLifetimeRaw) && maxLifetimeRaw > 0 ? maxLifetimeRaw : 86400;
 
   return {
+    APP_VERSION: packageVersion,
     DATABASE_URL: env.DATABASE_URL!,
     PORT: port,
     CORS_ORIGIN: corsOrigins,
@@ -251,6 +271,7 @@ export function validateEnvironment(
       return raw;
     })(),
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
-    LANGFUSE_HOST: env.LANGFUSE_HOST,
+    LANGFUSE_HOST: env.LANGFUSE_HOST || env.LANGFUSE_BASEURL,
+    LANGFUSE_BASEURL: env.LANGFUSE_BASEURL || env.LANGFUSE_HOST,
   };
 }

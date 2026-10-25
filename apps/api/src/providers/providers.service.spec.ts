@@ -1,22 +1,25 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ProvidersService } from './providers.service';
+import { APP_CONFIG } from '../common/config/env.validation';
 
 describe('ProvidersService', () => {
   let service: ProvidersService;
   const mockConfigService = {
-    get: jest.fn((key: string): string | null => {
-      if (key === 'LITELLM_GATEWAY_URL') return 'http://127.0.0.1:4000';
-      if (key === 'LITELLM_MASTER_KEY') return 'sk-promptlab-dev-key';
-      return null;
-    }),
+    get: jest.fn(),
+  };
+  const mockAppConfig = {
+    LITELLM_GATEWAY_URL: 'http://127.0.0.1:4000',
+    LITELLM_MASTER_KEY: 'sk-promptlab-dev-key',
   };
 
   beforeEach(async () => {
+    mockAppConfig.LITELLM_MASTER_KEY = 'sk-promptlab-dev-key';
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProvidersService,
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: APP_CONFIG, useValue: mockAppConfig },
       ],
     }).compile();
 
@@ -34,7 +37,7 @@ describe('ProvidersService', () => {
   it('should return master key from config without hardcoded dev fallback (SEC-03b)', () => {
     expect(service.getMasterKey()).toBe('sk-promptlab-dev-key');
 
-    mockConfigService.get.mockReturnValueOnce(null);
+    mockAppConfig.LITELLM_MASTER_KEY = '';
     expect(service.getMasterKey()).toBe('');
   });
 
@@ -127,28 +130,13 @@ describe('ProvidersService', () => {
   });
 
   describe('getGatewayUrl', () => {
-    it('prefers LITELLM_GATEWAY_URL when explicitly configured', () => {
-      mockConfigService.get.mockImplementation((key: string) => {
-        if (key === 'LITELLM_GATEWAY_URL') return 'http://gateway.internal:4000';
-        if (key === 'LITELLM_PROXY_URL') return 'http://proxy.internal:4000';
-        return null;
-      });
-
+    it('returns configured LITELLM_GATEWAY_URL from appConfig', () => {
+      mockAppConfig.LITELLM_GATEWAY_URL = 'http://gateway.internal:4000';
       expect(service.getGatewayUrl()).toBe('http://gateway.internal:4000');
     });
 
-    it('falls back to LITELLM_PROXY_URL when LITELLM_GATEWAY_URL is not set', () => {
-      mockConfigService.get.mockImplementation((key: string) => {
-        if (key === 'LITELLM_PROXY_URL') return 'http://proxy.internal:4000';
-        return null;
-      });
-
-      expect(service.getGatewayUrl()).toBe('http://proxy.internal:4000');
-    });
-
-    it('falls back to default localhost URL when neither variable is set', () => {
-      mockConfigService.get.mockImplementation(() => null);
-
+    it('returns default gateway URL from appConfig', () => {
+      mockAppConfig.LITELLM_GATEWAY_URL = 'http://127.0.0.1:4000';
       expect(service.getGatewayUrl()).toBe('http://127.0.0.1:4000');
     });
   });

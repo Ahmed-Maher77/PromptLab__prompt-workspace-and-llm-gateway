@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
@@ -14,6 +15,7 @@ import { ObservabilityModule } from './observability/observability.module';
 import { SettingsModule } from './settings/settings.module';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthConfigModule } from './common/config/auth-config.module';
+import { validateEnvironment } from './common/config/env.validation';
 import { AuthGuard } from './common/guards/auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -21,7 +23,14 @@ import { RolesGuard } from './common/guards/roles.guard';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: ['.env', '../../.env'],
+      cache: true,
+      validate: validateEnvironment,
+      envFilePath: [
+        path.resolve(process.cwd(), '.env'),
+        path.resolve(__dirname, '../../.env'),
+        path.resolve(__dirname, '../../../.env'),
+        path.resolve(__dirname, '../.env'),
+      ],
     }),
     JwtModule.register({
       global: true,

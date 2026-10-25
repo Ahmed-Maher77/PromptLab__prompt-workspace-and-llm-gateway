@@ -1,17 +1,23 @@
 import { Global, Module } from '@nestjs/common';
-import { AUTH_CONFIG, validateEnvironment } from './env.validation';
+import { APP_CONFIG, AUTH_CONFIG, validateEnvironment } from './env.validation';
 
 /**
- * Global module providing the validated AUTH_CONFIG application-wide.
+ * Global module providing the validated APP_CONFIG and AUTH_CONFIG application-wide.
  */
 @Global()
 @Module({
   providers: [
     {
-      provide: AUTH_CONFIG,
+      provide: APP_CONFIG,
       useFactory: () => validateEnvironment(),
     },
+    {
+      provide: AUTH_CONFIG,
+      useExisting: APP_CONFIG,
+    },
   ],
-  exports: [AUTH_CONFIG],
+  exports: [APP_CONFIG, AUTH_CONFIG],
 })
-export class AuthConfigModule {}
+export class AppConfigModule {}
+
+export { AppConfigModule as AuthConfigModule };

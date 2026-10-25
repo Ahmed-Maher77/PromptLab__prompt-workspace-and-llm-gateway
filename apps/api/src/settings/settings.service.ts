@@ -1,10 +1,11 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
+import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 
 export interface SystemSettingsResponse {
   application: {
@@ -60,6 +61,7 @@ export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
 
   constructor(
+    @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
@@ -124,17 +126,11 @@ export class SettingsService {
       }
     }
 
-    // 5. CORS and environment configuration
-    const rawCors = this.configService.get<string>('CORS_ORIGIN') || 'http://localhost:4200';
-    const corsOrigins = rawCors.includes(',')
-      ? rawCors.split(',').map((o) => o.trim()).filter(Boolean)
-      : rawCors.trim();
-
     return {
       application: {
         name: 'PromptLab',
-        version: '0.1.0',
-        environment: this.configService.get<string>('NODE_ENV') || 'development',
+        version: this.appConfig.APP_VERSION,
+        environment: this.appConfig.NODE_ENV,
         nodeVersion: process.version,
         uptimeSeconds: Math.floor(process.uptime()),
         platform: process.platform,
@@ -160,7 +156,7 @@ export class SettingsService {
       security: {
         authMode: 'single-tenant-developer',
         defaultUser: `${DEFAULT_DEV_USER.id} (${DEFAULT_DEV_USER.displayName})`,
-        corsOrigins,
+        corsOrigins: this.appConfig.CORS_ORIGIN,
         secretsExposed: false,
       },
     };
