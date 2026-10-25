@@ -330,13 +330,13 @@ input[type="range"].range-slider::-webkit-slider-thumb {
   height: 16px;
   border-radius: 50%;
   background: var(--color-primary);
-  border: 2px solid var(--color-surface);
+  border: 2px solid var(--color-surface);
   cursor: pointer;
   transition: transform 0.1s ease;
 }
 
 input[type="range"].range-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
+  transform: scale(1.15);
 }
 
 input[type="range"].range-slider::-moz-range-thumb {
@@ -344,7 +344,7 @@ input[type="range"].range-slider::-moz-range-thumb {
   height: 16px;
   border-radius: 50%;
   background: var(--color-primary);
-  border: 2px solid var(--color-surface);
+  border: 2px solid var(--color-surface);
   cursor: pointer;
 }
 
