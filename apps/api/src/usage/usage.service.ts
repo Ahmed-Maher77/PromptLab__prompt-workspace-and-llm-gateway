@@ -58,6 +58,19 @@ export class UsageService {
   }
 
   /**
+   * USAGE-01: Admin updates quota policy for a target user, validating target user exists.
+   */
+  async updatePolicyForTargetUser(dto: UpdateQuotaPolicyDto, targetUserId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+    if (!user) {
+      throw new NotFoundException(`User with ID "${targetUserId}" not found`);
+    }
+    return this.updatePolicy(dto, targetUserId);
+  }
+
+  /**
    * Updates quota policy (monthly limit and/or rate limit) for demo/dev configuration.
    */
   async updatePolicy(dto: UpdateQuotaPolicyDto, userId: string) {

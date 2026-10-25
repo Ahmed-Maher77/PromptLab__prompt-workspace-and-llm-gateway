@@ -3,6 +3,7 @@ import {
   Get,
   Put,
   Post,
+  Param,
   Body,
   Query,
   ForbiddenException,
@@ -49,6 +50,15 @@ export class UsageController {
     @Body() dto: UpdateQuotaPolicyDto,
   ) {
     return this.usageService.updatePolicy(dto, userId);
+  }
+
+  @Put('policy/:userId')
+  @Roles('admin')
+  async updatePolicyForUser(
+    @Param('userId') targetUserId: string,
+    @Body() dto: UpdateQuotaPolicyDto,
+  ) {
+    return this.usageService.updatePolicyForTargetUser(dto, targetUserId);
   }
 
   @Post('reset')

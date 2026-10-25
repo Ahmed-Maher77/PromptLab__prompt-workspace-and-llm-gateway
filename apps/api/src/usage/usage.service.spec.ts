@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsageService } from './usage.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 
 describe('UsageService', () => {
   let service: UsageService;
@@ -11,6 +11,7 @@ describe('UsageService', () => {
     mockPrisma = {
       user: {
         findFirst: jest.fn().mockResolvedValue({ id: 'dev-user-001', email: 'developer@promptlab.local' }),
+        findUnique: jest.fn(),
         create: jest.fn(),
       },
       quotaPolicy: {
@@ -96,6 +97,58 @@ describe('UsageService', () => {
       const updateCall = mockPrisma.quotaPeriod.update.mock.calls[0][0];
       expect(updateCall.where.id).toBe('period-1');
       expect(updateCall.data.tokenLimit).toBe(500_000);
+    });
+
+    it('should throw NotFoundException if target user does not exist (USAGE-01)', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        service.updatePolicyForTargetUser(
+          { monthlyTokenLimit: 500_000 },
+          'non-existent-user',
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 'non-existent-user' },
+      });
+    });
+
+    it('should update quota policy for existing target user (USAGE-01)', async () => {
+      mockPrisma.user.findUnique.mockResolvedValueOnce({
+        id: 'target-user-002',
+        email: 'user2@promptlab.local',
+      });
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValueOnce({
+        id: 'qp-target',
+        scope: 'user',
+        scopeId: 'target-user-002',
+        monthlyTokenLimit: 1_000_000,
+        requestRateLimit: 60,
+      });
+      mockPrisma.quotaPolicy.update.mockResolvedValueOnce({
+        id: 'qp-target',
+        monthlyTokenLimit: 750_000,
+        requestRateLimit: 60,
+      });
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-target',
+        userId: 'target-user-002',
+        tokenLimit: 1_000_000,
+        status: 'active',
+      });
+
+      const updated = await service.updatePolicyForTargetUser(
+        { monthlyTokenLimit: 750_000 },
+        'target-user-002',
+      );
+
+      expect(updated.monthlyTokenLimit).toBe(750_000);
+      expect(mockPrisma.quotaPolicy.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'qp-target' },
+          data: expect.objectContaining({ monthlyTokenLimit: 750_000 }),
+        }),
+      );
     });
   });
 

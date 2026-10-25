@@ -28,6 +28,10 @@ describe('UsageController', () => {
         monthlyTokenLimit: 200000,
         requestRateLimit: 120,
       }),
+      updatePolicyForTargetUser: jest.fn().mockResolvedValue({
+        monthlyTokenLimit: 500000,
+        requestRateLimit: 120,
+      }),
       resetPeriodForDemo: jest.fn().mockResolvedValue({ success: true, message: 'Reset' }),
     };
 
@@ -88,6 +92,14 @@ describe('UsageController', () => {
     const updated = await controller.updatePolicy('dev-user-001', dto);
     expect(mockService.updatePolicy).toHaveBeenCalledWith(dto, 'dev-user-001');
     expect(updated.monthlyTokenLimit).toBe(200000);
+
+    const targetDto: UpdateQuotaPolicyDto = {
+      monthlyTokenLimit: 500000,
+      requestRateLimit: 120,
+    };
+    const updatedTarget = await controller.updatePolicyForUser('target-user-002', targetDto);
+    expect(mockService.updatePolicyForTargetUser).toHaveBeenCalledWith(targetDto, 'target-user-002');
+    expect(updatedTarget.monthlyTokenLimit).toBe(500000);
   });
 
   it('delegates resetPeriod to service', async () => {
