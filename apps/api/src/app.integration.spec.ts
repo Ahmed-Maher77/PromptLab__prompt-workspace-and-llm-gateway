@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ConflictException } from '@nestjs/common';
+import { ThrottlerStorage, ThrottlerStorageService } from '@nestjs/throttler';
 import * as request from 'supertest';
 import { AppModule } from './app.module';
 import { validateEnvironment } from './common/config/env.validation';
@@ -13,11 +14,35 @@ import { APP_CONFIG } from './common/config/env.validation';
 import * as fs from 'fs';
 import * as path from 'path';
 
+/**
+ * Rate-limit counters are in-memory and keyed by route + client IP, so hits from one test
+ * would otherwise count against the next (timing-dependent: fast CI runners trip the 20/s
+ * burst limit, slower machines don't). This delegating storage lets each test start from a
+ * fresh ThrottlerStorageService while still exercising the real ThrottlerGuard and limits.
+ */
+class ResettableThrottlerStorage implements ThrottlerStorage {
+  private inner = new ThrottlerStorageService();
+
+  increment(...args: Parameters<ThrottlerStorage['increment']>) {
+    return this.inner.increment(...args);
+  }
+
+  reset(): void {
+    this.inner.onApplicationShutdown();
+    this.inner = new ThrottlerStorageService();
+  }
+}
+
 describe('HTTP Routing & App Integration (E2E)', () => {
   let app: INestApplication;
   const authHeader = { Authorization: 'Bearer dev-admin-token' };
   const origEnv = process.env;
   jest.setTimeout(30000);
+  const throttlerStorage = new ResettableThrottlerStorage();
+
+  afterEach(() => {
+    throttlerStorage.reset();
+  });
 
   beforeAll(async () => {
     process.env = { ...origEnv };
@@ -34,7 +59,10 @@ describe('HTTP Routing & App Integration (E2E)', () => {
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(ThrottlerStorage)
+      .useValue(throttlerStorage)
+      .compile();
 
     app = moduleFixture.createNestApplication({ bodyParser: false });
 
@@ -45,6 +73,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
   }, 30000);
 
   afterAll(async () => {
+    throttlerStorage.reset();
     process.env = origEnv;
     if (app) {
       await app.close();
