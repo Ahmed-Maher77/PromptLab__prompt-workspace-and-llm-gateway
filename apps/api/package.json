@@ -13,6 +13,8 @@
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "jest --runInBand",
+    "test:unit": "jest --testPathIgnorePatterns=.*\\.integration\\.spec\\.ts --runInBand",
+    "test:integration": "jest src/app.integration.spec.ts --runInBand",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "prisma:generate": "prisma generate",
