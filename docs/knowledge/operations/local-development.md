@@ -36,10 +36,10 @@ npm install
 ```
 
 ## Step 3: Initialize Database Schema
-Generate Prisma client and push schema directly to PostgreSQL:
+Generate Prisma client and apply versioned migrations to PostgreSQL:
 ```bash
 npm run prisma:generate
-npm run prisma:push
+npm run prisma:push # runs prisma migrate deploy
 ```
 
 ## Step 4: Start LiteLLM Gateway

@@ -16,7 +16,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push",
+    "prisma:push": "prisma migrate deploy",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:migrate": "prisma migrate dev"
   },
   "dependencies": {

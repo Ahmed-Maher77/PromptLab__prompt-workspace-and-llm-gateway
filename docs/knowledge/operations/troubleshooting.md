@@ -34,7 +34,7 @@ domain: "operations"
     psql -h localhost -U postgres -d promptlab
     ```
   - If the database `promptlab` does not exist, create it: `CREATE DATABASE promptlab;`.
-  - Re-run schema push: `npm run prisma:push`.
+  - Re-run migrations: `npm run prisma:push` (or `npm run prisma:deploy`).
 
 ## 4. CORS Errors in Browser Console
 - **Symptom:** `Access to XMLHttpRequest at 'http://localhost:3100/api/...' from origin 'http://localhost:4200' has been blocked by CORS policy`.

@@ -46,9 +46,10 @@ This document provides an honest, rigorous catalog of known technical limitation
 
 ## 5. Database Schema & Migration Management
 
-- **Prisma Schema Synchronization via `db push`:**
-  - The database schema is synchronized using `npx prisma db push` (`npm run prisma:push`).
-  - **Limitation:** There are no versioned SQL migration files (`prisma/migrations/*`) and no `_prisma_migrations` tracking table in PostgreSQL. Schema alterations in production must transition to `prisma migrate dev` / `prisma migrate deploy` before being applied to live environments with persisted data.
+- **Prisma Schema Migrations via `migrate deploy`:**
+  - The database schema is versioned via Prisma migrations in `prisma/migrations/` (baseline: `20261025000000_init`).
+  - Deploy migrations using `npm run prisma:push` or `npm run prisma:deploy` (invoking `prisma migrate deploy`).
+  - New schema changes are created via `npm run prisma:migrate` (`prisma migrate dev`) and tracked in Git.
 
 ---
 

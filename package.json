@@ -25,6 +25,7 @@
     "test:flows": "node scripts/run-e2e-flows.mjs --all",
     "prisma:generate": "npm --workspace=@promptlab/api run prisma:generate",
     "prisma:push": "npm --workspace=@promptlab/api run prisma:push",
+    "prisma:deploy": "npm --workspace=@promptlab/api run prisma:deploy",
     "prisma:migrate": "npm --workspace=@promptlab/api run prisma:migrate"
   },
   "keywords": [

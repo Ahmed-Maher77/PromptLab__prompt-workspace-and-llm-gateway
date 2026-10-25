@@ -96,5 +96,6 @@ erDiagram
 ```
 
 ## Schema Synchronization
-- The database schema is synchronized directly via `npx prisma db push` (`npm run prisma:push`).
-- The current Proof-of-Concept does not maintain versioned migration records (`_prisma_migrations`). Any future production hardening should transition to `prisma migrate dev`.
+- The database schema is versioned via Prisma migrations in `apps/api/prisma/migrations/`.
+- Deploy migrations using `npm run prisma:push` or `npm run prisma:deploy` (`prisma migrate deploy`).
+- For new schema changes during development, use `npm run prisma:migrate` (`prisma migrate dev`).
