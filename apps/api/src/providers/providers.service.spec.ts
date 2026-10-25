@@ -11,6 +11,7 @@ describe('ProvidersService', () => {
   const mockAppConfig = {
     LITELLM_GATEWAY_URL: 'http://127.0.0.1:4000',
     LITELLM_MASTER_KEY: 'sk-promptlab-dev-key',
+    LLM_REQUEST_TIMEOUT_MS: 30000,
   };
 
   beforeEach(async () => {

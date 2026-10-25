@@ -41,17 +41,20 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     expect(config.ENABLE_TELEMETRY).toBe(true);
     expect(config.IS_DEV_OR_TEST).toBe(true);
     expect(config.AUTH_DEV_TOKENS_ENABLED).toBe(false);
+    expect(config.LLM_REQUEST_TIMEOUT_MS).toBe(30000);
   });
 
-  it('parses custom PORT and comma-delimited CORS origins', () => {
+  it('parses custom PORT, CORS origins, and custom LLM_REQUEST_TIMEOUT_MS', () => {
     const config = validateEnvironment({
       NODE_ENV: 'development',
       DATABASE_URL: 'postgresql://localhost:5432/promptlab',
       PORT: '8080',
       CORS_ORIGIN: 'http://localhost:4200, https://promptlab.internal',
+      LLM_REQUEST_TIMEOUT_MS: '45000',
     });
 
     expect(config.PORT).toBe(8080);
+    expect(config.LLM_REQUEST_TIMEOUT_MS).toBe(45000);
     expect(config.CORS_ORIGIN).toEqual([
       'http://localhost:4200',
       'https://promptlab.internal',

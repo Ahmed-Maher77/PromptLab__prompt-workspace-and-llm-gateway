@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Inject,
   BadRequestException,
   HttpException,
   HttpStatus,
@@ -10,6 +11,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsageRecord } from '@prisma/client';
 import { calculateCost } from '../experiments/cost-calculator';
+import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import {
   UpdateQuotaPolicyDto,
   ReserveUsageDto,
@@ -21,6 +23,8 @@ import {
   ReservationResult,
 } from './usage.types';
 
+export const SWEEPER_CUTOFF_MARGIN_MS = 5_000;
+
 @Injectable()
 export class UsageService {
   private readonly logger = new Logger(UsageService.name);
@@ -28,7 +32,10 @@ export class UsageService {
   // In-memory sliding window for rate limiting: userId -> timestamps array
   private readonly rateLimitTracker = new Map<string, number[]>();
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
+  ) {}
 
   /**
    * Retrieves or creates the quota policy for a user atomically via upsert.
@@ -326,7 +333,7 @@ export class UsageService {
         ) VALUES (
           ${id}, ${dto.requestId}, ${uid}, ${dto.conversationId || null}, ${dto.provider}, ${dto.model},
           ${0}, ${0}, ${'estimated'}, ${estimatedTokens},
-          ${'reserved'}, NOW()
+          ${'reserved'}, (NOW() AT TIME ZONE 'UTC')
         )
         ON CONFLICT ("userId", "requestId") DO NOTHING
         RETURNING *;
@@ -650,27 +657,31 @@ export class UsageService {
   }
 
   /**
-   * Scheduled background sweeper: finds and reclaims leaked reservations older than 2x gateway timeout.
+   * Scheduled background sweeper: finds and reclaims leaked reservations older than 2x gateway timeout plus margin.
    * Runs every minute. Safe across multi-instance clusters using row-level FOR UPDATE SKIP LOCKED.
    */
   @Cron(CronExpression.EVERY_MINUTE)
   async handleSweepCron(): Promise<{ sweptCount: number }> {
-    return await this.sweepExpiredReservations();
+    const maxAgeMs = this.appConfig.LLM_REQUEST_TIMEOUT_MS * 2 + SWEEPER_CUTOFF_MARGIN_MS;
+    return await this.sweepExpiredReservations(maxAgeMs);
   }
 
   /**
-   * Sweeps usage_records with status 'reserved' older than maxAgeMs (default 60s, i.e. 2x 30s timeout),
+   * Sweeps usage_records with status 'reserved' older than maxAgeMs (defaults to 2x LLM_REQUEST_TIMEOUT_MS + margin),
    * marks them 'expired', and atomically releases reservedTokens back to their quota periods.
    * Row-level FOR UPDATE SKIP LOCKED ensures multi-instance concurrency safety.
    */
   async sweepExpiredReservations(
-    maxAgeMs = 60_000,
+    maxAgeMs?: number,
     batchSize = 100,
   ): Promise<{ sweptCount: number }> {
-    const cutoffDate = new Date(Date.now() - maxAgeMs);
+    const effectiveMaxAgeMs =
+      maxAgeMs ?? this.appConfig.LLM_REQUEST_TIMEOUT_MS * 2 + SWEEPER_CUTOFF_MARGIN_MS;
+    const maxAgeSeconds = Math.max(1, Math.round(effectiveMaxAgeMs / 1000));
 
     return await this.prisma.$transaction(async (tx) => {
       // 1. Concurrency-safe selection using row-level FOR UPDATE SKIP LOCKED
+      // TIME-01: compare against UTC timestamp without session timezone distortion
       const staleRecords = await tx.$queryRaw<Array<{
         id: string;
         userId: string;
@@ -681,7 +692,7 @@ export class UsageService {
         SELECT "id", "userId", "requestId", "reservedTokens", "createdAt"
         FROM "usage_records"
         WHERE "status" = 'reserved'
-          AND "createdAt" <= ${cutoffDate}
+          AND "createdAt" <= (NOW() AT TIME ZONE 'UTC') - make_interval(secs => ${maxAgeSeconds})
         ORDER BY "createdAt" ASC
         LIMIT ${batchSize}
         FOR UPDATE SKIP LOCKED;

@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UsageService } from './usage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import { APP_CONFIG } from '../common/config/env.validation';
 
 describe('UsageService', () => {
   let service: UsageService;
@@ -93,6 +94,7 @@ describe('UsageService', () => {
       providers: [
         UsageService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: APP_CONFIG, useValue: { LLM_REQUEST_TIMEOUT_MS: 30000 } },
       ],
     }).compile();
 

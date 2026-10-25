@@ -107,7 +107,7 @@ export class ProvidersService {
     const startTime = Date.now();
     const gatewayUrl = this.getGatewayUrl();
     const masterKey = this.getMasterKey();
-    const timeoutMs = params.timeoutMs || 30000;
+    const timeoutMs = params.timeoutMs ?? this.appConfig.LLM_REQUEST_TIMEOUT_MS;
 
     const requestBody = {
       model: params.model,

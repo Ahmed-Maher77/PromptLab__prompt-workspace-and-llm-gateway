@@ -63,6 +63,7 @@ export interface ValidatedEnvironment {
   AUTH_API_KEYS: ParsedApiKey[];
   ENABLE_DEMO_ENDPOINTS: boolean;
   TRUST_PROXY: string | number | false;
+  LLM_REQUEST_TIMEOUT_MS: number;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   LANGFUSE_HOST?: string;
   LANGFUSE_BASEURL?: string;
@@ -233,6 +234,12 @@ export function validateEnvironment(
   const authJwtMaxLifetimeSeconds =
     !isNaN(maxLifetimeRaw) && maxLifetimeRaw > 0 ? maxLifetimeRaw : 86400;
 
+  const rawLlmTimeout = env.LLM_REQUEST_TIMEOUT_MS
+    ? parseInt(env.LLM_REQUEST_TIMEOUT_MS, 10)
+    : 30000;
+  const llmRequestTimeoutMs =
+    !isNaN(rawLlmTimeout) && rawLlmTimeout > 0 ? rawLlmTimeout : 30000;
+
   return {
     APP_VERSION: packageVersion,
     DATABASE_URL: env.DATABASE_URL!,
@@ -270,6 +277,7 @@ export function validateEnvironment(
       }
       return raw;
     })(),
+    LLM_REQUEST_TIMEOUT_MS: llmRequestTimeoutMs,
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
     LANGFUSE_HOST: env.LANGFUSE_HOST || env.LANGFUSE_BASEURL,
     LANGFUSE_BASEURL: env.LANGFUSE_BASEURL || env.LANGFUSE_HOST,

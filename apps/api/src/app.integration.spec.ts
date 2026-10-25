@@ -5,9 +5,11 @@ import { AppModule } from './app.module';
 import { validateEnvironment } from './common/config/env.validation';
 import { configureApp } from './configure-app';
 import { PrismaService } from './prisma/prisma.service';
+import { PrismaClient } from '@prisma/client';
 import { UsageService } from './usage/usage.service';
 import { LlmExecutionService } from './llm/llm-execution.service';
 import { ProvidersService } from './providers/providers.service';
+import { APP_CONFIG } from './common/config/env.validation';
 
 describe('HTTP Routing & App Integration (E2E)', () => {
   let app: INestApplication;
@@ -974,6 +976,92 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       // 6. Running sweeper again reclaims 0 records (idempotent)
       const sweepAgain = await usageService.sweepExpiredReservations(60_000);
       expect(sweepAgain.sweptCount).toBe(0);
+    });
+
+    it('stores UTC createdAt immune to session TimeZone and sweeps correctly under Asia/Baghdad (TIME-01/TIME-01a)', async () => {
+      const appConfig = app.get(APP_CONFIG);
+      const url = new URL(process.env.DATABASE_URL!);
+      url.searchParams.set('options', '-c TimeZone=Asia/Baghdad');
+
+      const tzPrisma = new PrismaClient({
+        datasources: {
+          db: {
+            url: url.toString(),
+          },
+        },
+      });
+
+      try {
+        // Assert SHOW TIME ZONE returns Asia/Baghdad through this dedicated client
+        const tzRows = await tzPrisma.$queryRaw<Array<{ TimeZone: string }>>`SHOW TIME ZONE;`;
+        expect(tzRows[0]?.TimeZone).toBe('Asia/Baghdad');
+
+        const tzUsage = new UsageService(tzPrisma as unknown as PrismaService, appConfig);
+        const testUserId = `user-time01-${Date.now()}`;
+        const testRequestId = `req-time01-${Date.now()}`;
+
+        await tzPrisma.user.create({
+          data: {
+            id: testUserId,
+            email: `${testUserId}@example.com`,
+            displayName: 'Time01 Test User',
+            role: 'user',
+          },
+        });
+
+        await tzPrisma.quotaPolicy.create({
+          data: {
+            scope: 'user',
+            scopeId: testUserId,
+            monthlyTokenLimit: 10_000,
+            requestRateLimit: 500,
+          },
+        });
+
+        // 1. Claim reservation using tzUsage (executes raw INSERT against Asia/Baghdad session)
+        const reservation = await tzUsage.reserveUsage({
+          requestId: testRequestId,
+          userId: testUserId,
+          model: 'gpt-4o-mini',
+          provider: 'gateway',
+          estimatedTokens: 300,
+        });
+
+        expect(reservation.success).toBe(true);
+        expect(reservation.created).toBe(true);
+
+        // 2. Query record from DB; assert createdAt matches new Date() within seconds (NOT ~3 hours ahead)
+        const record = await tzPrisma.usageRecord.findUnique({
+          where: {
+            userId_requestId: {
+              userId: testUserId,
+              requestId: testRequestId,
+            },
+          },
+        });
+
+        expect(record).toBeDefined();
+        const diffMs = Math.abs(new Date(record!.createdAt).getTime() - Date.now());
+        expect(diffMs).toBeLessThan(5000);
+
+        // 3. Age reservation past cutoff using UTC SQL interval
+        await tzPrisma.$executeRaw`
+          UPDATE "usage_records"
+          SET "createdAt" = (NOW() AT TIME ZONE 'UTC') - INTERVAL '120 seconds'
+          WHERE "id" = ${record!.id}
+        `;
+
+        // 4. Sweeper under Asia/Baghdad session correctly identifies and sweeps the stale record
+        const sweepResult = await tzUsage.sweepExpiredReservations(60_000);
+        expect(sweepResult.sweptCount).toBeGreaterThanOrEqual(1);
+
+        const sweptRecord = await tzPrisma.usageRecord.findUnique({
+          where: { id: record!.id },
+        });
+        expect(sweptRecord?.status).toBe('expired');
+      } finally {
+        await tzPrisma.$disconnect();
+      }
     });
   });
 
