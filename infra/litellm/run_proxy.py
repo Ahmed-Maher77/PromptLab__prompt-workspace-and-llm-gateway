@@ -29,7 +29,8 @@ dotenv.load_dotenv = _safe_load_dotenv
 os.environ.pop("DATABASE_URL", None)
 os.environ["STORE_MODEL_IN_DB"] = "False"
 # LITELLM_MASTER_KEY must be provided via the environment (e.g. .env or CI secret).
-# Do not set a fallback here — an unset key should fail loudly, not use a dev default.
+if not os.environ.get("LITELLM_MASTER_KEY"):
+    sys.exit("LITELLM_MASTER_KEY must be set")
 
 # Suppress banner unicode output on Windows console
 try:

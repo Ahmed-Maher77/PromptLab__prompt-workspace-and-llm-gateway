@@ -31,6 +31,13 @@ describe('ProvidersService', () => {
     expect(service).toBeDefined();
   });
 
+  it('should return master key from config without hardcoded dev fallback (SEC-03b)', () => {
+    expect(service.getMasterKey()).toBe('sk-promptlab-dev-key');
+
+    mockConfigService.get.mockReturnValueOnce(null);
+    expect(service.getMasterKey()).toBe('');
+  });
+
   it('should estimate token count appropriately based on length', () => {
     expect(service.estimateTokens('')).toBe(0);
     expect(service.estimateTokens('Hello world')).toBe(3); // 11 / 4 ceil = 3
