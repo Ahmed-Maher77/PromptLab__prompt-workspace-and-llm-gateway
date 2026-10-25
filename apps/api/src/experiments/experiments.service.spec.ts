@@ -34,6 +34,7 @@ describe('ExperimentsService', () => {
 
 
     mockProviders = {
+      estimateTokens: jest.fn((text: string) => Math.max(1, Math.ceil((text || '').length / 4))),
       executeChatCompletion: jest.fn(),
     };
 

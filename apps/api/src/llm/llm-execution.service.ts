@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, HttpException } from '@nestjs/common';
 import { ProvidersService, CompletionResult } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService, ActiveTraceContext } from '../observability/observability.service';
@@ -34,6 +34,7 @@ export interface LlmExecutionResult extends CompletionResult {
 @Injectable()
 export class LlmExecutionService {
   private readonly logger = new Logger(LlmExecutionService.name);
+  private readonly completedRequests = new Map<string, LlmExecutionResult>();
 
   constructor(
     private readonly usageService: UsageService,
@@ -57,13 +58,47 @@ export class LlmExecutionService {
       `req-${params.operation.replace('.', '-')}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const traceName = params.name || `${params.operation} (${params.model})`;
 
+    // Idempotency check: if an idempotency key was supplied, prevent duplicate model invocations
+    if (params.idempotencyKey) {
+      if (this.completedRequests.has(requestId)) {
+        return this.completedRequests.get(requestId)!;
+      }
+
+      const existingRecord = await this.usageService.getUsageRecord(requestId);
+      if (existingRecord) {
+        if (existingRecord.status === 'reserved') {
+          throw new ConflictException('REQUEST_IN_PROGRESS');
+        }
+
+        if (existingRecord.status === 'reconciled') {
+          const cost =
+            existingRecord.estimatedCost ??
+            calculateCost(existingRecord.model, existingRecord.inputTokens, existingRecord.outputTokens);
+
+          const storedResult: LlmExecutionResult = {
+            success: true,
+            model: existingRecord.model,
+            content: '',
+            latencyMs: 0,
+            usage: {
+              promptTokens: existingRecord.inputTokens,
+              completionTokens: existingRecord.outputTokens,
+              totalTokens: existingRecord.inputTokens + existingRecord.outputTokens,
+              source: (existingRecord.tokenUsageSource as any) || 'provider-reported',
+            },
+            cost,
+            requestId,
+          };
+          this.completedRequests.set(requestId, storedResult);
+          return storedResult;
+        }
+      }
+    }
+
     // Calculate prompt input token estimate across all messages
     const inputEstimate = params.messages.reduce((sum, m) => {
       const content = m.content || '';
-      const tokens =
-        typeof this.providersService?.estimateTokens === 'function'
-          ? this.providersService.estimateTokens(content)
-          : Math.max(1, Math.ceil(content.length / 4));
+      const tokens = this.providersService.estimateTokens(content);
       return sum + (tokens || 1);
     }, 0);
     const estimatedTokens = Math.max(1, inputEstimate + (params.maxTokens || 1024));
@@ -86,6 +121,7 @@ export class LlmExecutionService {
     let completionResult: CompletionResult | undefined;
     let executionError: any;
     let llmSpan: any;
+    let calculatedCost: number | null = null;
 
     const reserveSpan = trace?.startSpan('quota.reserve', {
       estimatedTokens,
@@ -157,19 +193,25 @@ export class LlmExecutionService {
         }
       }
 
-      // 5. Complete trace and spans
-      const promptTokens = completionResult?.usage?.promptTokens || 0;
-      const completionTokens = completionResult?.usage?.completionTokens || 0;
-      const cost = completionResult?.usage
-        ? calculateCost(params.model, promptTokens, completionTokens)
-        : null;
+      // 5. Compute cost once and complete trace
+      if (completionResult?.usage) {
+        calculatedCost = calculateCost(
+          params.model,
+          completionResult.usage.promptTokens || 0,
+          completionResult.usage.completionTokens || 0,
+        );
+      }
 
       let traceStatus: 'success' | 'error' | 'rate_limited' = 'error';
       let errorCode = completionResult?.errorType || (executionError ? 'EXECUTION_EXCEPTION' : undefined);
 
       if (completionResult?.success) {
         traceStatus = 'success';
-      } else if (!reserved && (executionError?.status === 429 || executionError?.message?.includes('429') || executionError?.message?.includes('quota'))) {
+      } else if (
+        !reserved &&
+        executionError instanceof HttpException &&
+        executionError.getStatus() === 429
+      ) {
         traceStatus = 'rate_limited';
         errorCode = 'RATE_LIMIT_EXCEEDED';
       }
@@ -177,24 +219,24 @@ export class LlmExecutionService {
       trace?.complete({
         status: traceStatus,
         usage: completionResult?.usage,
-        cost,
+        cost: calculatedCost,
         errorCode,
         errorMessage: completionResult?.errorMessage || executionError?.message || (executionError ? String(executionError) : undefined),
       });
     }
 
-    const promptTokens = completionResult.usage?.promptTokens || 0;
-    const completionTokens = completionResult.usage?.completionTokens || 0;
-    const cost = completionResult.usage
-      ? calculateCost(params.model, promptTokens, completionTokens)
-      : null;
-
-    return {
+    const finalResult: LlmExecutionResult = {
       ...completionResult,
-      cost,
+      cost: calculatedCost,
       traceId: trace?.traceId,
       requestId,
     };
+
+    if (params.idempotencyKey && finalResult.success) {
+      this.completedRequests.set(params.idempotencyKey, finalResult);
+    }
+
+    return finalResult;
   }
 
   private mapErrorType(

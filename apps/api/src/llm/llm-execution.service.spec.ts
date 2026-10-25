@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpException, HttpStatus } from '@nestjs/common';
+import { HttpException, HttpStatus, ConflictException } from '@nestjs/common';
 import { LlmExecutionService, ExecuteLlmParams } from './llm-execution.service';
 import { ProvidersService } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
@@ -10,6 +10,7 @@ describe('LlmExecutionService', () => {
   let usageServiceMock: {
     reserveUsage: jest.Mock;
     reconcileUsage: jest.Mock;
+    getUsageRecord: jest.Mock;
   };
   let observabilityServiceMock: {
     startTrace: jest.Mock;
@@ -44,6 +45,7 @@ describe('LlmExecutionService', () => {
     usageServiceMock = {
       reserveUsage: jest.fn().mockResolvedValue({ success: true }),
       reconcileUsage: jest.fn().mockResolvedValue({ success: true }),
+      getUsageRecord: jest.fn().mockResolvedValue(null),
     };
 
     observabilityServiceMock = {
@@ -206,4 +208,45 @@ describe('LlmExecutionService', () => {
       }),
     );
   });
+
+  it('returns stored result on duplicate idempotencyKey without calling provider or reserving quota', async () => {
+    const paramsWithKey: ExecuteLlmParams = {
+      ...baseParams,
+      idempotencyKey: 'idemp-key-123',
+    };
+
+    // First call executes normally
+    const firstResult = await service.execute(paramsWithKey);
+    expect(firstResult.success).toBe(true);
+    expect(providersServiceMock.executeChatCompletion).toHaveBeenCalledTimes(1);
+    expect(usageServiceMock.reserveUsage).toHaveBeenCalledTimes(1);
+
+    // Second call with same idempotencyKey must return stored result with 0 additional provider calls
+    const secondResult = await service.execute(paramsWithKey);
+    expect(secondResult.success).toBe(true);
+    expect(secondResult.requestId).toBe('idemp-key-123');
+    expect(secondResult.content).toBe(firstResult.content);
+    expect(providersServiceMock.executeChatCompletion).toHaveBeenCalledTimes(1); // STILL 1!
+    expect(usageServiceMock.reserveUsage).toHaveBeenCalledTimes(1); // STILL 1!
+  });
+
+  it('throws 409 ConflictException when idempotencyKey is currently reserved (REQUEST_IN_PROGRESS)', async () => {
+    usageServiceMock.getUsageRecord.mockResolvedValueOnce({
+      requestId: 'in-flight-key',
+      status: 'reserved',
+      reservedTokens: 500,
+      model: 'gpt-4o-mini',
+      userId: 'user-001',
+    });
+
+    const params: ExecuteLlmParams = {
+      ...baseParams,
+      idempotencyKey: 'in-flight-key',
+    };
+
+    await expect(service.execute(params)).rejects.toThrow(ConflictException);
+    expect(providersServiceMock.executeChatCompletion).not.toHaveBeenCalled();
+    expect(usageServiceMock.reserveUsage).not.toHaveBeenCalled();
+  });
 });
+

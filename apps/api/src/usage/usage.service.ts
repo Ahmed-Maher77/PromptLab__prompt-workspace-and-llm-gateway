@@ -261,6 +261,15 @@ export class UsageService {
   }
 
   /**
+   * Retrieves a usage record by its unique requestId / idempotency key.
+   */
+  async getUsageRecord(requestId: string) {
+    return this.prisma.usageRecord.findUnique({
+      where: { requestId },
+    });
+  }
+
+  /**
    * Concurrency-safe reservation before dispatching a request to the gateway.
    * Atomically checks quota boundaries and increments reservedTokens.
    */
