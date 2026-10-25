@@ -28,9 +28,11 @@ services:
       - "127.0.0.1:4000:4000"
     volumes:
       - ./infra/litellm/config.yaml:/app/config.yaml:ro
-    env_file:
-      - .env
     environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY must be set}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       STORE_MODEL_IN_DB: "False"
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     depends_on:
