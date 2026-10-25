@@ -131,6 +131,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
         if (typeof extra.code === 'string') {
           code = extra.code;
+        } else if (/^[A-Z][A-Z0-9_]+$/.test(message)) {
+          code = message;
         } else if (typeof extra.error === 'string') {
           code = extra.error;
         }
@@ -158,6 +160,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (!code) {
       if (status === HttpStatus.TOO_MANY_REQUESTS) {
         code = 'RATE_LIMIT_EXCEEDED';
+      } else if (/^[A-Z][A-Z0-9_]+$/.test(message)) {
+        code = message;
       } else if (
         typeof restExtensions.error === 'string' &&
         restExtensions.error

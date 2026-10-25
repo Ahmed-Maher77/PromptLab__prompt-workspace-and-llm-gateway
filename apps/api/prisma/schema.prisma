@@ -120,6 +120,7 @@ model ConversationMessage {
   role             String // system, user, assistant
   content          String
   sequenceNumber   Int
+  status           String   @default("complete") // complete, failed
   inputTokens      Int?
   outputTokens     Int?
   tokenUsageSource String? // estimated, provider-reported

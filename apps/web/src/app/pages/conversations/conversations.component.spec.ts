@@ -320,6 +320,44 @@ describe('ConversationsComponent', () => {
     expect(component.currentSendMessageKey).toBeNull();
   });
 
+  it('preserves key on 409 REQUEST_IN_PROGRESS but rotates key on 409 IDEMPOTENCY_RESULT_UNAVAILABLE (CONV-02, QUOTA-05c)', () => {
+    component.selectedConversation.set({
+      id: 'c-1',
+      title: 'Active Conv',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      status: 'active',
+      createdAt: '2026-10-19T00:00:00Z',
+      updatedAt: '2026-10-19T00:00:00Z',
+      messages: [],
+      checkpoints: [],
+      activeCheckpoint: null,
+    });
+
+    // 1. 409 REQUEST_IN_PROGRESS (unknown outcome -> keep key)
+    mockConversationService.sendMessage.and.returnValue(
+      throwError(() => ({
+        status: 409,
+        error: { code: 'REQUEST_IN_PROGRESS', message: 'In flight' },
+      })),
+    );
+
+    component.messageInput.set('Check in flight');
+    component.sendMessage();
+    expect(component.currentSendMessageKey).toBeTruthy();
+
+    // 2. 409 IDEMPOTENCY_RESULT_UNAVAILABLE (definitive outcome -> rotate/clear key)
+    mockConversationService.sendMessage.and.returnValue(
+      throwError(() => ({
+        status: 409,
+        error: { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', message: 'Result unavailable' },
+      })),
+    );
+
+    component.sendMessage();
+    expect(component.currentSendMessageKey).toBeNull();
+  });
+
   it('updates token estimate reactively when messageInput changes (FE-01)', () => {
     expect(component.currentInputTokensEstimate()).toBe(0);
 

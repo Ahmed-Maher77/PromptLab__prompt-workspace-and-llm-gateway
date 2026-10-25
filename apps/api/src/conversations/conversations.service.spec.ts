@@ -45,6 +45,7 @@ describe('ConversationsService', () => {
       },
       usageRecord: {
         findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
       $transaction: jest.fn(async (actions: any) => {
@@ -55,6 +56,7 @@ describe('ConversationsService', () => {
       }),
     };
     mockPrisma.conversation.findFirst = mockPrisma.conversation.findUnique;
+    mockPrisma.usageRecord.findFirst = mockPrisma.usageRecord.findUnique;
 
     mockProviders = {
       estimateTokens: jest.fn((text: string) => Math.max(1, Math.ceil((text || '').length / 4))),
@@ -232,6 +234,38 @@ describe('ConversationsService', () => {
       expect(roles).toEqual(['system', 'system', 'user', 'assistant']);
       expect(inspection.assembledMessages[1].content).toContain('[CONVERSATION CHECKPOINT SUMMARY]');
       expect(inspection.assembledMessages[1].content).toContain('PostgreSQL database is used');
+    });
+
+    it('should exclude failed messages from assembled context and retained count (CONV-02)', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+        id: 'c-failed-ctx',
+        title: 'Failed Context Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        status: 'active',
+        messages: [
+          { id: 'm-1', role: 'system', content: 'Base system', sequenceNumber: 1, status: 'complete' },
+          { id: 'm-2', role: 'user', content: 'Successful turn 1', sequenceNumber: 2, status: 'complete' },
+          { id: 'm-3', role: 'assistant', content: 'Answer 1', sequenceNumber: 3, status: 'complete' },
+          { id: 'm-4', role: 'user', content: 'Failed turn 2', sequenceNumber: 4, status: 'failed' },
+          { id: 'm-5', role: 'user', content: 'Successful turn 3', sequenceNumber: 5, status: 'complete' },
+          { id: 'm-6', role: 'assistant', content: 'Answer 3', sequenceNumber: 6, status: 'complete' },
+        ],
+        checkpoints: [],
+      });
+
+      const inspection = await service.inspectContext('c-failed-ctx', undefined, 'dev-user-001');
+
+      // m-4 is failed, so assembled messages must only contain m-1, m-2, m-3, m-5, m-6
+      expect(inspection.assembledMessages.some((m) => m.content === 'Failed turn 2')).toBe(false);
+      expect(inspection.assembledMessages.map((m) => m.content)).toEqual([
+        'Base system',
+        'Successful turn 1',
+        'Answer 1',
+        'Successful turn 3',
+        'Answer 3',
+      ]);
+      expect(inspection.retainedMessagesCount).toBe(4); // m-2, m-3, m-5, m-6
     });
   });
 
@@ -607,6 +641,89 @@ describe('ConversationsService', () => {
           'req-seq-collision',
         ),
       ).rejects.toThrow('Unique constraint failed on (conversationId, sequenceNumber)');
+    });
+
+    it('persists user message with status failed on provider failure (CONV-02)', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-fail',
+        ownerId: 'dev-user-001',
+        provider: 'gateway',
+        model: 'gpt-4o-mini',
+        messages: [],
+        checkpoints: [],
+      });
+
+      const llmService = (service as any).llmExecutionService;
+      jest.spyOn(llmService, 'execute').mockResolvedValueOnce({
+        success: false,
+        errorMessage: 'Provider rate limit exceeded',
+        errorType: 'RATE_LIMIT',
+        model: 'gpt-4o-mini',
+        latencyMs: 100,
+        requestId: 'req-failed-turn',
+      });
+
+      const userMsgCreated = {
+        id: 'msg-u-failed',
+        role: 'user',
+        content: 'Failing prompt',
+        status: 'failed',
+        sequenceNumber: 1,
+      };
+      mockPrisma.conversationMessage.create.mockResolvedValueOnce(userMsgCreated);
+
+      const res = await service.sendMessage(
+        'c-fail',
+        { content: 'Failing prompt' },
+        'dev-user-001',
+        'req-failed-turn',
+      );
+
+      expect(res.success).toBe(false);
+      expect(res.errorMessage).toBe('Provider rate limit exceeded');
+      expect(mockPrisma.conversationMessage.create).toHaveBeenCalledTimes(1);
+      const call = mockPrisma.conversationMessage.create.mock.calls[0][0];
+      expect(call.data.status).toBe('failed');
+      expect(call.data.role).toBe('user');
+    });
+
+    it('throws 409 IDEMPOTENCY_RESULT_UNAVAILABLE when replayed request messages are missing and reconciledAt is older than 30s grace period (CONV-02, QUOTA-05c)', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-stale-replay',
+        ownerId: 'dev-user-001',
+        provider: 'gateway',
+        model: 'gpt-4o-mini',
+        messages: [],
+        checkpoints: [],
+      });
+
+      const llmService = (service as any).llmExecutionService;
+      jest.spyOn(llmService, 'execute').mockResolvedValueOnce({
+        success: true,
+        content: 'Replay output',
+        model: 'gpt-4o-mini',
+        latencyMs: 150,
+        requestId: 'req-stale-reconciled',
+        isReplay: true,
+      });
+
+      mockPrisma.conversationMessage.findMany.mockResolvedValueOnce([]);
+
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'ur-stale',
+        idempotencyKey: 'req-stale-reconciled',
+        status: 'reconciled',
+        reconciledAt: new Date(Date.now() - 35_000),
+      });
+
+      await expect(
+        service.sendMessage(
+          'c-stale-replay',
+          { content: 'Replayed input' },
+          'dev-user-001',
+          'req-stale-reconciled',
+        ),
+      ).rejects.toThrow('IDEMPOTENCY_RESULT_UNAVAILABLE');
     });
   });
 

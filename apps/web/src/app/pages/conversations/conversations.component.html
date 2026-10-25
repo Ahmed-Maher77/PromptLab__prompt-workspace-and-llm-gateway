@@ -205,6 +205,9 @@
                   </div>
                   <div class="message-meta">
                     <span class="seq-num">#{{ msg.sequenceNumber }}</span>
+                    @if (msg.status === 'failed') {
+                      <span class="failed-tag" title="Execution failed on provider">Failed</span>
+                    }
                     @if (isMessageCompacted(msg.sequenceNumber)) {
                       <span class="compacted-tag" title="Compacted into checkpoint summary for model input">In Checkpoint</span>
                     }

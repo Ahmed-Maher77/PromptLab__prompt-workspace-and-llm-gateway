@@ -5,7 +5,7 @@ import { AppModule } from './app.module';
 import { validateEnvironment } from './common/config/env.validation';
 import { configureApp } from './configure-app';
 import { PrismaService } from './prisma/prisma.service';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { UsageService } from './usage/usage.service';
 import { LlmExecutionService } from './llm/llm-execution.service';
 import { ProvidersService } from './providers/providers.service';
@@ -1598,6 +1598,300 @@ describe('HTTP Routing & App Integration (E2E)', () => {
           'CREATE UNIQUE INDEX IF NOT EXISTS "conversation_messages_conversationId_sequenceNumber_key" ON "conversation_messages"("conversationId", "sequenceNumber");',
         );
       }
+    });
+
+    it('persists a failed turn with status failed and excludes it from context on subsequent turns (CONV-02)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+
+      // 1. Create a conversation
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Failed Turn Context Exclusion Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          systemPrompt: 'System instruction.',
+        })
+        .expect(201);
+
+      const convId = convRes.body.id;
+
+      try {
+        // 2. Mock provider to fail on turn 1
+        const executeSpy = jest.spyOn(providersService, 'executeChatCompletion');
+        executeSpy.mockResolvedValueOnce({
+          success: false,
+          errorMessage: 'Simulated provider rate limit',
+          errorType: 'provider_quota_error',
+          model: 'gpt-4o-mini',
+          latencyMs: 80,
+        });
+
+        const failedKey = `failed-key-${Date.now()}`;
+        const failRes = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .set('Idempotency-Key', failedKey)
+          .send({ content: 'Prompt that will fail upstream' })
+          .expect(201); // 201 with success: false in payload
+
+        expect(failRes.body.success).toBe(false);
+        expect(failRes.body.errorMessage).toBe('Simulated provider rate limit');
+        expect(failRes.body.userMessage).toBeDefined();
+        expect(failRes.body.userMessage.status).toBe('failed');
+
+        // Verify in DB that the user message is saved with status: 'failed'
+        const dbFailedMsg = await prisma.conversationMessage.findUnique({
+          where: { id: failRes.body.userMessage.id },
+        });
+        expect(dbFailedMsg?.status).toBe('failed');
+
+        // 3. Turn 2: Mock provider to succeed, and assert the messages payload sent to provider does NOT include the failed message
+        executeSpy.mockImplementationOnce(async (params) => {
+          // Assert: messages sent to LLM should contain system instruction and current turn, but NOT the failed turn
+          const messages = params.messages;
+          const failedTurnInContext = messages.some((m: any) => m.content === 'Prompt that will fail upstream');
+          expect(failedTurnInContext).toBe(false);
+          return {
+            success: true,
+            content: 'I did not see your failed prompt, but I can answer this!',
+            model: 'gpt-4o-mini',
+            latencyMs: 120,
+            usage: { promptTokens: 25, completionTokens: 15, totalTokens: 40, source: 'provider-reported' },
+          };
+        });
+
+        const successKey = `success-key-${Date.now()}`;
+        const turn2Res = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .set('Idempotency-Key', successKey)
+          .send({ content: 'Prompt that succeeds' })
+          .expect(201);
+
+        expect(turn2Res.body.success).toBe(true);
+
+        // 4. Verify inspectContext also excludes the failed message
+        const contextRes = await request(app.getHttpServer())
+          .get(`/api/conversations/${convId}/context`)
+          .set(authHeader)
+          .expect(200);
+
+        const assembledContents = contextRes.body.assembledMessages.map((m: any) => m.content);
+        expect(assembledContents).not.toContain('Prompt that will fail upstream');
+        expect(assembledContents).toContain('Prompt that succeeds');
+      } finally {
+        jest.restoreAllMocks();
+        await prisma.conversation.deleteMany({ where: { id: convId } });
+      }
+    });
+
+    it('returns 409 IDEMPOTENCY_RESULT_UNAVAILABLE when replayed key is reconciled but turn messages are missing past grace period (CONV-02, QUOTA-05c)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+
+      // 1. Create a conversation
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Stale Reconciled Replay Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+        })
+        .expect(201);
+
+      const convId = convRes.body.id;
+      const replayKey = `stale-replay-key-${Date.now()}`;
+
+      try {
+        // 2. Perform a successful turn
+        jest.spyOn(providersService, 'executeChatCompletion').mockResolvedValueOnce({
+          success: true,
+          content: 'Original completion',
+          model: 'gpt-4o-mini',
+          latencyMs: 90,
+          usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20, source: 'provider-reported' },
+        });
+
+        const origRes = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .set('Idempotency-Key', replayKey)
+          .send({ content: 'Original message' })
+          .expect(201);
+
+        expect(origRes.body.success).toBe(true);
+
+        // 3. Simulate missing turn messages in DB (e.g. server crashed before message commit)
+        await prisma.conversationMessage.deleteMany({
+          where: { requestId: replayKey },
+        });
+
+        // 4. Case A: Replay within 30s grace period -> returns 409 REQUEST_IN_PROGRESS
+        const freshReplayRes = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .set('Idempotency-Key', replayKey)
+          .send({ content: 'Original message' })
+          .expect(409);
+
+        expect(freshReplayRes.body.message).toBe('REQUEST_IN_PROGRESS');
+
+        // 5. Case B: Stale reconciled record (> 30s grace period)
+        await prisma.usageRecord.updateMany({
+          where: { requestId: replayKey },
+          data: {
+            reconciledAt: new Date(Date.now() - 35_000), // 35 seconds ago
+          },
+        });
+
+        const staleReplayRes = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .set('Idempotency-Key', replayKey)
+          .send({ content: 'Original message' })
+          .expect(409);
+
+        expect(staleReplayRes.body.message).toBe('IDEMPOTENCY_RESULT_UNAVAILABLE');
+        expect(staleReplayRes.body.code).toBe('IDEMPOTENCY_RESULT_UNAVAILABLE');
+      } finally {
+        jest.restoreAllMocks();
+        await prisma.conversation.deleteMany({ where: { id: convId } });
+      }
+    });
+
+    it('emits explicit code in 409 responses for in-flight, unavailable, and reused keys across endpoints (QUOTA-05d)', async () => {
+      const prisma = app.get(PrismaService);
+      const userId = 'dev-user-001';
+
+      // Ensure user exists in DB
+      await prisma.user.upsert({
+        where: { id: userId },
+        update: {},
+        create: { id: userId, email: 'dev@promptlab.local', displayName: 'Developer Admin', role: 'admin' },
+      });
+
+      // 1. Seed 'reserved' usage record -> POST /api/prompts/run returns 409 with code REQUEST_IN_PROGRESS
+      const inFlightKeyPrompt = `inflight-prompt-${Date.now()}`;
+      await prisma.usageRecord.create({
+        data: {
+          requestId: inFlightKeyPrompt,
+          userId,
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          status: 'reserved',
+        },
+      });
+
+      const promptRes = await request(app.getHttpServer())
+        .post('/api/prompts/run')
+        .set(authHeader)
+        .set('Idempotency-Key', inFlightKeyPrompt)
+        .send({
+          templateBody: 'Test template body',
+          model: 'gpt-4o-mini',
+        })
+        .expect(409);
+
+      expect(promptRes.body.status).toBe(409);
+      expect(promptRes.body.code).toBe('REQUEST_IN_PROGRESS');
+      expect(promptRes.body.message).toBe('REQUEST_IN_PROGRESS');
+
+      // 2. Seed 'reserved' usage record -> POST /api/conversations/:id/messages returns 409 with code REQUEST_IN_PROGRESS
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({ title: 'Quota-05d Conv', provider: 'gateway', model: 'gpt-4o-mini' })
+        .expect(201);
+      const convId = convRes.body.id;
+
+      const inFlightKeyConv = `inflight-conv-${Date.now()}`;
+      await prisma.usageRecord.create({
+        data: {
+          requestId: inFlightKeyConv,
+          userId,
+          conversationId: convId,
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          status: 'reserved',
+        },
+      });
+
+      const convMsgRes = await request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/messages`)
+        .set(authHeader)
+        .set('Idempotency-Key', inFlightKeyConv)
+        .send({ content: 'In flight turn message' })
+        .expect(409);
+
+      expect(convMsgRes.body.status).toBe(409);
+      expect(convMsgRes.body.code).toBe('REQUEST_IN_PROGRESS');
+      expect(convMsgRes.body.message).toBe('REQUEST_IN_PROGRESS');
+
+      // 3. Seed 'reconciled' record without responseBody -> 409 IDEMPOTENCY_RESULT_UNAVAILABLE with explicit code
+      const unavailKey = `unavail-key-${Date.now()}`;
+      await prisma.usageRecord.create({
+        data: {
+          requestId: unavailKey,
+          userId,
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          status: 'reconciled',
+          responseBody: Prisma.DbNull,
+          reconciledAt: new Date(),
+        },
+      });
+
+      const unavailRes = await request(app.getHttpServer())
+        .post('/api/prompts/run')
+        .set(authHeader)
+        .set('Idempotency-Key', unavailKey)
+        .send({
+          templateBody: 'Test template body',
+          model: 'gpt-4o-mini',
+        })
+        .expect(409);
+
+      expect(unavailRes.body.status).toBe(409);
+      expect(unavailRes.body.code).toBe('IDEMPOTENCY_RESULT_UNAVAILABLE');
+      expect(unavailRes.body.message).toBe('IDEMPOTENCY_RESULT_UNAVAILABLE');
+
+      // 4. Seed 'failed' record -> 409 IDEMPOTENCY_KEY_REUSED with explicit code
+      const reusedKey = `reused-key-${Date.now()}`;
+      await prisma.usageRecord.create({
+        data: {
+          requestId: reusedKey,
+          userId,
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          status: 'failed',
+        },
+      });
+
+      const reusedRes = await request(app.getHttpServer())
+        .post('/api/prompts/run')
+        .set(authHeader)
+        .set('Idempotency-Key', reusedKey)
+        .send({
+          templateBody: 'Test template body',
+          model: 'gpt-4o-mini',
+        })
+        .expect(409);
+
+      expect(reusedRes.body.status).toBe(409);
+      expect(reusedRes.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+      expect(reusedRes.body.message).toBe('IDEMPOTENCY_KEY_REUSED');
+
+      // Cleanup
+      await prisma.usageRecord.deleteMany({
+        where: {
+          requestId: { in: [inFlightKeyPrompt, inFlightKeyConv, unavailKey, reusedKey] },
+        },
+      });
+      await prisma.conversation.deleteMany({ where: { id: convId } });
     });
   });
 

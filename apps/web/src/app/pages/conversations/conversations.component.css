@@ -985,6 +985,11 @@
   color: var(--color-danger);
 }
 
+.conversations-layout .failed-tag {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
 .conversations-layout .compacted-tag {
   background: var(--color-warning-bg);
   color: var(--color-warning);

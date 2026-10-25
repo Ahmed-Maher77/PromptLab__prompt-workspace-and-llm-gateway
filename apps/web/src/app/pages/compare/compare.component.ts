@@ -24,6 +24,7 @@ import {
   ModelMetadata,
 } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
+import { isUnknownOutcomeError } from '../../utils/http-retry.util';
 
 @Component({
   selector: 'app-compare',
@@ -348,7 +349,9 @@ export class CompareComponent implements OnInit {
         error: (err) => {
           this.runningComparison.set(false);
           this.runError.set(err.error?.message || 'Comparison execution failed.');
-          // Key preserved for retry
+          if (!isUnknownOutcomeError(err)) {
+            this.currentRunComparisonKey = null;
+          }
         },
       });
   }

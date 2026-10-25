@@ -21,6 +21,7 @@ import {
   ContextInspectionResult,
 } from './context-policy';
 import { Prisma, ConversationMessage } from '@prisma/client';
+import { conflict } from '../common/utils/conflict.util';
 
 @Injectable()
 export class ConversationsService {
@@ -66,6 +67,7 @@ export class ConversationsService {
             role: 'system',
             content: systemPromptContent!,
             sequenceNumber: 1,
+            status: 'complete',
             inputTokens: estimateTokens(systemPromptContent!),
             tokenUsageSource: 'estimated',
           },
@@ -103,6 +105,7 @@ export class ConversationsService {
             role: true,
             content: true,
             sequenceNumber: true,
+            status: true,
             createdAt: true,
           },
         },
@@ -219,9 +222,12 @@ export class ConversationsService {
 
     const assembledMessages: AssembledContextMessage[] = [];
 
-    // 1. System prompt (if sequence 1 is system)
+    // 1. System prompt (if sequence 1 is system and not failed)
     const systemMsg = conv.messages.find(
-      (m) => m.role === 'system' && m.sequenceNumber === 1,
+      (m) =>
+        m.role === 'system' &&
+        m.sequenceNumber === 1 &&
+        m.status !== 'failed',
     );
     if (systemMsg) {
       assembledMessages.push({
@@ -255,11 +261,12 @@ export class ConversationsService {
       });
     }
 
-    // 3. Retained uncompacted messages (messages with sequenceNumber > compactedThrough, skipping sequence 1 system msg)
+    // 3. Retained uncompacted messages (messages with sequenceNumber > compactedThrough, skipping sequence 1 system msg and failed messages)
     const uncompactedMessages = conv.messages.filter(
       (m) =>
         m.sequenceNumber > compactedThrough &&
-        !(m.role === 'system' && m.sequenceNumber === 1),
+        !(m.role === 'system' && m.sequenceNumber === 1) &&
+        m.status !== 'failed',
     );
 
     for (const msg of uncompactedMessages) {
@@ -291,7 +298,8 @@ export class ConversationsService {
       ? conv.messages.filter(
           (m) =>
             m.sequenceNumber <= activeCheckpoint.compactedThroughSequence &&
-            !(m.role === 'system' && m.sequenceNumber === 1),
+            !(m.role === 'system' && m.sequenceNumber === 1) &&
+            m.status !== 'failed',
         ).length
       : 0;
 
@@ -363,7 +371,8 @@ export class ConversationsService {
 
     // 3. Handle Replay:
     // If execution was replayed from an earlier execution, load the turn BY requestId.
-    // If not both messages exist yet (in-flight persistence window), return 409 REQUEST_IN_PROGRESS.
+    // If not both messages exist yet (in-flight persistence window), return 409 REQUEST_IN_PROGRESS,
+    // or 409 IDEMPOTENCY_RESULT_UNAVAILABLE if the usage record is reconciled but messages are missing after a 30s grace period.
     if (execution.isReplay) {
       if (execution.requestId) {
         const turnMessages = await this.prisma.conversationMessage.findMany({
@@ -387,13 +396,30 @@ export class ConversationsService {
             traceId: execution.traceId,
           };
         }
+
+        // Check if usage record was reconciled and is older than 30s grace period
+        const usageRecord = await this.prisma.usageRecord.findUnique({
+          where: {
+            userId_requestId: {
+              userId: conv.ownerId,
+              requestId: execution.requestId,
+            },
+          },
+        });
+
+        if (usageRecord?.status === 'reconciled' && usageRecord.reconciledAt) {
+          const ageMs = Date.now() - usageRecord.reconciledAt.getTime();
+          if (ageMs > 30_000) {
+            throw conflict('IDEMPOTENCY_RESULT_UNAVAILABLE');
+          }
+        }
       }
 
-      throw new ConflictException('REQUEST_IN_PROGRESS');
+      throw conflict('REQUEST_IN_PROGRESS');
     }
 
     if (!execution.success) {
-      // Create user message if provider failed, allocating sequence number atomically
+      // Create user message marked as 'failed' if provider failed, allocating sequence number atomically
       let userMessage: ConversationMessage;
       try {
         userMessage = await this.prisma.$transaction(async (tx) => {
@@ -413,6 +439,7 @@ export class ConversationsService {
               role: 'user',
               content: dto.content.trim(),
               sequenceNumber: updatedConv.lastSequence,
+              status: 'failed',
               inputTokens: estimateTokens(dto.content),
               tokenUsageSource: 'estimated',
             },
@@ -473,6 +500,7 @@ export class ConversationsService {
             role: 'user',
             content: dto.content.trim(),
             sequenceNumber: userSeq,
+            status: 'complete',
             inputTokens: estimateTokens(dto.content),
             tokenUsageSource: 'estimated',
           },
@@ -485,6 +513,7 @@ export class ConversationsService {
             role: 'assistant',
             content: execution.content || '',
             sequenceNumber: assistantSeq,
+            status: 'complete',
             inputTokens: execution.usage?.promptTokens || estimateTokens(dto.content),
             outputTokens: execution.usage?.completionTokens || estimateTokens(execution.content || ''),
             tokenUsageSource: execution.usage?.source || 'provider-reported',
@@ -562,7 +591,9 @@ export class ConversationsService {
   ) {
     const conv = await this.findOne(id, userId);
     const nonSystemMessages = conv.messages.filter(
-      (m) => !(m.role === 'system' && m.sequenceNumber === 1),
+      (m) =>
+        !(m.role === 'system' && m.sequenceNumber === 1) &&
+        m.status !== 'failed',
     );
 
     if (nonSystemMessages.length < 3) {

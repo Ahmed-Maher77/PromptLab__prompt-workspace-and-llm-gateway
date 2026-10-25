@@ -1,4 +1,4 @@
-import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, HttpException, HttpStatus, ConflictException } from '@nestjs/common';
 import { AllExceptionsFilter } from './http-exception.filter';
 import { Prisma } from '@prisma/client';
 
@@ -296,6 +296,54 @@ describe('AllExceptionsFilter (ERR-01)', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
       expect(mockResponse.setHeader).toHaveBeenCalledWith('x-request-id', body.requestId);
+    });
+  });
+
+  describe('Machine-readable error codes (QUOTA-05d)', () => {
+    it('uses UPPER_SNAKE message as code when Nest standard object has error: "Conflict" but message: "REQUEST_IN_PROGRESS"', () => {
+      const exception = new ConflictException('REQUEST_IN_PROGRESS');
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.status).toBe(HttpStatus.CONFLICT);
+      expect(body.message).toBe('REQUEST_IN_PROGRESS');
+      expect(body.code).toBe('REQUEST_IN_PROGRESS');
+    });
+
+    it('uses UPPER_SNAKE message as code for raw string HttpException', () => {
+      const exception = new HttpException('IDEMPOTENCY_RESULT_UNAVAILABLE', HttpStatus.CONFLICT);
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.status).toBe(HttpStatus.CONFLICT);
+      expect(body.message).toBe('IDEMPOTENCY_RESULT_UNAVAILABLE');
+      expect(body.code).toBe('IDEMPOTENCY_RESULT_UNAVAILABLE');
+    });
+
+    it('preserves explicit code from object response', () => {
+      const exception = new ConflictException({
+        message: 'Key already used',
+        code: 'IDEMPOTENCY_KEY_REUSED',
+      });
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.status).toBe(HttpStatus.CONFLICT);
+      expect(body.message).toBe('Key already used');
+      expect(body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    });
+
+    it('falls back to generic error string when message is a human sentence', () => {
+      const exception = new ConflictException('A duplicate resource already exists in database');
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.code).toBe('Conflict');
+      expect(body.message).toBe('A duplicate resource already exists in database');
     });
   });
 });

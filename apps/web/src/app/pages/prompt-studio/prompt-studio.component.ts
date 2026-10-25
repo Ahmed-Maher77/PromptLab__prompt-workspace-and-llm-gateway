@@ -23,6 +23,7 @@ import {
   FewShotExample,
 } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
+import { isUnknownOutcomeError } from '../../utils/http-retry.util';
 
 export type StudioViewMode = 'library' | 'editor';
 
@@ -472,7 +473,9 @@ export class PromptStudioComponent implements OnInit {
         error: (err) => {
           this.runningPlayground.set(false);
           this.runError.set(err.error?.message || 'Execution failed while communicating with the gateway.');
-          // Key preserved for retry
+          if (!isUnknownOutcomeError(err)) {
+            this.currentRunPlaygroundKey = null;
+          }
         },
       });
   }

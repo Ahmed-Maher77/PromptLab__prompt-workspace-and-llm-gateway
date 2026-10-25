@@ -4,6 +4,7 @@ import { UsageService } from '../usage/usage.service';
 import { ObservabilityService, ActiveTraceContext } from '../observability/observability.service';
 import { calculateCost } from '../experiments/cost-calculator';
 import { StoredLlmResponse } from '../usage/usage.types';
+import { conflict } from '../common/utils/conflict.util';
 
 export type LlmOperation =
   | 'playground.execute'
@@ -109,12 +110,12 @@ export class LlmExecutionService {
       if (reservation.created === false) {
         const existingRecord = reservation.record;
         if (!existingRecord || existingRecord.status === 'reserved' || existingRecord.status === 'reconciling') {
-          throw new ConflictException('REQUEST_IN_PROGRESS');
+          throw conflict('REQUEST_IN_PROGRESS');
         }
 
         if (existingRecord.status === 'reconciled') {
           if (!existingRecord.responseBody) {
-            throw new ConflictException('IDEMPOTENCY_RESULT_UNAVAILABLE');
+            throw conflict('IDEMPOTENCY_RESULT_UNAVAILABLE');
           }
 
           isReplay = true;
@@ -144,7 +145,7 @@ export class LlmExecutionService {
         }
 
         // status === 'failed' or 'timeout-ambiguous'
-        throw new ConflictException('IDEMPOTENCY_KEY_REUSED');
+        throw conflict('IDEMPOTENCY_KEY_REUSED');
       }
 
       reserved = true;

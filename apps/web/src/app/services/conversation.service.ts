@@ -25,6 +25,7 @@ export interface ConversationMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
   sequenceNumber: number;
+  status?: 'complete' | 'failed';
   inputTokens?: number | null;
   outputTokens?: number | null;
   tokenUsageSource?: 'estimated' | 'provider-reported' | null;

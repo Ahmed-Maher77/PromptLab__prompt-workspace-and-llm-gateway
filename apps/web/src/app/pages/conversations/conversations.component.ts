@@ -23,6 +23,7 @@ import {
 } from '../../services/conversation.service';
 import { PromptService, ModelMetadata } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
+import { isUnknownOutcomeError } from '../../utils/http-retry.util';
 
 @Component({
   selector: 'app-conversations',
@@ -249,7 +250,11 @@ export class ConversationsComponent implements OnInit {
       error: (err) => {
         this.sendingMessage.set(false);
         this.chatError.set(err.error?.message || 'Failed to transmit message.');
-        // Note: currentSendMessageKey is intentionally preserved so manual retry reuses the exact same key!
+        // CONV-02 / QUOTA-05c: keep the idempotency key only for unknown outcomes (network error, 502/503/504, 409 REQUEST_IN_PROGRESS).
+        // Rotate it on every other error (reading `code` from problem-details body).
+        if (!isUnknownOutcomeError(err)) {
+          this.currentSendMessageKey = null;
+        }
       },
     });
   }
