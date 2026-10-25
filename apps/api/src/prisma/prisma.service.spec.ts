@@ -1,3 +1,13 @@
+jest.mock('@prisma/client', () => {
+  return {
+    PrismaClient: class MockPrismaClient {
+      $connect = jest.fn();
+      $disconnect = jest.fn();
+      $queryRaw = jest.fn();
+    },
+  };
+});
+
 import { PrismaService } from './prisma.service';
 
 describe('PrismaService', () => {
