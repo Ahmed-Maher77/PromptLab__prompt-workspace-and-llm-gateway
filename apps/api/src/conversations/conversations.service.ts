@@ -23,7 +23,6 @@ import {
   ContextInspectionResult,
 } from './context-policy';
 import { Prisma } from '@prisma/client';
-import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
 
 @Injectable()
 export class ConversationsService {
@@ -37,52 +36,10 @@ export class ConversationsService {
   ) {}
 
   /**
-   * Ensures a default developer user exists.
-   */
-  private async getOrCreateDefaultUser(): Promise<string> {
-    const existing =
-      typeof this.prisma.user.findUnique === 'function'
-        ? await this.prisma.user.findUnique({ where: { id: DEFAULT_DEV_USER.id } })
-        : null;
-    if (existing) {
-      return existing.id;
-    }
-
-    const first = await this.prisma.user.findFirst();
-    if (first) {
-      return first.id;
-    }
-
-    if (typeof this.prisma.user.upsert === 'function') {
-      const created = await this.prisma.user.upsert({
-        where: { id: DEFAULT_DEV_USER.id },
-        update: {},
-        create: {
-          id: DEFAULT_DEV_USER.id,
-          email: DEFAULT_DEV_USER.email,
-          displayName: DEFAULT_DEV_USER.displayName,
-          role: DEFAULT_DEV_USER.role,
-        },
-      });
-      return created.id;
-    }
-
-    const created = await this.prisma.user.create({
-      data: {
-        id: DEFAULT_DEV_USER.id,
-        email: DEFAULT_DEV_USER.email,
-        displayName: DEFAULT_DEV_USER.displayName,
-        role: DEFAULT_DEV_USER.role,
-      },
-    });
-    return created.id;
-  }
-
-  /**
    * Creates a new conversation with optional initial system instructions.
    */
-  async create(dto: CreateConversationDto, userId?: string) {
-    const ownerId = userId || (await this.getOrCreateDefaultUser());
+  async create(dto: CreateConversationDto, userId: string) {
+    const ownerId = userId;
 
     const title =
       dto.title?.trim() ||
@@ -120,8 +77,8 @@ export class ConversationsService {
    * Lists all conversations.
    * Supports deterministic pagination (limit and offset).
    */
-  async findAll(userId?: string, pagination?: { limit?: number; offset?: number }) {
-    const where = userId ? { ownerId: userId } : {};
+  async findAll(userId: string, pagination?: { limit?: number; offset?: number }) {
+    const where = { ownerId: userId };
     const take = pagination?.limit !== undefined
       ? Math.min(Math.max(1, pagination.limit), 100)
       : (pagination?.offset !== undefined ? 50 : undefined);
@@ -174,12 +131,13 @@ export class ConversationsService {
 
   /**
    * Finds a conversation by ID with all messages and checkpoints.
+   * Scoped to the authenticated owner.
    */
-  async findOne(id: string, userId?: string) {
+  async findOne(id: string, userId: string) {
     const conversation = await this.prisma.conversation.findFirst({
       where: {
         id,
-        ...(userId ? { ownerId: userId } : {}),
+        ownerId: userId,
       },
       include: {
         messages: {
@@ -215,12 +173,13 @@ export class ConversationsService {
 
   /**
    * Deletes a conversation by ID.
+   * Scoped to the authenticated owner.
    */
-  async delete(id: string, userId?: string) {
+  async delete(id: string, userId: string) {
     const conversation = await this.prisma.conversation.findFirst({
       where: {
         id,
-        ...(userId ? { ownerId: userId } : {}),
+        ownerId: userId,
       },
     });
     if (!conversation) {
@@ -238,8 +197,8 @@ export class ConversationsService {
    */
   async inspectContext(
     id: string,
-    proposedInput?: string,
-    userId?: string,
+    proposedInput: string | undefined,
+    userId: string,
   ): Promise<ContextInspectionResult> {
     const conv = await this.findOne(id, userId);
     const policy = getModelContextPolicy(conv.model);
@@ -362,7 +321,7 @@ export class ConversationsService {
    * Appends a user message, dispatches the assembled context to the model,
    * and appends the assistant response with usage metadata.
    */
-  async sendMessage(id: string, dto: SendMessageDto, userId?: string) {
+  async sendMessage(id: string, dto: SendMessageDto, userId: string) {
     if (!dto.content || dto.content.trim().length === 0) {
       throw new BadRequestException('Message content cannot be empty.');
     }
@@ -412,7 +371,7 @@ export class ConversationsService {
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
-        userId: conv.ownerId || DEFAULT_DEV_USER.id,
+        userId: conv.ownerId,
         model: conv.model,
         provider: conv.provider,
         estimatedTokens,
@@ -507,7 +466,7 @@ export class ConversationsService {
   /**
    * Generates a proposed compaction summary and facts list for manual user review.
    */
-  async previewCompaction(id: string, dto?: PreviewCompactionDto, userId?: string) {
+  async previewCompaction(id: string, dto: PreviewCompactionDto | undefined, userId: string) {
     const conv = await this.findOne(id, userId);
     const nonSystemMessages = conv.messages.filter(
       (m) => !(m.role === 'system' && m.sequenceNumber === 1),
@@ -593,7 +552,7 @@ export class ConversationsService {
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
-        userId: conv.ownerId || DEFAULT_DEV_USER.id,
+        userId: conv.ownerId,
         model: conv.model,
         provider: conv.provider,
         estimatedTokens: estimatedCompactionTokens,
@@ -694,7 +653,7 @@ export class ConversationsService {
    * Applies and persists a conversation compaction checkpoint.
    * Crucially, all original conversation messages remain stored in PostgreSQL.
    */
-  async applyCompaction(id: string, dto: ApplyCompactionDto, userId?: string) {
+  async applyCompaction(id: string, dto: ApplyCompactionDto, userId: string) {
     const conv = await this.findOne(id, userId);
 
     if (!dto.summary || dto.summary.trim().length === 0) {
@@ -748,7 +707,7 @@ export class ConversationsService {
    * Resumes conversation from a selected checkpoint.
    * Confirms active checkpoint and provides context inspection.
    */
-  async resume(id: string, checkpointId?: string, userId?: string) {
+  async resume(id: string, checkpointId: string | undefined, userId: string) {
     const conv = await this.findOne(id, userId);
 
     let targetCheckpoint = conv.activeCheckpoint;

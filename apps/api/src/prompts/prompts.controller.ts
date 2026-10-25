@@ -12,11 +12,12 @@ export class PromptsController {
 
   @Get()
   async findAll(
+    @CurrentUser('id') userId: string,
     @Query() pagination: PaginationQueryDto,
     @Query('search') search?: string,
     @Query('technique') technique?: string,
   ) {
-    return this.promptsService.findAll({
+    return this.promptsService.findAll(userId, {
       search,
       technique,
       limit: pagination.limit,
@@ -25,8 +26,11 @@ export class PromptsController {
   }
 
   @Get(':id')
-  async findById(@Param('id') id: string) {
-    return this.promptsService.findById(id);
+  async findById(
+    @Param('id') id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.promptsService.findById(id, userId);
   }
 
   @Post()

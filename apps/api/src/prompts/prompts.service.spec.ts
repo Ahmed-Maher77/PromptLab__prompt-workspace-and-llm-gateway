@@ -21,6 +21,7 @@ describe('PromptsService', () => {
         create: jest.fn(),
         findMany: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         update: jest.fn(),
       },
       promptVersion: {
@@ -124,14 +125,14 @@ describe('PromptsService', () => {
       };
 
       mockPrisma.prompt.create.mockResolvedValueOnce(mockCreated);
-      mockPrisma.prompt.findUnique.mockResolvedValueOnce(mockCreated);
+      mockPrisma.prompt.findFirst.mockResolvedValueOnce(mockCreated);
 
       const result = await service.create({
         name: 'Test Prompt',
         description: 'Test Description',
         techniques: ['zero-shot'],
         templateBody: 'Test template {{input}}',
-      });
+      }, 'dev-user-001');
 
       expect(result.id).toBe('p-1');
       expect(result.versions.length).toBe(1);
@@ -178,7 +179,7 @@ describe('PromptsService', () => {
         ],
       };
 
-      mockPrisma.prompt.findUnique
+      mockPrisma.prompt.findFirst
         .mockResolvedValueOnce(existingPrompt)
         .mockResolvedValueOnce(updatedPrompt);
 
@@ -192,7 +193,7 @@ describe('PromptsService', () => {
 
       const result = await service.createVersion('p-1', {
         templateBody: 'Updated template {{input}}',
-      });
+      }, 'dev-user-001');
 
       expect(result.versions.length).toBe(2);
       expect(result.versions[0].versionNumber).toBe(2);
@@ -212,7 +213,7 @@ describe('PromptsService', () => {
       try {
         await service.createVersion('p-1', {
           templateBody: 'Concurrent template',
-        });
+        }, 'dev-user-001');
       } catch (e) {
         error = e;
       }
@@ -220,14 +221,43 @@ describe('PromptsService', () => {
     });
 
     it('should throw NotFoundException if prompt does not exist', async () => {
-      mockPrisma.prompt.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.prompt.findFirst.mockResolvedValueOnce(null);
       let error: unknown;
       try {
-        await service.findById('non-existent');
+        await service.findById('non-existent', 'dev-user-001');
       } catch (e) {
         error = e;
       }
       expect(error).toBeInstanceOf(NotFoundException);
+    });
+
+    it('should scope findAll strictly by caller ownerId', async () => {
+      mockPrisma.prompt.findMany.mockResolvedValueOnce([]);
+      await service.findAll('user-alice', { search: 'test' });
+      expect(mockPrisma.prompt.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            ownerId: 'user-alice',
+          }),
+        }),
+      );
+    });
+
+    it('should reject findById when prompt is owned by another user', async () => {
+      mockPrisma.prompt.findFirst.mockResolvedValueOnce(null);
+      await expect(service.findById('prompt-bob', 'user-alice')).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.prompt.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'prompt-bob', ownerId: 'user-alice' },
+        }),
+      );
+    });
+
+    it('should reject createVersion when prompt is owned by another user', async () => {
+      mockPrisma.prompt.findFirst.mockResolvedValueOnce(null);
+      await expect(
+        service.createVersion('prompt-bob', { templateBody: 'Malicious modification' }, 'user-alice'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -239,7 +269,7 @@ describe('PromptsService', () => {
           templateBody: 'Translate {{text}} to {{target_language}}',
           variables: { text: 'Hello' }, // target_language missing
           model: 'gpt-4o-mini',
-        });
+        }, 'dev-user-001');
       } catch (e) {
         error = e;
       }
@@ -259,7 +289,7 @@ describe('PromptsService', () => {
         templateBody: 'Translate {{text}} to {{target_language}}',
         variables: { text: 'Hello', target_language: 'French' },
         model: 'gpt-4o-mini',
-      });
+      }, 'dev-user-001');
 
       expect(result.success).toBe(true);
       expect(result.resolvedPrompt).toBe('Translate Hello to French');

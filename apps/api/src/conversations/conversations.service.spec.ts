@@ -85,7 +85,7 @@ describe('ConversationsService', () => {
         provider: 'openai',
         model: 'gpt-4o-mini',
         systemPrompt: 'You are a helpful assistant.',
-      });
+      }, 'dev-user-001');
 
       expect(mockPrisma.conversation.create).toHaveBeenCalled();
       const callArg = mockPrisma.conversationMessage.create.mock.calls[0][0];
@@ -130,7 +130,7 @@ describe('ConversationsService', () => {
         checkpoints: [],
       });
 
-      const inspection = await service.inspectContext('c-1', 'Tell me more about indexing');
+      const inspection = await service.inspectContext('c-1', 'Tell me more about indexing', 'dev-user-001');
 
       expect(inspection.contextWindow).toBe(128_000);
       expect(inspection.contextLimitStatus).toBe('known');
@@ -151,7 +151,7 @@ describe('ConversationsService', () => {
         checkpoints: [],
       });
 
-      const inspection = await service.inspectContext('c-custom');
+      const inspection = await service.inspectContext('c-custom', undefined, 'dev-user-001');
 
       expect(inspection.contextWindow).toBeNull();
       expect(inspection.contextLimitStatus).toBe('unknown');
@@ -183,7 +183,7 @@ describe('ConversationsService', () => {
         ],
       });
 
-      const inspection = await service.inspectContext('c-compacted');
+      const inspection = await service.inspectContext('c-compacted', undefined, 'dev-user-001');
 
       expect(inspection.isCompacted).toBe(true);
       expect(inspection.activeCheckpoint?.compactedThroughSequence).toBe(3);
@@ -227,7 +227,7 @@ describe('ConversationsService', () => {
           'FACTS:\n- Tech stack uses NestJS and TypeScript\n- All payment operations require Idempotency-Key headers',
       });
 
-      const preview = await service.previewCompaction('c-billing', { compactThroughSequence: 4 });
+      const preview = await service.previewCompaction('c-billing', { compactThroughSequence: 4 }, 'dev-user-001');
 
       expect(preview.compactThroughSequence).toBe(4);
       expect(preview.messagesToCompactCount).toBe(3); // sequence 2, 3, 4
@@ -255,7 +255,7 @@ describe('ConversationsService', () => {
         errorMessage: 'Invalid API key',
       });
 
-      const preview = await service.previewCompaction('c-billing', { compactThroughSequence: 4 });
+      const preview = await service.previewCompaction('c-billing', { compactThroughSequence: 4 }, 'dev-user-001');
 
       expect(preview.providerReported).toBe(false);
       expect(preview.providerError).toContain('Invalid API key');
@@ -279,7 +279,7 @@ describe('ConversationsService', () => {
 
       let thrownError: any = null;
       try {
-        await service.previewCompaction('c-short');
+        await service.previewCompaction('c-short', undefined, 'dev-user-001');
       } catch (err) {
         thrownError = err;
       }
@@ -313,7 +313,7 @@ describe('ConversationsService', () => {
         summary: 'Compact summary',
         retainedFacts: ['Fact 1', 'Fact 2'],
         compactedThroughSequence: 4,
-      });
+      }, 'dev-user-001');
 
       expect(applied.success).toBe(true);
       expect(mockPrisma.conversationCheckpoint.create).toHaveBeenCalled();
@@ -354,7 +354,7 @@ describe('ConversationsService', () => {
         configurationHint: 'Set OPENAI_API_KEY in environment',
       });
 
-      const result = await service.sendMessage('c-1', { content: 'Hi model' });
+      const result = await service.sendMessage('c-1', { content: 'Hi model' }, 'dev-user-001');
 
       expect(result.success).toBe(false);
       expect(result.userMessage).toBeDefined();
@@ -405,7 +405,7 @@ describe('ConversationsService', () => {
 
       mockPrisma.conversation.update.mockResolvedValueOnce({});
 
-      const result = await service.sendMessage('c-1', { content: 'Hello assistant' });
+      const result = await service.sendMessage('c-1', { content: 'Hello assistant' }, 'dev-user-001');
 
       expect(result.success).toBe(true);
       expect(result.assistantMessage).toBeDefined();
@@ -439,7 +439,7 @@ describe('ConversationsService', () => {
         ],
       });
 
-      const res = await service.resume('c-resume', 'chk-resumed');
+      const res = await service.resume('c-resume', 'chk-resumed', 'dev-user-001');
 
       expect(res.success).toBe(true);
       expect(res.activeCheckpoint?.id).toBe('chk-resumed');

@@ -110,7 +110,7 @@ describe('ExperimentsService', () => {
         evaluationCriteria: [
           { id: 'c-1', name: 'Mentions PromptLab', type: 'contains_text', expectedValue: 'PromptLab' },
         ],
-      });
+      }, 'dev-user-001');
 
       expect(result.experimentId).toBe('exp-1');
       expect(result.slotA.status).toBe('completed');
@@ -177,7 +177,7 @@ describe('ExperimentsService', () => {
           provider: 'anthropic',
           model: 'claude-3-5-sonnet',
         },
-      });
+      }, 'dev-user-001');
 
       // Slot A is marked failed with error details
       expect(result.slotA.status).toBe('failed');
@@ -327,7 +327,7 @@ describe('ExperimentsService', () => {
         ],
       });
 
-      const result = await service.findById('exp-saved');
+      const result = await service.findById('exp-saved', 'dev-user-001');
       expect(result.id).toBe('exp-saved');
       expect(result.commonInput).toEqual({ query: 'hello' });
       expect(result.runs.length).toBe(1);
@@ -337,7 +337,7 @@ describe('ExperimentsService', () => {
       mockPrisma.experiment.findUnique.mockResolvedValueOnce(null);
       let error: unknown;
       try {
-        await service.findById('missing');
+        await service.findById('missing', 'dev-user-001');
       } catch (e) {
         error = e;
       }
@@ -363,7 +363,7 @@ describe('ExperimentsService', () => {
         slot: 'A',
         rating: 5,
         notes: 'Excellent formatting',
-      });
+      }, 'dev-user-001');
 
       expect(updated.rating).toBe(5);
       expect(updated.slot).toBe('A');

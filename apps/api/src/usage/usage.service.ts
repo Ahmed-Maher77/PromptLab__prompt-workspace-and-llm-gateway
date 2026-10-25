@@ -18,7 +18,6 @@ import {
   UsageRecordItem,
   ReservationResult,
 } from './usage.types';
-import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
 
 @Injectable()
 export class UsageService {
@@ -30,33 +29,10 @@ export class UsageService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Returns default user ID ('dev-user-001') or ensures one exists.
-   */
-  async getDefaultUserId(): Promise<string> {
-    const existing =
-      (await this.prisma.user.findUnique({ where: { id: DEFAULT_DEV_USER.id } })) ||
-      (await this.prisma.user.findFirst());
-    if (existing) {
-      return existing.id;
-    }
-    const created = await this.prisma.user.upsert({
-      where: { id: DEFAULT_DEV_USER.id },
-      update: {},
-      create: {
-        id: DEFAULT_DEV_USER.id,
-        email: DEFAULT_DEV_USER.email,
-        displayName: DEFAULT_DEV_USER.displayName,
-        role: DEFAULT_DEV_USER.role,
-      },
-    });
-    return created.id;
-  }
-
-  /**
    * Retrieves or creates the quota policy for a user.
    */
-  async getPolicy(userId?: string) {
-    const uid = userId || (await this.getDefaultUserId());
+  async getPolicy(userId: string) {
+    const uid = userId;
 
     let policy = await this.prisma.quotaPolicy.findUnique({
       where: {
@@ -84,8 +60,8 @@ export class UsageService {
   /**
    * Updates quota policy (monthly limit and/or rate limit) for demo/dev configuration.
    */
-  async updatePolicy(dto: UpdateQuotaPolicyDto, userId?: string) {
-    const uid = userId || (await this.getDefaultUserId());
+  async updatePolicy(dto: UpdateQuotaPolicyDto, userId: string) {
+    const uid = userId;
     const current = await this.getPolicy(uid);
 
     const updated = await this.prisma.quotaPolicy.update({
@@ -215,8 +191,8 @@ export class UsageService {
   /**
    * Returns comprehensive status for the active monthly quota period.
    */
-  async getStatus(userId?: string): Promise<QuotaPeriodStatus> {
-    const uid = userId || (await this.getDefaultUserId());
+  async getStatus(userId: string): Promise<QuotaPeriodStatus> {
+    const uid = userId;
     const policy = await this.getPolicy(uid);
     const period = await this.getCurrentPeriodRecord(uid);
 
@@ -276,7 +252,7 @@ export class UsageService {
    * Atomically checks quota boundaries and increments reservedTokens.
    */
   async reserveUsage(dto: ReserveUsageDto): Promise<ReservationResult> {
-    const uid = dto.userId || (await this.getDefaultUserId());
+    const uid = dto.userId || 'dev-user-001';
     const policy = await this.getPolicy(uid);
 
     // 1. Enforce rate limit (independent from monthly token quota)
@@ -545,8 +521,8 @@ export class UsageService {
   /**
    * Retrieves usage ledger records ordered newest first.
    */
-  async getUsageLedger(userId?: string, limit = 50): Promise<UsageRecordItem[]> {
-    const uid = userId || (await this.getDefaultUserId());
+  async getUsageLedger(userId: string, limit = 50): Promise<UsageRecordItem[]> {
+    const uid = userId;
 
     const records = await this.prisma.usageRecord.findMany({
       where: { userId: uid },
@@ -576,8 +552,8 @@ export class UsageService {
   /**
    * Resets active period usage counters for demo/testing purposes.
    */
-  async resetPeriodForDemo(userId?: string) {
-    const uid = userId || (await this.getDefaultUserId());
+  async resetPeriodForDemo(userId: string) {
+    const uid = userId;
     const period = await this.getCurrentPeriodRecord(uid);
 
     await this.prisma.quotaPeriod.update({

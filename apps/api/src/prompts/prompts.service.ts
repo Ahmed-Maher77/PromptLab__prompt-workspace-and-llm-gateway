@@ -198,20 +198,30 @@ export class PromptsService implements OnModuleInit {
 
   /**
    * Lists all prompts with metadata, version counts, and latest version information.
+   * Scoped to the authenticated owner.
    * Supports deterministic pagination (limit and offset).
    */
-  async findAll(params?: {
-    search?: string;
-    technique?: string;
-    limit?: number;
-    offset?: number;
-  }): Promise<PromptSummary[]> {
-    const where: Prisma.PromptWhereInput = {};
+  async findAll(
+    userId: string,
+    params?: {
+      search?: string;
+      technique?: string;
+      limit?: number;
+      offset?: number;
+    },
+  ): Promise<PromptSummary[]> {
+    const where: Prisma.PromptWhereInput = {
+      ownerId: userId,
+    };
 
     if (params?.search) {
-      where.OR = [
-        { name: { contains: params.search, mode: 'insensitive' } },
-        { description: { contains: params.search, mode: 'insensitive' } },
+      where.AND = [
+        {
+          OR: [
+            { name: { contains: params.search, mode: 'insensitive' } },
+            { description: { contains: params.search, mode: 'insensitive' } },
+          ],
+        },
       ];
     }
 
@@ -277,9 +287,9 @@ export class PromptsService implements OnModuleInit {
   /**
    * Retrieves a prompt by ID with all immutable versions in descending order.
    */
-  async findById(id: string): Promise<PromptDetail> {
-    const prompt = await this.prisma.prompt.findUnique({
-      where: { id },
+  async findById(id: string, userId: string): Promise<PromptDetail> {
+    const prompt = await this.prisma.prompt.findFirst({
+      where: { id, ownerId: userId },
       include: {
         owner: {
           select: { id: true, displayName: true, email: true },
@@ -324,8 +334,7 @@ export class PromptsService implements OnModuleInit {
   /**
    * Creates a prompt and its initial immutable version (v1).
    */
-  async create(dto: CreatePromptDto, userId?: string): Promise<PromptDetail> {
-    const effectiveUserId = userId || DEFAULT_DEV_USER.id;
+  async create(dto: CreatePromptDto, userId: string): Promise<PromptDetail> {
     const autoVariables = this.extractVariables(dto.templateBody);
     const variables = dto.variables && dto.variables.length > 0
       ? dto.variables
@@ -335,7 +344,7 @@ export class PromptsService implements OnModuleInit {
 
     const prompt = await this.prisma.prompt.create({
       data: {
-        ownerId: effectiveUserId,
+        ownerId: userId,
         name: dto.name,
         description: dto.description || null,
         techniqueMetadata: {
@@ -349,7 +358,7 @@ export class PromptsService implements OnModuleInit {
             examples: (dto.examples || []) as unknown as Prisma.InputJsonValue,
             outputSchema: (dto.outputSchema || null) as unknown as Prisma.InputJsonValue,
             modelDefaults: (dto.modelDefaults || { model: 'gpt-4o-mini' }) as unknown as Prisma.InputJsonValue,
-            createdBy: effectiveUserId,
+            createdBy: userId,
           },
         },
       },
@@ -361,7 +370,7 @@ export class PromptsService implements OnModuleInit {
       },
     });
 
-    return this.findById(prompt.id);
+    return this.findById(prompt.id, userId);
   }
 
   /**
@@ -369,8 +378,7 @@ export class PromptsService implements OnModuleInit {
    * Concurrency-safe against race conditions via DB unique constraint [promptId, versionNumber].
    * Historical versions remain strictly immutable.
    */
-  async createVersion(promptId: string, dto: CreateVersionDto, userId?: string): Promise<PromptDetail> {
-    const effectiveUserId = userId || DEFAULT_DEV_USER.id;
+  async createVersion(promptId: string, dto: CreateVersionDto, userId: string): Promise<PromptDetail> {
     const autoVariables = this.extractVariables(dto.templateBody);
 
     const variables = dto.variables && dto.variables.length > 0
@@ -386,8 +394,8 @@ export class PromptsService implements OnModuleInit {
 
     try {
       await this.prisma.$transaction(async (tx) => {
-        const prompt = await tx.prompt.findUnique({
-          where: { id: promptId },
+        const prompt = await tx.prompt.findFirst({
+          where: { id: promptId, ownerId: userId },
           include: {
             versions: {
               orderBy: { versionNumber: 'desc' },
@@ -413,7 +421,7 @@ export class PromptsService implements OnModuleInit {
             examples: (dto.examples || []) as unknown as Prisma.InputJsonValue,
             outputSchema: (dto.outputSchema || null) as unknown as Prisma.InputJsonValue,
             modelDefaults: (dto.modelDefaults || { model: 'gpt-4o-mini' }) as unknown as Prisma.InputJsonValue,
-            createdBy: effectiveUserId,
+            createdBy: userId,
           },
         });
 
@@ -437,7 +445,7 @@ export class PromptsService implements OnModuleInit {
       throw err;
     }
 
-    return this.findById(promptId);
+    return this.findById(promptId, userId);
   }
 
   /**
@@ -497,8 +505,7 @@ export class PromptsService implements OnModuleInit {
   /**
    * Executes a prompt run through LiteLLM Gateway after validating variables.
    */
-  async runPlayground(dto: RunPlaygroundDto, userId?: string): Promise<PlaygroundRunResult> {
-    const effectiveUserId = userId || DEFAULT_DEV_USER.id;
+  async runPlayground(dto: RunPlaygroundDto, userId: string): Promise<PlaygroundRunResult> {
     const preview = this.resolveTemplate({
       templateBody: dto.templateBody,
       variables: dto.variables,
@@ -520,7 +527,7 @@ export class PromptsService implements OnModuleInit {
       operation: 'playground.execute',
       model: dto.model,
       provider: 'gateway',
-      userId: effectiveUserId,
+      userId,
       metadata: { requestId },
     });
 
@@ -528,7 +535,7 @@ export class PromptsService implements OnModuleInit {
     if (this.usageService) {
       await this.usageService.reserveUsage({
         requestId,
-        userId: effectiveUserId,
+        userId,
         model: dto.model,
         provider: 'gateway',
         estimatedTokens,

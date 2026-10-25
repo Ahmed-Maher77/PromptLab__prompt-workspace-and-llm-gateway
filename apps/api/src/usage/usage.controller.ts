@@ -38,19 +38,22 @@ export class UsageController {
 
   @Put('policy')
   @Roles('admin')
-  async updatePolicy(@Body() dto: UpdateQuotaPolicyDto) {
-    return this.usageService.updatePolicy(dto);
+  async updatePolicy(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateQuotaPolicyDto,
+  ) {
+    return this.usageService.updatePolicy(dto, userId);
   }
 
   @Post('reset')
   @Roles('admin')
-  async resetPeriod() {
+  async resetPeriod(@CurrentUser('id') userId: string) {
     const isDevOrTest =
       process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
     if (!isDevOrTest || process.env.ENABLE_DEMO_ENDPOINTS !== 'true') {
       throw new ForbiddenException('Demo endpoints are disabled in this environment.');
     }
-    return this.usageService.resetPeriodForDemo();
+    return this.usageService.resetPeriodForDemo(userId);
   }
 }
 

@@ -34,8 +34,8 @@ describe('PromptsController', () => {
 
   it('delegates findAll with search, technique and pagination', async () => {
     const pagination = { limit: 10, offset: 5 };
-    const res = await controller.findAll(pagination, 'classifier', 'few_shot');
-    expect(mockService.findAll).toHaveBeenCalledWith({
+    const res = await controller.findAll('dev-user-001', pagination, 'classifier', 'few_shot');
+    expect(mockService.findAll).toHaveBeenCalledWith('dev-user-001', {
       search: 'classifier',
       technique: 'few_shot',
       limit: 10,
@@ -45,8 +45,8 @@ describe('PromptsController', () => {
   });
 
   it('delegates findById to service', async () => {
-    const res = await controller.findById('p-1');
-    expect(mockService.findById).toHaveBeenCalledWith('p-1');
+    const res = await controller.findById('p-1', 'dev-user-001');
+    expect(mockService.findById).toHaveBeenCalledWith('p-1', 'dev-user-001');
     expect(res.id).toBe('p-1');
   });
 

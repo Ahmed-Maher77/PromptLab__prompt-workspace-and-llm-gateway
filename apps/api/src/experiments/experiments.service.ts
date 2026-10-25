@@ -8,7 +8,6 @@ import { RunComparisonDto, SlotConfigDto, EvaluationCriterionDto, RateExperiment
 import { calculateCost } from './cost-calculator';
 import { Prisma } from '@prisma/client';
 import { compileSafeRegex, CompiledRegexResult } from '../common/utils/regex.util';
-import { DEFAULT_DEV_USER } from '../common/constants/auth.constants';
 
 export interface PreparedCriterion extends EvaluationCriterionDto {
   compiledRegex?: CompiledRegexResult;
@@ -71,16 +70,17 @@ export class ExperimentsService {
 
   /**
    * Retrieves all saved comparison experiments ordered newest first.
+   * Scoped to the authenticated owner.
    * Supports deterministic pagination (limit and offset).
    */
-  async findAll(ownerId?: string, pagination?: { limit?: number; offset?: number }) {
+  async findAll(ownerId: string, pagination?: { limit?: number; offset?: number }) {
     const take = pagination?.limit !== undefined
       ? Math.min(Math.max(1, pagination.limit), 100)
       : (pagination?.offset !== undefined ? 50 : undefined);
     const skip = pagination?.offset !== undefined ? Math.max(0, pagination.offset) : undefined;
 
     const experiments = await this.prisma.experiment.findMany({
-      where: ownerId ? { ownerId } : {},
+      where: { ownerId },
       include: {
         runs: {
           include: {
@@ -138,12 +138,13 @@ export class ExperimentsService {
 
   /**
    * Retrieves a single comparison experiment by ID.
+   * Scoped to the authenticated owner.
    */
-  async findById(id: string, ownerId?: string) {
+  async findById(id: string, ownerId: string) {
     const exp = await this.prisma.experiment.findFirst({
       where: {
         id,
-        ...(ownerId ? { ownerId } : {}),
+        ownerId,
       },
       include: {
         runs: {
@@ -204,8 +205,7 @@ export class ExperimentsService {
    * Supports independent execution with partial failure handling.
    * Persists experiment and run records linked to immutable prompt versions.
    */
-  async runComparison(dto: RunComparisonDto, userId?: string): Promise<ComparisonResult> {
-    const effectiveUserId = userId || DEFAULT_DEV_USER.id;
+  async runComparison(dto: RunComparisonDto, userId: string): Promise<ComparisonResult> {
     if (!dto.slotA || !dto.slotB) {
       throw new BadRequestException('Both slotA and slotB configurations are required.');
     }
@@ -276,7 +276,7 @@ export class ExperimentsService {
 
     const experiment = await this.prisma.experiment.create({
       data: {
-        ownerId: effectiveUserId,
+        ownerId: userId,
         name: dto.name || 'Prompt Comparison',
         commonInput: JSON.stringify(dto.commonInput),
         settings: settingsPayload as unknown as Prisma.InputJsonValue,
@@ -591,12 +591,13 @@ export class ExperimentsService {
 
   /**
    * Updates manual evaluation rating and notes for an experiment slot.
+   * Scoped to the authenticated owner.
    */
-  async updateRating(id: string, dto: RateExperimentDto, ownerId?: string) {
+  async updateRating(id: string, dto: RateExperimentDto, ownerId: string) {
     const exp = await this.prisma.experiment.findFirst({
       where: {
         id,
-        ...(ownerId ? { ownerId } : {}),
+        ownerId,
       },
     });
 

@@ -70,16 +70,16 @@ describe('UsageController', () => {
       monthlyTokenLimit: 200000,
       requestRateLimit: 120,
     };
-    const updated = await controller.updatePolicy(dto);
-    expect(mockService.updatePolicy).toHaveBeenCalledWith(dto);
+    const updated = await controller.updatePolicy('dev-user-001', dto);
+    expect(mockService.updatePolicy).toHaveBeenCalledWith(dto, 'dev-user-001');
     expect(updated.monthlyTokenLimit).toBe(200000);
   });
 
   it('delegates resetPeriod to service', async () => {
     process.env.ENABLE_DEMO_ENDPOINTS = 'true';
     process.env.NODE_ENV = 'development';
-    const res = await controller.resetPeriod();
-    expect(mockService.resetPeriodForDemo).toHaveBeenCalled();
+    const res = await controller.resetPeriod('dev-user-001');
+    expect(mockService.resetPeriodForDemo).toHaveBeenCalledWith('dev-user-001');
     expect(res.success).toBe(true);
   });
 

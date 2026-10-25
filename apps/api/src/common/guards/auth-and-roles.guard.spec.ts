@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { AuthGuard } from './auth.guard';
 import { RolesGuard } from './roles.guard';
 import { ConversationsService } from '../../conversations/conversations.service';
+import { ExperimentsService } from '../../experiments/experiments.service';
 import { UsageController } from '../../usage/usage.controller';
 import { ObservabilityController } from '../../observability/observability.controller';
 import { validateEnvironment } from '../config/env.validation';
@@ -374,6 +375,38 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
         }),
       );
     });
+
+    it('returns HTTP 404 NotFoundException when User A attempts to fetch User B experiment', async () => {
+      const mockPrisma = {
+        experiment: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      } as any;
+
+      const service = new ExperimentsService(
+        mockPrisma,
+        {} as any,
+        {} as any,
+      );
+
+      await expect(service.findById('exp-123', 'user-A')).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.experiment.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'exp-123', ownerId: 'user-A' },
+        }),
+      );
+    });
+
+    it('RolesGuard rejects non-admin user on admin-scoped endpoints (/settings, /observability/traces)', () => {
+      const guard = new RolesGuard(reflector);
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['admin']);
+
+      const userCtx = createMockContext({}, { id: 'user-002', role: 'user' });
+      expect(() => guard.canActivate(userCtx)).toThrow(ForbiddenException);
+
+      const adminCtx = createMockContext({}, { id: 'admin-001', role: 'admin' });
+      expect(guard.canActivate(adminCtx)).toBe(true);
+    });
   });
 
   describe('Demo Endpoint Gating (SEC-01a-2 Allow-list Enforcement)', () => {
@@ -384,7 +417,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       const usageService = { resetPeriodForDemo: jest.fn() } as any;
       const controller = new UsageController(usageService);
 
-      await expect(controller.resetPeriod()).rejects.toThrow(ForbiddenException);
+      await expect(controller.resetPeriod('admin-user-001')).rejects.toThrow(ForbiddenException);
       expect(usageService.resetPeriodForDemo).not.toHaveBeenCalled();
     });
 
@@ -395,7 +428,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       const usageService = { resetPeriodForDemo: jest.fn() } as any;
       const controller = new UsageController(usageService);
 
-      await expect(controller.resetPeriod()).rejects.toThrow(ForbiddenException);
+      await expect(controller.resetPeriod('admin-user-001')).rejects.toThrow(ForbiddenException);
       expect(usageService.resetPeriodForDemo).not.toHaveBeenCalled();
     });
 
@@ -406,7 +439,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       const usageService = { resetPeriodForDemo: jest.fn() } as any;
       const controller = new UsageController(usageService);
 
-      await expect(controller.resetPeriod()).rejects.toThrow(ForbiddenException);
+      await expect(controller.resetPeriod('admin-user-001')).rejects.toThrow(ForbiddenException);
       expect(usageService.resetPeriodForDemo).not.toHaveBeenCalled();
     });
 
@@ -417,8 +450,8 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       const usageService = { resetPeriodForDemo: jest.fn().mockReturnValue({ success: true }) } as any;
       const controller = new UsageController(usageService);
 
-      await expect(controller.resetPeriod()).resolves.toEqual({ success: true });
-      expect(usageService.resetPeriodForDemo).toHaveBeenCalled();
+      await expect(controller.resetPeriod('admin-user-001')).resolves.toEqual({ success: true });
+      expect(usageService.resetPeriodForDemo).toHaveBeenCalledWith('admin-user-001');
     });
 
     it('rejects POST /observability/clear when NODE_ENV is not in allow-list', () => {

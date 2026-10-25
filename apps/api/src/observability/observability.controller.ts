@@ -24,6 +24,7 @@ export class ObservabilityController {
   constructor(private readonly observabilityService: ObservabilityService) {}
 
   @Get('traces')
+  @Roles('admin')
   getTraces(
     @Query('status') status?: string,
     @Query('model') model?: string,
@@ -40,6 +41,7 @@ export class ObservabilityController {
   }
 
   @Get('traces/:traceId')
+  @Roles('admin')
   getTrace(@Param('traceId') traceId: string) {
     const trace = this.observabilityService.getTrace(traceId);
     if (!trace) {
