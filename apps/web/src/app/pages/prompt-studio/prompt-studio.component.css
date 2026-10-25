@@ -73,13 +73,13 @@ textarea.form-control {
 .alert-warning {
   color: var(--color-warning);
   background: var(--color-warning-bg);
-  border-color: rgba(148, 98, 0, 0.22);
+  border-color: var(--color-warning-border);
 }
 
 .alert-danger {
   color: var(--color-danger);
   background: var(--color-danger-bg);
-  border-color: rgba(180, 35, 24, 0.22);
+  border-color: var(--color-danger-border);
 }
 
 .loading-state,
@@ -287,7 +287,7 @@ textarea.form-control {
 
 .filter-chip.active {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   border-color: var(--color-primary);
 }
 
@@ -551,7 +551,7 @@ textarea.form-control {
   padding: var(--space-3);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-text);
   white-space: pre-wrap;
   resize: vertical;
@@ -585,7 +585,7 @@ textarea.form-control {
   font-size: 11px;
   font-weight: 600;
   color: var(--color-primary);
-  background: #fff;
+  background: var(--color-surface);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
@@ -664,7 +664,7 @@ textarea.form-control {
   padding: var(--space-4);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: #F8FAFC;
+  background: var(--color-bg);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -682,8 +682,8 @@ textarea.form-control {
 .example-index {
   font-size: 12px;
   font-weight: 600;
-  color: #334155;
-  background: #FFFFFF;
+  color: var(--color-text-secondary);
+  background: var(--color-surface);
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
@@ -705,8 +705,8 @@ textarea.form-control {
 }
 
 .btn-text-danger:hover {
-  background: #FEF2F2;
-  border-color: #FECACA;
+  background: var(--color-danger-bg);
+  border-color: var(--color-danger-border);
 }
 
 .example-field {
@@ -740,7 +740,7 @@ textarea.form-control {
 
 /* Preview Box (Whitespace Preserved) */
 .preview-box {
-  background: #F8FAFC;
+  background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-4);
@@ -789,7 +789,7 @@ textarea.form-control {
 }
 
 .output-box {
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   padding: var(--space-4);
@@ -835,7 +835,7 @@ textarea.form-control {
 
 .error-hint {
   font-size: 12px;
-  color: #7a1910;
+  color: var(--color-danger-strong);
 }
 
 /* Version History Drawer */
@@ -845,7 +845,7 @@ textarea.form-control {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--color-overlay);
   z-index: 1000;
   display: flex;
   justify-content: flex-end;
@@ -859,7 +859,7 @@ textarea.form-control {
   border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-overlay);
 }
 
 .drawer-header {
@@ -902,7 +902,7 @@ textarea.form-control {
 
 .timeline-item:hover {
   border-color: var(--color-primary);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .timeline-item.active {
@@ -918,7 +918,7 @@ textarea.form-control {
   height: 10px;
   border-radius: 50%;
   background: var(--color-primary);
-  border: 2px solid #fff;
+  border: 2px solid var(--color-surface);
 }
 
 .version-row {
