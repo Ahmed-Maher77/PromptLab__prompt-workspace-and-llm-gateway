@@ -2,20 +2,14 @@
   "$schema": "https://raw.githubusercontent.com/IBM/audit-ci/main/docs/schema.json",
   "high": true,
   "skip-dev": true,
-  "_comment": "Allowlist for known production dependencies awaiting upstream framework major releases (Angular 19 SEC-08, NestJS/Prisma). Any NEW high/critical vulnerability will fail CI.",
+  "_comment": "Allowlist for known Angular 19 production dependencies awaiting upstream framework major upgrade to Angular 21 (SEC-08). Expiry: 2026-12-31. Any NEW high/critical vulnerability will fail CI.",
   "allowlist": [
     "GHSA-48r7-hpm6-gfxm",
     "GHSA-39pv-4j6c-2g6v",
     "GHSA-jhpw-976m-542j",
-    "GHSA-p297-fm68-3q8c",
-    "GHSA-jfgx-762w-99vr",
-    "GHSA-58w9-8g37-x9v5",
     "GHSA-jj27-h5hq-8x99",
-    "GHSA-hh8m-fm6v-7cvg",
     "GHSA-rgjc-h3x7-9mwg",
     "GHSA-ff3f-86qr-9cv3",
-    "GHSA-62vg-58rm-qff7",
-    "GHSA-ggr8-5vv4-36mx",
-    "GHSA-q7qp-rjg7-q26m"
+    "GHSA-62vg-58rm-qff7"
   ]
 }
