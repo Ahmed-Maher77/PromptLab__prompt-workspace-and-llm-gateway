@@ -1,0 +1,40 @@
+<div class="login-container">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-badge">Authentication Required</div>
+      <h1 class="login-title">PromptLab Access</h1>
+      <p class="login-subtitle">
+        Enter your API Key or JWT Bearer Token to authenticate with the PromptLab gateway.
+      </p>
+    </div>
+
+    <form (ngSubmit)="onSubmit()" class="login-form">
+      <div class="form-group">
+        <label for="tokenInput" class="form-label">API Key or Bearer Token</label>
+        <input
+          id="tokenInput"
+          type="password"
+          name="tokenInput"
+          [(ngModel)]="tokenInput"
+          class="form-input"
+          placeholder="Enter key or token..."
+          autocomplete="off"
+          required
+        />
+      </div>
+
+      <div *ngIf="errorMessage" class="error-banner" role="alert">
+        {{ errorMessage }}
+      </div>
+
+      <button type="submit" class="submit-button" id="loginSubmitBtn">
+        Authenticate &amp; Continue
+      </button>
+
+      <div class="security-note">
+        <span class="note-icon">🔒</span>
+        <span>Credentials are stored locally in your browser and transmitted securely over TLS.</span>
+      </div>
+    </form>
+  </div>
+</div>

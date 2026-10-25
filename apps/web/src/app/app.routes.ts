@@ -39,5 +39,11 @@ export const routes: Routes = [
       import('./pages/settings/settings.component').then((m) => m.SettingsComponent),
     title: 'Settings — PromptLab',
   },
+  {
+    path: 'login',
+    loadComponent: () =>
+      import('./pages/login/login.component').then((m) => m.LoginComponent),
+    title: 'Sign In — PromptLab',
+  },
   { path: '**', redirectTo: '' },
 ];
