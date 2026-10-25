@@ -27,7 +27,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ bodyParser: false });
 
     // SEC-04: use the shared configureApp() so the test exercises the real production pipeline
     configureApp(app, envConfig);
@@ -504,6 +504,23 @@ describe('HTTP Routing & App Integration (E2E)', () => {
 
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBeLessThanOrEqual(5);
+    });
+  });
+
+  describe('Payload Limit Enforcement (SEC-04a)', () => {
+    it('rejects a 300 KB body with 413 Payload Too Large', async () => {
+      const largePayload = {
+        title: 'Large Payload Test',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        systemPrompt: 'A'.repeat(300 * 1024), // 300 KB string
+      };
+
+      await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send(largePayload)
+        .expect(413);
     });
   });
 

@@ -6,9 +6,12 @@ import {
   Query,
   NotFoundException,
   ForbiddenException,
+  Inject,
+  Optional,
 } from '@nestjs/common';
 import { ObservabilityService } from './observability.service';
 import { Roles } from '../common/decorators/roles.decorator';
+import { AUTH_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 
 /**
  * Controller for retrieving in-memory distributed traces and telemetry status.
@@ -21,7 +24,10 @@ import { Roles } from '../common/decorators/roles.decorator';
  */
 @Controller('observability')
 export class ObservabilityController {
-  constructor(private readonly observabilityService: ObservabilityService) {}
+  constructor(
+    private readonly observabilityService: ObservabilityService,
+    @Optional() @Inject(AUTH_CONFIG) private readonly authConfig?: ValidatedEnvironment,
+  ) {}
 
   @Get('traces')
   @Roles('admin')
@@ -58,9 +64,7 @@ export class ObservabilityController {
   @Post('clear')
   @Roles('admin')
   clearTraces() {
-    const isDevOrTest =
-      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-    if (!isDevOrTest || process.env.ENABLE_DEMO_ENDPOINTS !== 'true') {
+    if (!this.authConfig?.ENABLE_DEMO_ENDPOINTS) {
       throw new ForbiddenException('Demo endpoints are disabled in this environment.');
     }
     this.observabilityService.clearTraces();

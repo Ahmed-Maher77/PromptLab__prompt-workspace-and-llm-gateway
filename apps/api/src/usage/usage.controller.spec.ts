@@ -2,12 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UsageController } from './usage.controller';
 import { UsageService } from './usage.service';
 import { UpdateQuotaPolicyDto } from './dto/usage.dto';
+import { AUTH_CONFIG } from '../common/config/env.validation';
 
 describe('UsageController', () => {
   let controller: UsageController;
   let mockService: Record<string, jest.Mock>;
+  const origEnv = process.env;
 
   beforeEach(async () => {
+    process.env = { ...origEnv };
     mockService = {
       getStatus: jest.fn().mockResolvedValue({
         tokenLimit: 100000,
@@ -35,10 +38,22 @@ describe('UsageController', () => {
           provide: UsageService,
           useValue: mockService,
         },
+        {
+          provide: AUTH_CONFIG,
+          useValue: {
+            ENABLE_DEMO_ENDPOINTS: true,
+            IS_DEV_OR_TEST: true,
+          },
+        },
       ],
     }).compile();
 
     controller = module.get<UsageController>(UsageController);
+  });
+
+  afterEach(() => {
+    process.env = origEnv;
+    jest.restoreAllMocks();
   });
 
   it('delegates getStatus to service', async () => {

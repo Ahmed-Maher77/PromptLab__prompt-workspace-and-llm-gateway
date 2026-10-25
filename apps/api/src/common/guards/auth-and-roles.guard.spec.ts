@@ -418,7 +418,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       process.env.ENABLE_DEMO_ENDPOINTS = 'true';
 
       const usageService = { resetPeriodForDemo: jest.fn() } as any;
-      const controller = new UsageController(usageService);
+      const controller = new UsageController(usageService, validateEnvironment());
 
       await expect(controller.resetPeriod('admin-user-001')).rejects.toThrow(ForbiddenException);
       expect(usageService.resetPeriodForDemo).not.toHaveBeenCalled();
@@ -429,7 +429,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       process.env.ENABLE_DEMO_ENDPOINTS = 'true';
 
       const usageService = { resetPeriodForDemo: jest.fn() } as any;
-      const controller = new UsageController(usageService);
+      const controller = new UsageController(usageService, validateEnvironment());
 
       await expect(controller.resetPeriod('admin-user-001')).rejects.toThrow(ForbiddenException);
       expect(usageService.resetPeriodForDemo).not.toHaveBeenCalled();
@@ -440,7 +440,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       process.env.ENABLE_DEMO_ENDPOINTS = 'true';
 
       const usageService = { resetPeriodForDemo: jest.fn() } as any;
-      const controller = new UsageController(usageService);
+      const controller = new UsageController(usageService, validateEnvironment());
 
       await expect(controller.resetPeriod('admin-user-001')).rejects.toThrow(ForbiddenException);
       expect(usageService.resetPeriodForDemo).not.toHaveBeenCalled();
@@ -451,7 +451,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       process.env.ENABLE_DEMO_ENDPOINTS = 'true';
 
       const usageService = { resetPeriodForDemo: jest.fn().mockReturnValue({ success: true }) } as any;
-      const controller = new UsageController(usageService);
+      const controller = new UsageController(usageService, validateEnvironment());
 
       await expect(controller.resetPeriod('admin-user-001')).resolves.toEqual({ success: true });
       expect(usageService.resetPeriodForDemo).toHaveBeenCalledWith('admin-user-001');
@@ -462,7 +462,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       process.env.ENABLE_DEMO_ENDPOINTS = 'true';
 
       const obsService = { clearTraces: jest.fn() } as any;
-      const controller = new ObservabilityController(obsService);
+      const controller = new ObservabilityController(obsService, validateEnvironment());
 
       expect(() => controller.clearTraces()).toThrow(ForbiddenException);
       expect(obsService.clearTraces).not.toHaveBeenCalled();

@@ -2,12 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { ObservabilityController } from './observability.controller';
 import { ObservabilityService } from './observability.service';
+import { AUTH_CONFIG } from '../common/config/env.validation';
 
 describe('ObservabilityController', () => {
   let controller: ObservabilityController;
   let mockService: Record<string, jest.Mock>;
+  const origEnv = process.env;
 
   beforeEach(async () => {
+    process.env = { ...origEnv };
     mockService = {
       getTraces: jest.fn().mockReturnValue([
         { id: 'trace-1', operation: 'run_prompt', status: 'success' },
@@ -32,10 +35,22 @@ describe('ObservabilityController', () => {
           provide: ObservabilityService,
           useValue: mockService,
         },
+        {
+          provide: AUTH_CONFIG,
+          useValue: {
+            ENABLE_DEMO_ENDPOINTS: true,
+            IS_DEV_OR_TEST: true,
+          },
+        },
       ],
     }).compile();
 
     controller = module.get<ObservabilityController>(ObservabilityController);
+  });
+
+  afterEach(() => {
+    process.env = origEnv;
+    jest.restoreAllMocks();
   });
 
   it('delegates getTraces with parsed filter params and limit', () => {

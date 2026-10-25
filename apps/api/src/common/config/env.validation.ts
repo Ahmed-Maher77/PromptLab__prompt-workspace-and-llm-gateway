@@ -43,6 +43,8 @@ export interface ValidatedEnvironment {
   AUTH_JWT_AUDIENCE?: string;
   AUTH_JWT_MAX_LIFETIME_SECONDS: number;
   AUTH_API_KEYS: ParsedApiKey[];
+  ENABLE_DEMO_ENDPOINTS: boolean;
+  TRUST_PROXY?: string;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   LANGFUSE_HOST?: string;
 }
@@ -232,6 +234,8 @@ export function validateEnvironment(
     AUTH_JWT_AUDIENCE: env.AUTH_JWT_AUDIENCE?.trim() || undefined,
     AUTH_JWT_MAX_LIFETIME_SECONDS: authJwtMaxLifetimeSeconds,
     AUTH_API_KEYS: parsedApiKeys,
+    ENABLE_DEMO_ENDPOINTS: isDevOrTest && env.ENABLE_DEMO_ENDPOINTS === 'true',
+    TRUST_PROXY: env.TRUST_PROXY?.trim() || '1',
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
     LANGFUSE_HOST: env.LANGFUSE_HOST,
   };

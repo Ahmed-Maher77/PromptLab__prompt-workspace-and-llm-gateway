@@ -21,6 +21,20 @@ import { ValidatedEnvironment } from './common/config/env.validation';
  * ThrottlerGuard and AuthGuard/RolesGuard are applied globally via APP_GUARD in AppModule.
  */
 export function configureApp(app: INestApplication, envConfig: ValidatedEnvironment): void {
+  // SEC-04a: trust proxy configuration for accurate client IP resolution behind reverse proxies
+  const httpAdapter = app.getHttpAdapter();
+  if (httpAdapter && typeof httpAdapter.getInstance === 'function') {
+    const expressApp = httpAdapter.getInstance();
+    if (expressApp && typeof expressApp.set === 'function') {
+      const trustProxy = envConfig.TRUST_PROXY ?? '1';
+      if (trustProxy === 'true' || trustProxy === '1') {
+        expressApp.set('trust proxy', 1);
+      } else if (trustProxy !== 'false' && trustProxy !== '0') {
+        expressApp.set('trust proxy', trustProxy);
+      }
+    }
+  }
+
   // Security headers (X-Content-Type-Options, X-Frame-Options, HSTS, CSP, etc.)
   app.use(helmet());
 

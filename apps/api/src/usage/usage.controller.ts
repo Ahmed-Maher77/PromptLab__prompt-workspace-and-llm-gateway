@@ -6,15 +6,21 @@ import {
   Body,
   Query,
   ForbiddenException,
+  Inject,
+  Optional,
 } from '@nestjs/common';
 import { UsageService } from './usage.service';
 import { UpdateQuotaPolicyDto } from './dto/usage.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
+import { AUTH_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 
 @Controller('usage')
 export class UsageController {
-  constructor(private readonly usageService: UsageService) {}
+  constructor(
+    private readonly usageService: UsageService,
+    @Optional() @Inject(AUTH_CONFIG) private readonly authConfig?: ValidatedEnvironment,
+  ) {}
 
   @Get('status')
   async getStatus(@CurrentUser('id') userId: string) {
@@ -48,9 +54,7 @@ export class UsageController {
   @Post('reset')
   @Roles('admin')
   async resetPeriod(@CurrentUser('id') userId: string) {
-    const isDevOrTest =
-      process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
-    if (!isDevOrTest || process.env.ENABLE_DEMO_ENDPOINTS !== 'true') {
+    if (!this.authConfig?.ENABLE_DEMO_ENDPOINTS) {
       throw new ForbiddenException('Demo endpoints are disabled in this environment.');
     }
     return this.usageService.resetPeriodForDemo(userId);

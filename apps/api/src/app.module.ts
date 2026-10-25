@@ -26,12 +26,19 @@ import { RolesGuard } from './common/guards/roles.guard';
     JwtModule.register({
       global: true,
     }),
-    // SEC-04: per-IP rate limiting — 60 requests per 60 s window, burst cap of 20/s
-    ThrottlerModule.forRoot([{
-      name: 'default',
-      ttl: 60_000,
-      limit: 60,
-    }]),
+    // SEC-04a: per-IP rate limiting — 60 requests per 60 s window, burst cap of 20/s
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: 60,
+      },
+      {
+        name: 'burst',
+        ttl: 1000,
+        limit: 20,
+      },
+    ]),
     PrismaModule,
     HealthModule,
     ProvidersModule,
@@ -48,17 +55,17 @@ import { RolesGuard } from './common/guards/roles.guard';
       useFactory: () => validateEnvironment(),
     },
     {
+      // SEC-04a: global rate limiting via ThrottlerGuard registered BEFORE AuthGuard to throttle unauthenticated credential guessing
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
       provide: APP_GUARD,
       useClass: AuthGuard,
     },
     {
       provide: APP_GUARD,
       useClass: RolesGuard,
-    },
-    {
-      // SEC-04: global rate limiting via ThrottlerGuard
-      provide: APP_GUARD,
-      useClass: ThrottlerGuard,
     },
   ],
 })

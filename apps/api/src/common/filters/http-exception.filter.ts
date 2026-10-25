@@ -26,6 +26,8 @@ function getStatusTitle(status: number): string {
       return 'Unprocessable Entity';
     case HttpStatus.TOO_MANY_REQUESTS:
       return 'Too Many Requests';
+    case HttpStatus.PAYLOAD_TOO_LARGE:
+      return 'Payload Too Large';
     case HttpStatus.INTERNAL_SERVER_ERROR:
       return 'Internal Server Error';
     default:
@@ -135,6 +137,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
         }
       }
     } else if (exception instanceof Error) {
+      const errWithStatus = exception as Error & { status?: number; statusCode?: number; type?: string };
+      if (typeof errWithStatus.status === 'number' && errWithStatus.status >= 400 && errWithStatus.status < 600) {
+        status = errWithStatus.status;
+      } else if (typeof errWithStatus.statusCode === 'number' && errWithStatus.statusCode >= 400 && errWithStatus.statusCode < 600) {
+        status = errWithStatus.statusCode;
+      }
+      if (errWithStatus.type === 'entity.too.large') {
+        code = 'PAYLOAD_TOO_LARGE';
+      }
       message =
         status === HttpStatus.INTERNAL_SERVER_ERROR
           ? 'An unexpected error occurred'
