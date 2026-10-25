@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { generateIdempotencyKey } from '../utils/uuid.util';
+import { retryTransientErrors } from '../utils/http-retry.util';
 
 export interface ConversationSummary {
   id: string;
@@ -179,14 +181,26 @@ export class ConversationService {
     return this.http.get<ContextInspectionResult>(`${this.baseUrl}/${id}/context${params}`);
   }
 
-  sendMessage(id: string, content: string): Observable<SendMessageResponse> {
-    return this.http.post<SendMessageResponse>(`${this.baseUrl}/${id}/messages`, { content });
+  sendMessage(id: string, content: string, idempotencyKey?: string): Observable<SendMessageResponse> {
+    const key = idempotencyKey || generateIdempotencyKey();
+    const headers = new HttpHeaders({
+      'Idempotency-Key': key,
+    });
+    return this.http
+      .post<SendMessageResponse>(`${this.baseUrl}/${id}/messages`, { content }, { headers })
+      .pipe(retryTransientErrors());
   }
 
-  previewCompaction(id: string, compactThroughSequence?: number): Observable<CompactionPreviewResult> {
-    return this.http.post<CompactionPreviewResult>(`${this.baseUrl}/${id}/compact/preview`, {
-      compactThroughSequence,
+  previewCompaction(id: string, compactThroughSequence?: number, idempotencyKey?: string): Observable<CompactionPreviewResult> {
+    const key = idempotencyKey || generateIdempotencyKey();
+    const headers = new HttpHeaders({
+      'Idempotency-Key': key,
     });
+    return this.http
+      .post<CompactionPreviewResult>(`${this.baseUrl}/${id}/compact/preview`, {
+        compactThroughSequence,
+      }, { headers })
+      .pipe(retryTransientErrors());
   }
 
   applyCompaction(id: string, payload: ApplyCompactionPayload): Observable<any> {

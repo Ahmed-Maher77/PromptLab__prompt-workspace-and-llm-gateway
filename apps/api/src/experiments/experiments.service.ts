@@ -202,7 +202,11 @@ export class ExperimentsService {
    * Supports independent execution with partial failure handling.
    * Persists experiment and run records linked to immutable prompt versions.
    */
-  async runComparison(dto: RunComparisonDto, userId: string): Promise<ComparisonResult> {
+  async runComparison(
+    dto: RunComparisonDto,
+    userId: string,
+    idempotencyKey?: string,
+  ): Promise<ComparisonResult> {
     if (!dto.slotA || !dto.slotB) {
       throw new BadRequestException('Both slotA and slotB configurations are required.');
     }
@@ -215,10 +219,14 @@ export class ExperimentsService {
     // 2. Pre-compile evaluation criteria once for both slots
     const preparedCriteria = this.prepareCriteria(dto.evaluationCriteria || []);
 
-    // 3. Execute both slots independently via Promise.allSettled for partial failure tolerance
+    // 3. Derive slot keys for comparisons: ${key}:A / ${key}:B
+    const slotAKey = idempotencyKey ? `${idempotencyKey}:A` : undefined;
+    const slotBKey = idempotencyKey ? `${idempotencyKey}:B` : undefined;
+
+    // 4. Execute both slots independently via Promise.allSettled for partial failure tolerance
     const [resultA, resultB] = await Promise.allSettled([
-      this.executeSlot('A', dto.slotA, resolvedSlotA, preparedCriteria, userId),
-      this.executeSlot('B', dto.slotB, resolvedSlotB, preparedCriteria, userId),
+      this.executeSlot('A', dto.slotA, resolvedSlotA, preparedCriteria, userId, slotAKey),
+      this.executeSlot('B', dto.slotB, resolvedSlotB, preparedCriteria, userId, slotBKey),
     ]);
 
     const runA: SlotRunResult =
@@ -403,6 +411,7 @@ export class ExperimentsService {
     prepared: { templateBody: string; resolvedPrompt: string; promptId?: string; promptName?: string; versionNumber?: number },
     criteria: (EvaluationCriterionDto | PreparedCriterion)[],
     userId: string,
+    idempotencyKey?: string,
   ): Promise<SlotRunResult> {
     const execution = await this.llmExecutionService.execute({
       userId,
@@ -414,6 +423,7 @@ export class ExperimentsService {
       temperature: config.temperature,
       maxTokens: config.maxTokens,
       metadata: { slot: slotLabel, promptId: prepared.promptId },
+      idempotencyKey,
     });
 
     const isSuccess = execution.success;

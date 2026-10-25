@@ -23,6 +23,7 @@ import {
   PromptDetail,
   ModelMetadata,
 } from '../../services/prompt.service';
+import { generateIdempotencyKey } from '../../utils/uuid.util';
 
 @Component({
   selector: 'app-compare',
@@ -89,6 +90,7 @@ export class CompareComponent implements OnInit {
   runningComparison = signal<boolean>(false);
   comparisonResult = signal<ComparisonResult | null>(null);
   runError = signal<string | null>(null);
+  currentRunComparisonKey: string | null = null;
 
   // Manual Ratings & Feedback
   slotARating = 0;
@@ -297,35 +299,44 @@ export class CompareComponent implements OnInit {
 
     this.runningComparison.set(true);
 
+    if (!this.currentRunComparisonKey) {
+      this.currentRunComparisonKey = generateIdempotencyKey();
+    }
+    const key = this.currentRunComparisonKey;
+
     this.experimentService
-      .runComparison({
-        name: this.experimentName || 'Side-by-Side Comparison',
-        commonInput: this.commonInput,
-        slotA: {
-          promptId: this.slotAPromptId,
-          promptVersionId: this.slotAVersionId,
-          versionNumber: this.slotAVersionNumber,
-          templateBody: this.slotATemplateBody,
-          provider: this.slotAProvider,
-          model: this.slotAModel,
-          temperature: this.slotATemperature,
-          maxTokens: this.slotAMaxTokens,
+      .runComparison(
+        {
+          name: this.experimentName || 'Side-by-Side Comparison',
+          commonInput: this.commonInput,
+          slotA: {
+            promptId: this.slotAPromptId,
+            promptVersionId: this.slotAVersionId,
+            versionNumber: this.slotAVersionNumber,
+            templateBody: this.slotATemplateBody,
+            provider: this.slotAProvider,
+            model: this.slotAModel,
+            temperature: this.slotATemperature,
+            maxTokens: this.slotAMaxTokens,
+          },
+          slotB: {
+            promptId: this.slotBPromptId,
+            promptVersionId: this.slotBVersionId,
+            versionNumber: this.slotBVersionNumber,
+            templateBody: this.slotBTemplateBody,
+            provider: this.slotBProvider,
+            model: this.slotBModel,
+            temperature: this.slotBTemperature,
+            maxTokens: this.slotBMaxTokens,
+          },
+          evaluationCriteria: this.evaluationCriteria.filter((c) => c.name.trim().length > 0),
+          saveExperiment: true,
         },
-        slotB: {
-          promptId: this.slotBPromptId,
-          promptVersionId: this.slotBVersionId,
-          versionNumber: this.slotBVersionNumber,
-          templateBody: this.slotBTemplateBody,
-          provider: this.slotBProvider,
-          model: this.slotBModel,
-          temperature: this.slotBTemperature,
-          maxTokens: this.slotBMaxTokens,
-        },
-        evaluationCriteria: this.evaluationCriteria.filter((c) => c.name.trim().length > 0),
-        saveExperiment: true,
-      })
+        key,
+      )
       .subscribe({
         next: (res) => {
+          this.currentRunComparisonKey = null; // Cleared on success
           this.comparisonResult.set(res);
           this.runningComparison.set(false);
           this.slotARating = 0;
@@ -337,6 +348,7 @@ export class CompareComponent implements OnInit {
         error: (err) => {
           this.runningComparison.set(false);
           this.runError.set(err.error?.message || 'Comparison execution failed.');
+          // Key preserved for retry
         },
       });
   }

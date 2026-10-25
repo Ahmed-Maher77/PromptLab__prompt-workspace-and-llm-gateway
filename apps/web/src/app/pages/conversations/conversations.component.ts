@@ -22,6 +22,7 @@ import {
   CompactionPreviewResult,
 } from '../../services/conversation.service';
 import { PromptService, ModelMetadata } from '../../services/prompt.service';
+import { generateIdempotencyKey } from '../../utils/uuid.util';
 
 @Component({
   selector: 'app-conversations',
@@ -55,6 +56,7 @@ export class ConversationsComponent implements OnInit {
   // Chat Input
   messageInput = signal<string>('');
   chatError = signal<string | null>(null);
+  currentSendMessageKey: string | null = null;
 
   // New Conversation Modal
   showNewModal = signal<boolean>(false);
@@ -208,6 +210,11 @@ export class ConversationsComponent implements OnInit {
     });
   }
 
+  onMessageInputChange(val: string): void {
+    this.messageInput.set(val);
+    this.currentSendMessageKey = null; // Input changed -> reset key
+  }
+
   sendMessage(): void {
     const text = this.messageInput().trim();
     const conv = this.selectedConversation();
@@ -215,11 +222,17 @@ export class ConversationsComponent implements OnInit {
       return;
     }
 
+    if (!this.currentSendMessageKey) {
+      this.currentSendMessageKey = generateIdempotencyKey();
+    }
+    const idempotencyKey = this.currentSendMessageKey;
+
     this.sendingMessage.set(true);
     this.chatError.set(null);
 
-    this.conversationService.sendMessage(conv.id, text).subscribe({
+    this.conversationService.sendMessage(conv.id, text, idempotencyKey).subscribe({
       next: (res) => {
+        this.currentSendMessageKey = null; // Cleared on success!
         this.messageInput.set('');
         this.sendingMessage.set(false);
 
@@ -236,8 +249,13 @@ export class ConversationsComponent implements OnInit {
       error: (err) => {
         this.sendingMessage.set(false);
         this.chatError.set(err.error?.message || 'Failed to transmit message.');
+        // Note: currentSendMessageKey is intentionally preserved so manual retry reuses the exact same key!
       },
     });
+  }
+
+  retrySendMessage(): void {
+    this.sendMessage();
   }
 
   refreshContext(): void {

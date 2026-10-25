@@ -5,6 +5,7 @@ import { CreateVersionDto } from './dto/create-version.dto';
 import { PreviewPromptDto, RunPlaygroundDto } from './dto/run-prompt.dto';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { IdempotencyKey } from '../common/decorators/idempotency-key.decorator';
 
 @Controller('prompts')
 export class PromptsController {
@@ -59,8 +60,9 @@ export class PromptsController {
   async runPlayground(
     @Body() dto: RunPlaygroundDto,
     @CurrentUser('id') userId: string,
+    @IdempotencyKey() idempotencyKey?: string,
   ) {
-    return this.promptsService.runPlayground(dto, userId);
+    return this.promptsService.runPlayground(dto, userId, idempotencyKey);
   }
 }
 

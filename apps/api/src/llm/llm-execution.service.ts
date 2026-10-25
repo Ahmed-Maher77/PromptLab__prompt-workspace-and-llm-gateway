@@ -30,6 +30,7 @@ export interface LlmExecutionResult extends CompletionResult {
   cost: number | null;
   traceId?: string;
   requestId: string;
+  isReplay?: boolean;
 }
 
 @Injectable()
@@ -138,6 +139,7 @@ export class LlmExecutionService {
             cost: stored.cost ?? null,
             traceId: trace?.traceId || stored.traceId,
             requestId,
+            isReplay: true,
           };
         }
 
@@ -262,6 +264,7 @@ export class LlmExecutionService {
       cost: calculatedCost,
       traceId: trace?.traceId,
       requestId,
+      isReplay: false,
     };
 
     return finalResult;

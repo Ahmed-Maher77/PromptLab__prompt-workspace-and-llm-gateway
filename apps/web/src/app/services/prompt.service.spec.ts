@@ -157,6 +157,7 @@ describe('PromptService', () => {
 
     const req1 = httpTesting.expectOne('/api/prompts/run');
     expect(req1.request.method).toBe('POST');
+    expect(req1.request.headers.has('Idempotency-Key')).toBeTrue();
     req1.flush(mockRunResult);
 
     service.getModels().subscribe((res) => {

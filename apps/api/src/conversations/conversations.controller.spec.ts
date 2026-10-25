@@ -65,13 +65,13 @@ describe('ConversationsController', () => {
 
   it('delegates sendMessage to service', async () => {
     const dto: SendMessageDto = { content: 'Hello assistant' };
-    await controller.sendMessage('c-1', 'dev-user-001', dto);
-    expect(mockService.sendMessage).toHaveBeenCalledWith('c-1', dto, 'dev-user-001');
+    await controller.sendMessage('c-1', 'dev-user-001', dto, 'idemp-msg-12345');
+    expect(mockService.sendMessage).toHaveBeenCalledWith('c-1', dto, 'dev-user-001', 'idemp-msg-12345');
   });
 
   it('delegates previewCompaction, applyCompaction, and resume', async () => {
-    await controller.previewCompaction('c-1', 'dev-user-001');
-    expect(mockService.previewCompaction).toHaveBeenCalledWith('c-1', undefined, 'dev-user-001');
+    await controller.previewCompaction('c-1', 'dev-user-001', undefined, 'idemp-compact-12345');
+    expect(mockService.previewCompaction).toHaveBeenCalledWith('c-1', undefined, 'dev-user-001', 'idemp-compact-12345');
 
     const applyDto: ApplyCompactionDto = {
       summary: 'Summary',

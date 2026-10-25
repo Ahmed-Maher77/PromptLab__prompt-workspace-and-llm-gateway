@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,7 +20,7 @@ import {
   AssembledContextMessage,
   ContextInspectionResult,
 } from './context-policy';
-import { Prisma } from '@prisma/client';
+import { Prisma, ConversationMessage } from '@prisma/client';
 
 @Injectable()
 export class ConversationsService {
@@ -317,41 +318,26 @@ export class ConversationsService {
    * Appends a user message, dispatches the assembled context to the model,
    * and appends the assistant response with usage metadata.
    */
-  async sendMessage(id: string, dto: SendMessageDto, userId: string) {
+  async sendMessage(
+    id: string,
+    dto: SendMessageDto,
+    userId: string,
+    idempotencyKey?: string,
+  ) {
     if (!dto.content || dto.content.trim().length === 0) {
       throw new BadRequestException('Message content cannot be empty.');
     }
 
     const conv = await this.findOne(id, userId);
 
-    // Concurrency safety: find current max sequence number
-    const maxSeq = conv.messages.reduce(
-      (max, m) => Math.max(max, m.sequenceNumber),
-      0,
-    );
-    const userSeq = maxSeq + 1;
-
-    // 1. Transactionally persist user message first so it is never lost
-    const userMessage = await this.prisma.conversationMessage.create({
-      data: {
-        conversationId: conv.id,
-        role: 'user',
-        content: dto.content.trim(),
-        sequenceNumber: userSeq,
-        inputTokens: estimateTokens(dto.content),
-        tokenUsageSource: 'estimated',
-      },
-    });
-
-    // 2. Build assembled context payload
-    const inspection = await this.inspectContext(id, undefined, userId);
+    // 1. Build assembled context payload including proposed current input
+    const inspection = await this.inspectContext(id, dto.content.trim(), userId);
     const messagesPayload = inspection.assembledMessages.map((m) => ({
       role: m.role,
       content: m.content,
     }));
 
-
-    // 3. Dispatch to model gateway via centralized LlmExecutionService
+    // 2. Dispatch to model gateway via centralized LlmExecutionService
     const execution = await this.llmExecutionService.execute({
       userId: conv.ownerId,
       operation: 'conversation.turn',
@@ -362,10 +348,61 @@ export class ConversationsService {
       messages: messagesPayload,
       temperature: 0.7,
       maxTokens: 1024,
+      idempotencyKey,
     });
 
+    // 3. Handle Replay:
+    // If execution was replayed from an earlier execution, load the turn BY requestId.
+    // If not both messages exist yet (in-flight persistence window), return 409 REQUEST_IN_PROGRESS.
+    if (execution.isReplay) {
+      if (execution.requestId) {
+        const turnMessages = await this.prisma.conversationMessage.findMany({
+          where: {
+            conversationId: conv.id,
+            requestId: execution.requestId,
+          },
+          orderBy: { sequenceNumber: 'asc' },
+        });
+
+        const userMsg = turnMessages.find((m) => m.role === 'user');
+        const assistantMsg = turnMessages.find((m) => m.role === 'assistant');
+
+        if (userMsg && assistantMsg) {
+          return {
+            success: true,
+            userMessage: userMsg,
+            assistantMessage: assistantMsg,
+            latencyMs: execution.latencyMs,
+            usage: execution.usage,
+            traceId: execution.traceId,
+          };
+        }
+      }
+
+      throw new ConflictException('REQUEST_IN_PROGRESS');
+    }
+
+    // Concurrency safety: find current max sequence number
+    const maxSeq = conv.messages.reduce(
+      (max, m) => Math.max(max, m.sequenceNumber),
+      0,
+    );
+    const userSeq = maxSeq + 1;
+
     if (!execution.success) {
-      // Handle provider failure explicitly without corrupting the conversation history
+      // Create user message if provider failed
+      const userMessage = await this.prisma.conversationMessage.create({
+        data: {
+          conversationId: conv.id,
+          requestId: execution.requestId,
+          role: 'user',
+          content: dto.content.trim(),
+          sequenceNumber: userSeq,
+          inputTokens: estimateTokens(dto.content),
+          tokenUsageSource: 'estimated',
+        },
+      });
+
       return {
         success: false,
         userMessage,
@@ -377,25 +414,66 @@ export class ConversationsService {
       };
     }
 
-    // 4. Persist assistant response
+    // 4. Persist user message and assistant response together atomically in transaction
     const assistantSeq = userSeq + 1;
-    const assistantMessage = await this.prisma.conversationMessage.create({
-      data: {
-        conversationId: conv.id,
-        role: 'assistant',
-        content: execution.content || '',
-        sequenceNumber: assistantSeq,
-        inputTokens: execution.usage?.promptTokens || estimateTokens(dto.content),
-        outputTokens: execution.usage?.completionTokens || estimateTokens(execution.content || ''),
-        tokenUsageSource: execution.usage?.source || 'provider-reported',
-      },
-    });
+    let userMessage: ConversationMessage;
+    let assistantMessage: ConversationMessage;
 
-    // Touch conversation updated timestamp
-    await this.prisma.conversation.update({
-      where: { id: conv.id },
-      data: { updatedAt: new Date() },
-    });
+    try {
+      const results = await this.prisma.$transaction([
+        this.prisma.conversationMessage.create({
+          data: {
+            conversationId: conv.id,
+            requestId: execution.requestId,
+            role: 'user',
+            content: dto.content.trim(),
+            sequenceNumber: userSeq,
+            inputTokens: estimateTokens(dto.content),
+            tokenUsageSource: 'estimated',
+          },
+        }),
+        this.prisma.conversationMessage.create({
+          data: {
+            conversationId: conv.id,
+            requestId: execution.requestId,
+            role: 'assistant',
+            content: execution.content || '',
+            sequenceNumber: assistantSeq,
+            inputTokens: execution.usage?.promptTokens || estimateTokens(dto.content),
+            outputTokens: execution.usage?.completionTokens || estimateTokens(execution.content || ''),
+            tokenUsageSource: execution.usage?.source || 'provider-reported',
+          },
+        }),
+        this.prisma.conversation.update({
+          where: { id: conv.id },
+          data: { updatedAt: new Date() },
+        }),
+      ]);
+
+      userMessage = results[0] as ConversationMessage;
+      assistantMessage = results[1] as ConversationMessage;
+    } catch (error: any) {
+      // Treat P2002 unique constraint violation as already persisted by a racing execution
+      if (error?.code === 'P2002' && execution.requestId) {
+        const turnMessages = await this.prisma.conversationMessage.findMany({
+          where: {
+            conversationId: conv.id,
+            requestId: execution.requestId,
+          },
+          orderBy: { sequenceNumber: 'asc' },
+        });
+        const uMsg = turnMessages.find((m) => m.role === 'user');
+        const aMsg = turnMessages.find((m) => m.role === 'assistant');
+        if (uMsg && aMsg) {
+          userMessage = uMsg;
+          assistantMessage = aMsg;
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
 
     return {
       success: true,
@@ -410,7 +488,12 @@ export class ConversationsService {
   /**
    * Generates a proposed compaction summary and facts list for manual user review.
    */
-  async previewCompaction(id: string, dto: PreviewCompactionDto | undefined, userId: string) {
+  async previewCompaction(
+    id: string,
+    dto: PreviewCompactionDto | undefined,
+    userId: string,
+    idempotencyKey?: string,
+  ) {
     const conv = await this.findOne(id, userId);
     const nonSystemMessages = conv.messages.filter(
       (m) => !(m.role === 'system' && m.sequenceNumber === 1),
@@ -492,6 +575,7 @@ export class ConversationsService {
       temperature: 0.3,
       maxTokens: 1024,
       metadata: { targetSeq },
+      idempotencyKey,
     });
 
     if (llmResult.success && llmResult.content) {

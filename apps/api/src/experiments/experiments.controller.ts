@@ -3,6 +3,7 @@ import { ExperimentsService } from './experiments.service';
 import { RunComparisonDto, RateExperimentDto } from './dto/run-comparison.dto';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { IdempotencyKey } from '../common/decorators/idempotency-key.decorator';
 
 @Controller('experiments')
 export class ExperimentsController {
@@ -28,8 +29,9 @@ export class ExperimentsController {
   async runComparison(
     @Body() dto: RunComparisonDto,
     @CurrentUser('id') userId: string,
+    @IdempotencyKey() idempotencyKey?: string,
   ) {
-    return this.experimentsService.runComparison(dto, userId);
+    return this.experimentsService.runComparison(dto, userId, idempotencyKey);
   }
 
   @Post(':id/rate')

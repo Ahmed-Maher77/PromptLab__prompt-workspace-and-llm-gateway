@@ -115,6 +115,7 @@ model Conversation {
 model ConversationMessage {
   id               String   @id @default(uuid())
   conversationId   String
+  requestId        String?
   role             String // system, user, assistant
   content          String
   sequenceNumber   Int
@@ -126,6 +127,7 @@ model ConversationMessage {
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, sequenceNumber])
+  @@unique([conversationId, requestId, role])
   @@map("conversation_messages")
 }
 

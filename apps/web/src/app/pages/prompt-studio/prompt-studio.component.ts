@@ -22,6 +22,7 @@ import {
   ResolvedPreview,
   FewShotExample,
 } from '../../services/prompt.service';
+import { generateIdempotencyKey } from '../../utils/uuid.util';
 
 export type StudioViewMode = 'library' | 'editor';
 
@@ -93,6 +94,7 @@ export class PromptStudioComponent implements OnInit {
   runningPlayground = signal<boolean>(false);
   runResult = signal<PlaygroundRunResult | null>(null);
   runError = signal<string | null>(null);
+  currentRunPlaygroundKey: string | null = null;
 
   // Version History Drawer
   showVersionHistory = signal<boolean>(false);
@@ -307,6 +309,7 @@ export class PromptStudioComponent implements OnInit {
   }
 
   onTemplateChange(): void {
+    this.currentRunPlaygroundKey = null;
     // Ensure all detected variables have an entry in variableValues
     for (const v of this.detectedVariables()) {
       if (this.variableValues[v] === undefined) {
@@ -317,6 +320,7 @@ export class PromptStudioComponent implements OnInit {
   }
 
   onVariableValueChange(): void {
+    this.currentRunPlaygroundKey = null;
     this.updatePreview();
   }
 
@@ -436,28 +440,39 @@ export class PromptStudioComponent implements OnInit {
     this.runError.set(null);
     this.runningPlayground.set(true);
 
+    if (!this.currentRunPlaygroundKey) {
+      this.currentRunPlaygroundKey = generateIdempotencyKey();
+    }
+    const key = this.currentRunPlaygroundKey;
+
     this.promptService
-      .runPlayground({
-        promptId: this.selectedPromptId() || undefined,
-        versionNumber: this.selectedVersionNumber(),
-        templateBody: this.templateBody,
-        variables: this.variableValues,
-        examples: this.fewShotExamples.filter((e) => e.input && e.output),
-        model: this.selectedModel,
-        temperature: this.temperature,
-        maxTokens: this.maxTokens,
-      })
+      .runPlayground(
+        {
+          promptId: this.selectedPromptId() || undefined,
+          versionNumber: this.selectedVersionNumber(),
+          templateBody: this.templateBody,
+          variables: this.variableValues,
+          examples: this.fewShotExamples.filter((e) => e.input && e.output),
+          model: this.selectedModel,
+          temperature: this.temperature,
+          maxTokens: this.maxTokens,
+        },
+        key,
+      )
       .subscribe({
         next: (res) => {
           this.runResult.set(res);
           this.runningPlayground.set(false);
-          if (!res.success && res.errorMessage) {
+          if (res.success) {
+            this.currentRunPlaygroundKey = null; // Cleared on successful execution
+          } else if (res.errorMessage) {
             this.runError.set(res.errorMessage);
           }
         },
         error: (err) => {
           this.runningPlayground.set(false);
           this.runError.set(err.error?.message || 'Execution failed while communicating with the gateway.');
+          // Key preserved for retry
         },
       });
   }

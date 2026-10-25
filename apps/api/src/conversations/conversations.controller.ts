@@ -16,6 +16,7 @@ import {
 } from './dto/compact-conversation.dto';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { IdempotencyKey } from '../common/decorators/idempotency-key.decorator';
 
 @Controller('conversations')
 export class ConversationsController {
@@ -67,8 +68,9 @@ export class ConversationsController {
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
     @Body() dto: SendMessageDto,
+    @IdempotencyKey() idempotencyKey?: string,
   ) {
-    return this.conversationsService.sendMessage(id, dto, userId);
+    return this.conversationsService.sendMessage(id, dto, userId, idempotencyKey);
   }
 
   @Post(':id/compact/preview')
@@ -76,8 +78,9 @@ export class ConversationsController {
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
     @Body() dto?: PreviewCompactionDto,
+    @IdempotencyKey() idempotencyKey?: string,
   ) {
-    return this.conversationsService.previewCompaction(id, dto, userId);
+    return this.conversationsService.previewCompaction(id, dto, userId, idempotencyKey);
   }
 
   @Post(':id/compact/apply')

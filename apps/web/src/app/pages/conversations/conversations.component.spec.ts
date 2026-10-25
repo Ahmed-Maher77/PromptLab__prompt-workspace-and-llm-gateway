@@ -271,9 +271,53 @@ describe('ConversationsComponent', () => {
     component.messageInput.set('How should we partition topics?');
     component.sendMessage();
 
-    expect(mockConversationService.sendMessage).toHaveBeenCalledWith('c-1', 'How should we partition topics?');
+    expect(mockConversationService.sendMessage).toHaveBeenCalledWith(
+      'c-1',
+      'How should we partition topics?',
+      jasmine.stringMatching(/^[A-Za-z0-9._:-]{8,128}$/),
+    );
     expect(component.messageInput()).toBe('');
     expect(component.sendingMessage()).toBeFalse();
+    expect(component.currentSendMessageKey).toBeNull();
+  });
+
+  it('preserves idempotency key across retries on error until input changes (QUOTA-05b)', () => {
+    component.selectedConversation.set({
+      id: 'c-1',
+      title: 'Active Conv',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      status: 'active',
+      createdAt: '2026-10-19T00:00:00Z',
+      updatedAt: '2026-10-19T00:00:00Z',
+      messages: [],
+      checkpoints: [],
+      activeCheckpoint: null,
+    });
+
+    mockConversationService.sendMessage.and.returnValue(
+      throwError(() => ({ error: { message: '503 Service Unavailable' }, status: 503 })),
+    );
+
+    component.messageInput.set('Retryable message');
+    component.sendMessage();
+
+    const firstKey = component.currentSendMessageKey;
+    expect(firstKey).toBeTruthy();
+    expect(component.chatError()).toContain('503 Service Unavailable');
+
+    // Manual retry reuses the exact same key
+    mockConversationService.sendMessage.calls.reset();
+    component.retrySendMessage();
+    expect(mockConversationService.sendMessage).toHaveBeenCalledWith(
+      'c-1',
+      'Retryable message',
+      firstKey!,
+    );
+
+    // Changing the message input clears the key
+    component.onMessageInputChange('Edited message input');
+    expect(component.currentSendMessageKey).toBeNull();
   });
 
   it('updates token estimate reactively when messageInput changes (FE-01)', () => {

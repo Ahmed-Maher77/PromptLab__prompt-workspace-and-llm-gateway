@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { generateIdempotencyKey } from '../utils/uuid.util';
+import { retryTransientErrors } from '../utils/http-retry.util';
 
 export interface PromptVariable {
   name: string;
@@ -171,17 +173,26 @@ export class PromptService {
     return this.http.post<ResolvedPreview>(`${this.baseUrl}/preview`, payload);
   }
 
-  runPlayground(payload: {
-    promptId?: string;
-    versionNumber?: number;
-    templateBody: string;
-    variables?: Record<string, string>;
-    examples?: FewShotExample[];
-    model: string;
-    temperature?: number;
-    maxTokens?: number;
-  }): Observable<PlaygroundRunResult> {
-    return this.http.post<PlaygroundRunResult>(`${this.baseUrl}/run`, payload);
+  runPlayground(
+    payload: {
+      promptId?: string;
+      versionNumber?: number;
+      templateBody: string;
+      variables?: Record<string, string>;
+      examples?: FewShotExample[];
+      model: string;
+      temperature?: number;
+      maxTokens?: number;
+    },
+    idempotencyKey?: string,
+  ): Observable<PlaygroundRunResult> {
+    const key = idempotencyKey || generateIdempotencyKey();
+    const headers = new HttpHeaders({
+      'Idempotency-Key': key,
+    });
+    return this.http
+      .post<PlaygroundRunResult>(`${this.baseUrl}/run`, payload, { headers })
+      .pipe(retryTransientErrors());
   }
 
   getModels(): Observable<{ models: ModelMetadata[]; gatewayConnected: boolean }> {

@@ -502,7 +502,11 @@ export class PromptsService implements OnModuleInit {
   /**
    * Executes a prompt run through LiteLLM Gateway after validating variables.
    */
-  async runPlayground(dto: RunPlaygroundDto, userId: string): Promise<PlaygroundRunResult> {
+  async runPlayground(
+    dto: RunPlaygroundDto,
+    userId: string,
+    idempotencyKey?: string,
+  ): Promise<PlaygroundRunResult> {
     const preview = this.resolveTemplate({
       templateBody: dto.templateBody,
       variables: dto.variables,
@@ -529,6 +533,7 @@ export class PromptsService implements OnModuleInit {
       ],
       temperature: dto.temperature,
       maxTokens: dto.maxTokens,
+      idempotencyKey,
     });
 
     return {

@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import {
@@ -143,9 +143,29 @@ describe('ConversationService', () => {
 
     const msgReq = httpTesting.expectOne('/api/conversations/c-2/messages');
     expect(msgReq.request.method).toBe('POST');
+    expect(msgReq.request.headers.has('Idempotency-Key')).toBeTrue();
     expect(msgReq.request.body).toEqual({ content: 'Hi' });
     msgReq.flush(mockMessageResponse);
   });
+
+  it('retries transient 503 error using the same Idempotency-Key', fakeAsync(() => {
+    let response: any = null;
+    service.sendMessage('c-2', 'Hi', 'idemp-custom-key').subscribe((res) => {
+      response = res;
+    });
+
+    const req1 = httpTesting.expectOne('/api/conversations/c-2/messages');
+    expect(req1.request.headers.get('Idempotency-Key')).toBe('idemp-custom-key');
+    req1.flush('Service Unavailable', { status: 503, statusText: 'Service Unavailable' });
+
+    tick(600);
+
+    const req2 = httpTesting.expectOne('/api/conversations/c-2/messages');
+    expect(req2.request.headers.get('Idempotency-Key')).toBe('idemp-custom-key');
+    req2.flush({ success: true, userMessage: { content: 'Hi' } });
+
+    expect(response?.success).toBeTrue();
+  }));
 
   it('inspects context with proposed input parameter', (done) => {
     const mockContext: ContextInspectionResult = {
@@ -197,6 +217,7 @@ describe('ConversationService', () => {
 
     const previewReq = httpTesting.expectOne('/api/conversations/c-1/compact/preview');
     expect(previewReq.request.method).toBe('POST');
+    expect(previewReq.request.headers.has('Idempotency-Key')).toBeTrue();
     previewReq.flush(mockPreview);
 
     const applyPayload: ApplyCompactionPayload = {

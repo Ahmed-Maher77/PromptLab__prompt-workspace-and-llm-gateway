@@ -132,6 +132,7 @@ describe('ExperimentService', () => {
 
     const req1 = httpTesting.expectOne('/api/experiments/run');
     expect(req1.request.method).toBe('POST');
+    expect(req1.request.headers.has('Idempotency-Key')).toBeTrue();
     req1.flush(mockComparison);
 
     service.rateSlot('exp-1', 'A', 5, 'Great answer').subscribe((res) => {

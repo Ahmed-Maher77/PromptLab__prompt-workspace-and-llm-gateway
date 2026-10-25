@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { generateIdempotencyKey } from '../utils/uuid.util';
+import { retryTransientErrors } from '../utils/http-retry.util';
 
 export interface SlotConfigPayload {
   promptId?: string;
@@ -125,8 +127,14 @@ export class ExperimentService {
     return this.http.get<SavedExperimentSummary>(`${this.baseUrl}/${id}`);
   }
 
-  runComparison(payload: RunComparisonPayload): Observable<ComparisonResult> {
-    return this.http.post<ComparisonResult>(`${this.baseUrl}/run`, payload);
+  runComparison(payload: RunComparisonPayload, idempotencyKey?: string): Observable<ComparisonResult> {
+    const key = idempotencyKey || generateIdempotencyKey();
+    const headers = new HttpHeaders({
+      'Idempotency-Key': key,
+    });
+    return this.http
+      .post<ComparisonResult>(`${this.baseUrl}/run`, payload, { headers })
+      .pipe(retryTransientErrors());
   }
 
   rateSlot(

@@ -84,8 +84,8 @@ describe('PromptsController', () => {
       templateBody: 'Hello {{name}}',
       model: 'gpt-4o-mini',
     };
-    await controller.runPlayground(runDto, 'dev-user-001');
-    expect(mockService.runPlayground).toHaveBeenCalledWith(runDto, 'dev-user-001');
+    await controller.runPlayground(runDto, 'dev-user-001', 'idemp-key-12345');
+    expect(mockService.runPlayground).toHaveBeenCalledWith(runDto, 'dev-user-001', 'idemp-key-12345');
   });
 
 });

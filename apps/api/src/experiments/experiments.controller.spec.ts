@@ -49,8 +49,8 @@ describe('ExperimentsController', () => {
       slotA: { provider: 'openai', model: 'gpt-4o-mini' },
       slotB: { provider: 'anthropic', model: 'claude-3-5-sonnet' },
     };
-    await controller.runComparison(dto, 'dev-user-001');
-    expect(mockService.runComparison).toHaveBeenCalledWith(dto, 'dev-user-001');
+    await controller.runComparison(dto, 'dev-user-001', 'idemp-compare-12345');
+    expect(mockService.runComparison).toHaveBeenCalledWith(dto, 'dev-user-001', 'idemp-compare-12345');
   });
 
   it('delegates updateRating to service', async () => {

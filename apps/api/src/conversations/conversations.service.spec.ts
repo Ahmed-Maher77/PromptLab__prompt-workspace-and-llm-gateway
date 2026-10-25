@@ -36,6 +36,16 @@ describe('ConversationsService', () => {
         create: jest.fn(),
         findMany: jest.fn(),
       },
+      usageRecord: {
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      $transaction: jest.fn(async (actions: any) => {
+        if (Array.isArray(actions)) {
+          return Promise.all(actions);
+        }
+        return actions(mockPrisma);
+      }),
     };
     mockPrisma.conversation.findFirst = mockPrisma.conversation.findUnique;
 
@@ -431,6 +441,87 @@ describe('ConversationsService', () => {
       expect(result.assistantMessage).toBeDefined();
       expect(result.usage?.source).toBe('provider-reported');
       expect(result.latencyMs).toBe(320);
+    });
+
+    it('returns stored turn on replay without inserting new messages (QUOTA-05)', async () => {
+      const storedUserMsg = { id: 'msg-u-1', role: 'user', content: 'Cached input', sequenceNumber: 1 };
+      const storedAsstMsg = { id: 'msg-a-1', role: 'assistant', content: 'Cached output', sequenceNumber: 2 };
+
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-replay',
+        ownerId: 'dev-user-001',
+        provider: 'gateway',
+        model: 'gpt-4o-mini',
+        messages: [storedUserMsg, storedAsstMsg],
+        checkpoints: [],
+      });
+
+      // Mock llmExecutionService to return isReplay: true
+      const llmService = (service as any).llmExecutionService;
+      jest.spyOn(llmService, 'execute').mockResolvedValueOnce({
+        success: true,
+        content: 'Cached output',
+        model: 'gpt-4o-mini',
+        latencyMs: 150,
+        requestId: 'req-replay-12345',
+        isReplay: true,
+      });
+
+      mockPrisma.conversationMessage.findMany.mockResolvedValueOnce([
+        storedUserMsg,
+        storedAsstMsg,
+      ]);
+
+      const result = await service.sendMessage(
+        'c-replay',
+        { content: 'Cached input' },
+        'dev-user-001',
+        'req-replay-12345',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.userMessage).toEqual(storedUserMsg);
+      expect(result.assistantMessage).toEqual(storedAsstMsg);
+      expect(mockPrisma.conversationMessage.findMany).toHaveBeenCalledWith({
+        where: {
+          conversationId: 'c-replay',
+          requestId: 'req-replay-12345',
+        },
+        orderBy: { sequenceNumber: 'asc' },
+      });
+      expect(mockPrisma.conversationMessage.create).not.toHaveBeenCalled();
+    });
+
+    it('should throw 409 ConflictException when replayed request messages are not yet persisted', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-in-flight',
+        ownerId: 'dev-user-001',
+        provider: 'gateway',
+        model: 'gpt-4o-mini',
+        messages: [],
+        checkpoints: [],
+      });
+
+      const llmService = (service as any).llmExecutionService;
+      jest.spyOn(llmService, 'execute').mockResolvedValueOnce({
+        success: true,
+        content: 'Output',
+        model: 'gpt-4o-mini',
+        latencyMs: 150,
+        requestId: 'req-in-flight-999',
+        isReplay: true,
+      });
+
+      mockPrisma.conversationMessage.findMany.mockResolvedValueOnce([]);
+
+      await expect(
+        service.sendMessage(
+          'c-in-flight',
+          { content: 'Some input' },
+          'dev-user-001',
+          'req-in-flight-999',
+        ),
+      ).rejects.toThrow('REQUEST_IN_PROGRESS');
     });
   });
 

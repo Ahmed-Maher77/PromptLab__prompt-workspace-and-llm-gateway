@@ -1065,5 +1065,362 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
+  describe('Client Idempotency Keys and Deduping (QUOTA-05)', () => {
+    it('validates Idempotency-Key header against ^[A-Za-z0-9._:-]{8,128}$ (otherwise 400)', async () => {
+      // 1. POST /api/prompts/run with invalid header
+      await request(app.getHttpServer())
+        .post('/api/prompts/run')
+        .set(authHeader)
+        .set('Idempotency-Key', 'short')
+        .send({ templateBody: 'Hello', model: 'gpt-4o-mini' })
+        .expect(400);
+
+      // 2. POST /api/experiments/run with invalid characters (spaces)
+      await request(app.getHttpServer())
+        .post('/api/experiments/run')
+        .set(authHeader)
+        .set('Idempotency-Key', 'invalid key spaces')
+        .send({
+          name: 'Compare',
+          commonInput: {},
+          slotA: { provider: 'openai', model: 'gpt-4o-mini', templateBody: 'Hi' },
+          slotB: { provider: 'openai', model: 'gpt-4o-mini', templateBody: 'Hello' },
+        })
+        .expect(400);
+
+      // Create conversation to test messages and compact preview
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({ title: 'Idemp Test Conv', provider: 'openai', model: 'gpt-4o-mini' })
+        .expect(201);
+      const convId = convRes.body.id;
+
+      // 3. POST /api/conversations/:id/messages with invalid header
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/messages`)
+        .set(authHeader)
+        .set('Idempotency-Key', 'invalid@char!')
+        .send({ content: 'Test message' })
+        .expect(400);
+
+      // 4. POST /api/conversations/:id/compact/preview with invalid header (>128 chars)
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/compact/preview`)
+        .set(authHeader)
+        .set('Idempotency-Key', 'a'.repeat(129))
+        .send({ compactThroughSequence: 1 })
+        .expect(400);
+    });
+
+    it('derives slot keys ${key}:A and ${key}:B for comparisons on POST /api/experiments/run', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+      const idempKey = `exp-test-${Date.now()}`;
+
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (params) => {
+        return {
+          success: true,
+          model: params.model,
+          content: `Comparison response for ${params.requestId}`,
+          latencyMs: 40,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 10,
+            totalTokens: 20,
+            source: 'provider-reported',
+          },
+        };
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/api/experiments/run')
+        .set(authHeader)
+        .set('Idempotency-Key', idempKey)
+        .send({
+          name: 'Slot Keys Experiment',
+          commonInput: { test: 'val' },
+          slotA: { provider: 'gateway', model: 'gpt-4o-mini', templateBody: 'Slot A {{test}}' },
+          slotB: { provider: 'gateway', model: 'gpt-4o-mini', templateBody: 'Slot B {{test}}' },
+        })
+        .expect(201);
+
+      expect(res.body.slotA.status).toBe('completed');
+      expect(res.body.slotB.status).toBe('completed');
+
+      // Assert slot keys were created in usage_records with :A and :B
+      const recordA = await prisma.usageRecord.findFirst({
+        where: { requestId: `${idempKey}:A` },
+      });
+      const recordB = await prisma.usageRecord.findFirst({
+        where: { requestId: `${idempKey}:B` },
+      });
+
+      expect(recordA).toBeDefined();
+      expect(recordA?.status).toBe('reconciled');
+      expect(recordB).toBeDefined();
+      expect(recordB?.status).toBe('reconciled');
+    });
+
+    it('same key sent twice → 1 provider call, 1 reservation, identical response, and no duplicate messages (QUOTA-05)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+      const idempKey = `conv-replay-${Date.now()}`;
+
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({ title: 'Replay Conv', provider: 'gateway', model: 'gpt-4o-mini' })
+        .expect(201);
+      const convId = convRes.body.id;
+
+      let providerCalls = 0;
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (params) => {
+        providerCalls++;
+        return {
+          success: true,
+          model: params.model,
+          content: 'Deterministic assistant reply',
+          latencyMs: 50,
+          usage: {
+            promptTokens: 15,
+            completionTokens: 10,
+            totalTokens: 25,
+            source: 'provider-reported',
+          },
+        };
+      });
+
+      // First request
+      const res1 = await request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/messages`)
+        .set(authHeader)
+        .set('Idempotency-Key', idempKey)
+        .send({ content: 'Tell me a story' })
+        .expect(201);
+
+      expect(res1.body.success).toBe(true);
+      expect(res1.body.userMessage.content).toBe('Tell me a story');
+      expect(res1.body.assistantMessage.content).toBe('Deterministic assistant reply');
+
+      // Second request with IDENTICAL Idempotency-Key
+      const res2 = await request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/messages`)
+        .set(authHeader)
+        .set('Idempotency-Key', idempKey)
+        .send({ content: 'Tell me a story' })
+        .expect(201);
+
+      // Identical response returned!
+      expect(res2.body.success).toBe(true);
+      expect(res2.body.userMessage.id).toBe(res1.body.userMessage.id);
+      expect(res2.body.assistantMessage.id).toBe(res1.body.assistantMessage.id);
+      expect(res2.body.assistantMessage.content).toBe(res1.body.assistantMessage.content);
+
+      // Exactly 1 provider call made across both requests!
+      expect(providerCalls).toBe(1);
+
+      // Exactly 1 usage record exists for this idempotency key
+      const usageRecords = await prisma.usageRecord.findMany({
+        where: { requestId: idempKey },
+      });
+      expect(usageRecords).toHaveLength(1);
+      expect(usageRecords[0].status).toBe('reconciled');
+
+      // NO duplicate messages: DB has exactly 1 user message and 1 assistant message
+      const messages = await prisma.conversationMessage.findMany({
+        where: { conversationId: convId },
+      });
+      expect(messages).toHaveLength(2);
+      expect(messages.filter((m) => m.role === 'user')).toHaveLength(1);
+      expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
+    });
+
+    it('same key while first is in flight → 409 REQUEST_IN_PROGRESS and no duplicate messages (QUOTA-05)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+      const idempKey = `conv-inflight-${Date.now()}`;
+
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({ title: 'In-Flight Conv', provider: 'gateway', model: 'gpt-4o-mini' })
+        .expect(201);
+      const convId = convRes.body.id;
+
+      let unblockProvider: () => void;
+      const providerGate = new Promise<void>((resolve) => {
+        unblockProvider = resolve;
+      });
+
+      let signalStarted: () => void;
+      const providerStarted = new Promise<void>((resolve) => {
+        signalStarted = resolve;
+      });
+
+      let providerCalls = 0;
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (params) => {
+        providerCalls++;
+        signalStarted();
+        await providerGate;
+        return {
+          success: true,
+          model: params.model,
+          content: 'In-flight completion result',
+          latencyMs: 100,
+          usage: {
+            promptTokens: 12,
+            completionTokens: 8,
+            totalTokens: 20,
+            source: 'provider-reported',
+          },
+        };
+      });
+
+      // Send first request and kick it off with .then() so it starts executing
+      const req1Execution = request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/messages`)
+        .set(authHeader)
+        .set('Idempotency-Key', idempKey)
+        .send({ content: 'Concurrent message' })
+        .then((res) => res);
+
+      // Wait until req1 has established quota reservation and called provider
+      await providerStarted;
+
+      // Send second request with same key while req1 is in flight
+      const res2 = await request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/messages`)
+        .set(authHeader)
+        .set('Idempotency-Key', idempKey)
+        .send({ content: 'Concurrent message duplicate' })
+        .expect(409);
+
+      expect(res2.body.message).toBe('REQUEST_IN_PROGRESS');
+
+      // Now unblock req1
+      unblockProvider!();
+      const res1 = await req1Execution;
+      expect(res1.status).toBe(201);
+      expect(res1.body.success).toBe(true);
+
+      // Assert only 1 provider call was made
+      expect(providerCalls).toBe(1);
+
+      // Assert no duplicate messages in DB
+      const messages = await prisma.conversationMessage.findMany({
+        where: { conversationId: convId },
+      });
+      expect(messages).toHaveLength(2);
+      expect(messages.filter((m) => m.role === 'user')).toHaveLength(1);
+      expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
+    });
+
+    it('fires the same key while persistence is paused after the provider call → 409 or correct turn, with exactly 2 messages in the end (QUOTA-05a)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+      const idempKey = `conv-pause-${Date.now()}`;
+
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({ title: 'Pause Persistence Conv', provider: 'gateway', model: 'gpt-4o-mini' })
+        .expect(201);
+      const convId = convRes.body.id;
+
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (params) => {
+        return {
+          success: true,
+          model: params.model,
+          content: 'Provider finished output',
+          latencyMs: 30,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 10,
+            totalTokens: 20,
+            source: 'provider-reported',
+          },
+        };
+      });
+
+      let unblockPersistence: () => void;
+      const persistenceGate = new Promise<void>((resolve) => {
+        unblockPersistence = resolve;
+      });
+
+      let signalPersistenceReached: () => void;
+      const persistenceReached = new Promise<void>((resolve) => {
+        signalPersistenceReached = resolve;
+      });
+
+      // Spy on prisma.$transaction on the real PrismaService
+      const originalTransaction = prisma.$transaction.bind(prisma);
+      let paused = false;
+      jest.spyOn(prisma, '$transaction').mockImplementation(async (arg: any) => {
+        if (!paused) {
+          paused = true;
+          signalPersistenceReached();
+          await persistenceGate;
+        }
+        return originalTransaction(arg);
+      });
+
+      try {
+        // 1. Kick off req1
+        const req1Promise = request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .set('Idempotency-Key', idempKey)
+          .send({ content: 'Message while persistence paused' })
+          .then((res) => res);
+
+        // 2. Wait until req1 has finished provider call and entered the persistence window
+        await persistenceReached;
+
+        // 3. Fire req2 with the exact same key while req1 is paused in persistence
+        const res2 = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .set('Idempotency-Key', idempKey)
+          .send({ content: 'Message while persistence paused' });
+
+        // During persistence pause, messages are not yet committed to DB, so req2 must return 409 REQUEST_IN_PROGRESS
+        expect([200, 201, 409]).toContain(res2.status);
+        if (res2.status === 409) {
+          expect(res2.body.message).toBe('REQUEST_IN_PROGRESS');
+        } else {
+          expect(res2.body.success).toBe(true);
+        }
+
+        // 4. Unblock req1's transaction
+        unblockPersistence!();
+        const res1 = await req1Promise;
+        expect(res1.status).toBe(201);
+        expect(res1.body.success).toBe(true);
+
+        // 5. Subsequent replay returns the completed turn successfully
+        const res3 = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .set('Idempotency-Key', idempKey)
+          .send({ content: 'Message while persistence paused' })
+          .expect(201);
+        expect(res3.body.success).toBe(true);
+        expect(res3.body.userMessage.id).toBe(res1.body.userMessage.id);
+        expect(res3.body.assistantMessage.id).toBe(res1.body.assistantMessage.id);
+
+        // 6. DB check: exactly 2 messages in the end (1 user, 1 assistant)
+        const messages = await prisma.conversationMessage.findMany({
+          where: { conversationId: convId },
+        });
+        expect(messages).toHaveLength(2);
+        expect(messages.filter((m) => m.role === 'user')).toHaveLength(1);
+        expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
+      } finally {
+        jest.restoreAllMocks();
+      }
+    });
+  });
+
 });
 
