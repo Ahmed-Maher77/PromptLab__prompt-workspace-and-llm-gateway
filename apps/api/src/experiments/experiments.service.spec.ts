@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { PromptsService } from '../prompts/prompts.service';
 import { UsageService } from '../usage/usage.service';
+import { ObservabilityService } from '../observability/observability.service';
+import { LlmExecutionService } from '../llm/llm-execution.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('ExperimentsService', () => {
@@ -50,13 +52,23 @@ describe('ExperimentsService', () => {
       reconcileUsage: jest.fn().mockResolvedValue({ success: true }),
     };
 
+    const mockObservability = {
+      startTrace: jest.fn().mockReturnValue({
+        traceId: 'trace-test',
+        startSpan: jest.fn().mockReturnValue({ id: 'span-1', end: jest.fn() }),
+        complete: jest.fn(),
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ExperimentsService,
+        LlmExecutionService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ProvidersService, useValue: mockProviders },
         { provide: PromptsService, useValue: mockPrompts },
         { provide: UsageService, useValue: mockUsage },
+        { provide: ObservabilityService, useValue: mockObservability },
       ],
     }).compile();
 

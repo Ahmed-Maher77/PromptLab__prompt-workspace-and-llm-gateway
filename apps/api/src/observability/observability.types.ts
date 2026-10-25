@@ -19,7 +19,7 @@ export interface TraceSpan {
 export interface TraceRecord {
   id: string; // 32-char hex traceId
   name: string;
-  operation: 'playground.execute' | 'comparison.slot' | 'conversation.turn' | 'gateway.request';
+  operation: 'playground.execute' | 'comparison.slot' | 'conversation.turn' | 'compaction.preview' | 'gateway.request';
   status: 'success' | 'error' | 'rate_limited';
   startTime: string;
   endTime: string;

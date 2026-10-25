@@ -3,13 +3,10 @@ import {
   NotFoundException,
   BadRequestException,
   Logger,
-  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
-import { UsageService } from '../usage/usage.service';
-import { ObservabilityService } from '../observability/observability.service';
-import { calculateCost } from '../experiments/cost-calculator';
+import { LlmExecutionService } from '../llm/llm-execution.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
 import {
@@ -31,8 +28,7 @@ export class ConversationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
-    @Optional() private readonly usageService?: UsageService,
-    @Optional() private readonly observabilityService?: ObservabilityService,
+    private readonly llmExecutionService: LlmExecutionService,
   ) {}
 
   /**
@@ -355,81 +351,29 @@ export class ConversationsService {
     }));
 
 
-    const estimatedTokens = inspection.totalEstimatedInputTokens + 1024;
-    const requestId = `req-conv-${conv.id}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-
-    const trace = this.observabilityService?.startTrace({
-      name: `Conversation Turn (${conv.model})`,
+    // 3. Dispatch to model gateway via centralized LlmExecutionService
+    const execution = await this.llmExecutionService.execute({
+      userId: conv.ownerId,
       operation: 'conversation.turn',
       model: conv.model,
       provider: conv.provider,
-      metadata: { conversationId: conv.id, requestId },
-    });
-
-    // Reserve estimated quota before dispatching
-    const reserveSpan = trace?.startSpan('quota.reserve', { estimatedTokens, requestId });
-    if (this.usageService) {
-      await this.usageService.reserveUsage({
-        requestId,
-        userId: conv.ownerId,
-        model: conv.model,
-        provider: conv.provider,
-        estimatedTokens,
-        conversationId: conv.id,
-      });
-    }
-    reserveSpan?.end('ok');
-
-    // 3. Dispatch to model gateway
-    const llmSpan = trace?.startSpan('litellm.chat_completion', { model: conv.model });
-    const result = await this.providersService.executeChatCompletion({
-      model: conv.model,
+      name: `Conversation Turn (${conv.model})`,
+      conversationId: conv.id,
       messages: messagesPayload,
       temperature: 0.7,
       maxTokens: 1024,
-      traceId: trace?.traceId,
-      spanId: llmSpan?.id,
-      requestId,
-    });
-    llmSpan?.end(result.success ? 'ok' : 'error', {
-      latencyMs: result.latencyMs,
-      errorCode: result.errorType,
     });
 
-    const reconcileSpan = trace?.startSpan('quota.reconcile', { requestId });
-    if (this.usageService) {
-      await this.usageService.reconcileUsage({
-        requestId,
-        success: result.success,
-        usage: result.usage,
-        latencyMs: result.latencyMs,
-        error: result.errorMessage,
-      });
-    }
-    reconcileSpan?.end('ok');
-
-    const promptTokens = result.usage?.promptTokens || 0;
-    const completionTokens = result.usage?.completionTokens || 0;
-    const cost = calculateCost(conv.model, promptTokens, completionTokens);
-
-    trace?.complete({
-      status: result.success ? 'success' : 'error',
-      usage: result.usage,
-      cost,
-      errorCode: result.errorType,
-      errorMessage: result.errorMessage,
-    });
-
-    if (!result.success) {
+    if (!execution.success) {
       // Handle provider failure explicitly without corrupting the conversation history
       return {
         success: false,
         userMessage,
         assistantMessage: null,
-        errorType: result.errorType,
-        errorMessage: result.errorMessage || 'Provider failed to generate response',
-        configurationHint: result.configurationHint,
-        traceId: trace?.traceId,
+        errorType: execution.errorType,
+        errorMessage: execution.errorMessage || 'Provider failed to generate response',
+        configurationHint: execution.configurationHint,
+        traceId: execution.traceId,
       };
     }
 
@@ -439,11 +383,11 @@ export class ConversationsService {
       data: {
         conversationId: conv.id,
         role: 'assistant',
-        content: result.content || '',
+        content: execution.content || '',
         sequenceNumber: assistantSeq,
-        inputTokens: result.usage?.promptTokens || estimateTokens(dto.content),
-        outputTokens: result.usage?.completionTokens || estimateTokens(result.content || ''),
-        tokenUsageSource: result.usage?.source || 'provider-reported',
+        inputTokens: execution.usage?.promptTokens || estimateTokens(dto.content),
+        outputTokens: execution.usage?.completionTokens || estimateTokens(execution.content || ''),
+        tokenUsageSource: execution.usage?.source || 'provider-reported',
       },
     });
 
@@ -457,9 +401,9 @@ export class ConversationsService {
       success: true,
       userMessage,
       assistantMessage,
-      latencyMs: result.latencyMs,
-      usage: result.usage,
-      traceId: trace?.traceId,
+      latencyMs: execution.latencyMs,
+      usage: execution.usage,
+      traceId: execution.traceId,
     };
   }
 
@@ -537,67 +481,17 @@ export class ConversationsService {
     let summaryText = '';
     let retainedFacts: string[] = [];
 
-    const estimatedCompactionTokens = estimateTokens(summarizationPrompt) + 1024;
-    const requestId = `req-comp-${conv.id}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-
-    const trace = this.observabilityService?.startTrace({
-      name: `Compaction Summarization (${conv.model})`,
-      operation: 'conversation.turn',
+    const llmResult = await this.llmExecutionService.execute({
+      userId: conv.ownerId,
+      operation: 'compaction.preview',
       model: conv.model,
       provider: conv.provider,
-      metadata: { conversationId: conv.id, requestId, targetSeq },
-    });
-
-    const reserveSpan = trace?.startSpan('quota.reserve', { estimatedTokens: estimatedCompactionTokens, requestId });
-    if (this.usageService) {
-      await this.usageService.reserveUsage({
-        requestId,
-        userId: conv.ownerId,
-        model: conv.model,
-        provider: conv.provider,
-        estimatedTokens: estimatedCompactionTokens,
-        conversationId: conv.id,
-      });
-    }
-    reserveSpan?.end('ok');
-
-    const llmSpan = trace?.startSpan('litellm.chat_completion', { model: conv.model });
-    const llmResult = await this.providersService.executeChatCompletion({
-      model: conv.model,
+      name: `Compaction Summarization (${conv.model})`,
+      conversationId: conv.id,
       messages: [{ role: 'user', content: summarizationPrompt }],
       temperature: 0.3,
       maxTokens: 1024,
-      traceId: trace?.traceId,
-      spanId: llmSpan?.id,
-      requestId,
-    });
-    llmSpan?.end(llmResult.success ? 'ok' : 'error', {
-      latencyMs: llmResult.latencyMs,
-      errorCode: llmResult.errorType,
-    });
-
-    const reconcileSpan = trace?.startSpan('quota.reconcile', { requestId });
-    if (this.usageService) {
-      await this.usageService.reconcileUsage({
-        requestId,
-        success: llmResult.success,
-        usage: llmResult.usage,
-        latencyMs: llmResult.latencyMs,
-        error: llmResult.errorMessage,
-      });
-    }
-    reconcileSpan?.end('ok');
-
-    const promptTokens = llmResult.usage?.promptTokens || 0;
-    const completionTokens = llmResult.usage?.completionTokens || 0;
-    const cost = calculateCost(conv.model, promptTokens, completionTokens);
-
-    trace?.complete({
-      status: llmResult.success ? 'success' : 'error',
-      usage: llmResult.usage,
-      cost,
-      errorCode: llmResult.errorType,
-      errorMessage: llmResult.errorMessage,
+      metadata: { targetSeq },
     });
 
     if (llmResult.success && llmResult.content) {

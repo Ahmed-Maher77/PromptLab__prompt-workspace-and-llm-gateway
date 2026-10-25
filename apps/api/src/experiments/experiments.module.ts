@@ -6,8 +6,10 @@ import { PromptsModule } from '../prompts/prompts.module';
 import { UsageModule } from '../usage/usage.module';
 import { ObservabilityModule } from '../observability/observability.module';
 
+import { LlmModule } from '../llm/llm.module';
+
 @Module({
-  imports: [ProvidersModule, PromptsModule, UsageModule, ObservabilityModule],
+  imports: [ProvidersModule, PromptsModule, UsageModule, ObservabilityModule, LlmModule],
   controllers: [ExperimentsController],
   providers: [ExperimentsService],
   exports: [ExperimentsService],

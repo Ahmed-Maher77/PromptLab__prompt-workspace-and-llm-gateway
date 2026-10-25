@@ -472,10 +472,13 @@ export class UsageService {
       } else {
         // Check for ambiguous timeout where upstream provider may have generated tokens
         const isTimeout =
-          dto.error &&
-          (dto.error.toLowerCase().includes('timeout') ||
-            dto.error.toLowerCase().includes('timed out') ||
-            dto.error.toLowerCase().includes('ambiguous'));
+          dto.errorType === 'TIMEOUT' ||
+          Boolean(
+            dto.error &&
+              (dto.error.toLowerCase().includes('timeout') ||
+                dto.error.toLowerCase().includes('timed out') ||
+                dto.error.toLowerCase().includes('ambiguous')),
+          );
 
         if (isTimeout) {
           // Conservative timeout recovery strategy:

@@ -1,11 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException, Logger, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { PromptsService } from '../prompts/prompts.service';
-import { UsageService } from '../usage/usage.service';
-import { ObservabilityService } from '../observability/observability.service';
+import { LlmExecutionService } from '../llm/llm-execution.service';
 import { RunComparisonDto, SlotConfigDto, EvaluationCriterionDto, RateExperimentDto } from './dto/run-comparison.dto';
-import { calculateCost } from './cost-calculator';
 import { Prisma } from '@prisma/client';
 import { compileSafeRegex, CompiledRegexResult } from '../common/utils/regex.util';
 
@@ -64,8 +62,7 @@ export class ExperimentsService {
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
     private readonly promptsService: PromptsService,
-    @Optional() private readonly usageService?: UsageService,
-    @Optional() private readonly observabilityService?: ObservabilityService,
+    private readonly llmExecutionService: LlmExecutionService,
   ) {}
 
   /**
@@ -407,85 +404,30 @@ export class ExperimentsService {
     criteria: (EvaluationCriterionDto | PreparedCriterion)[],
     userId: string,
   ): Promise<SlotRunResult> {
-    const promptEst =
-      typeof this.providersService?.estimateTokens === 'function'
-        ? this.providersService.estimateTokens(prepared.resolvedPrompt)
-        : Math.max(1, Math.ceil((prepared.resolvedPrompt?.length || 0) / 4));
-    const estimatedTokens = promptEst + (config.maxTokens || 1024);
-    const requestId = `req-exp-${slotLabel.toLowerCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-
-    const trace = this.observabilityService?.startTrace({
-      name: `Comparison Slot ${slotLabel} (${config.model})`,
+    const execution = await this.llmExecutionService.execute({
+      userId,
       operation: 'comparison.slot',
       model: config.model,
       provider: config.provider,
-      metadata: { slot: slotLabel, promptId: prepared.promptId, requestId },
-    });
-
-    const reserveSpan = trace?.startSpan('quota.reserve', { estimatedTokens, requestId });
-    if (this.usageService) {
-      await this.usageService.reserveUsage({
-        requestId,
-        userId,
-        model: config.model,
-        provider: config.provider,
-        estimatedTokens,
-      });
-    }
-    reserveSpan?.end('ok');
-
-    const llmSpan = trace?.startSpan('litellm.chat_completion', { model: config.model });
-    const completion = await this.providersService.executeChatCompletion({
-      model: config.model,
+      name: `Comparison Slot ${slotLabel} (${config.model})`,
       messages: [{ role: 'user', content: prepared.resolvedPrompt }],
       temperature: config.temperature,
       maxTokens: config.maxTokens,
-      traceId: trace?.traceId,
-      spanId: llmSpan?.id,
-      requestId,
-    });
-    llmSpan?.end(completion.success ? 'ok' : 'error', {
-      latencyMs: completion.latencyMs,
-      errorCode: completion.errorType,
+      metadata: { slot: slotLabel, promptId: prepared.promptId },
     });
 
-    const reconcileSpan = trace?.startSpan('quota.reconcile', { requestId });
-    if (this.usageService) {
-      await this.usageService.reconcileUsage({
-        requestId,
-        success: completion.success,
-        usage: completion.usage,
-        latencyMs: completion.latencyMs,
-        error: completion.errorMessage,
-      });
-    }
-    reconcileSpan?.end('ok');
-
-    const isSuccess = completion.success;
-    const output = completion.content || null;
-    const latencyMs = completion.latencyMs || 0;
-    const inputTokens = completion.usage?.promptTokens || 0;
-    const outputTokens = completion.usage?.completionTokens || 0;
-    const totalTokens = completion.usage?.totalTokens || (inputTokens + outputTokens);
-    const tokenUsageSource = completion.usage?.source || 'estimated';
-    const estimatedCost = calculateCost(config.model, inputTokens, outputTokens);
-    const errorCode = !isSuccess ? completion.errorType || 'PROVIDER_ERROR' : null;
+    const isSuccess = execution.success;
+    const output = execution.content || null;
+    const latencyMs = execution.latencyMs || 0;
+    const inputTokens = execution.usage?.promptTokens || 0;
+    const outputTokens = execution.usage?.completionTokens || 0;
+    const totalTokens = execution.usage?.totalTokens || (inputTokens + outputTokens);
+    const tokenUsageSource = execution.usage?.source || 'estimated';
+    const estimatedCost = execution.cost;
+    const errorCode = !isSuccess ? execution.errorType || 'PROVIDER_ERROR' : null;
 
     // Evaluate criteria against output
-    const evalSpan = trace?.startSpan('evaluations.criteria', { criteriaCount: criteria.length });
     const criteriaResults = this.evaluateCriteria(output, criteria);
-    evalSpan?.end('ok', {
-      passedCount: criteriaResults.filter((c) => c.passed).length,
-      failedCount: criteriaResults.filter((c) => !c.passed).length,
-    });
-
-    trace?.complete({
-      status: isSuccess ? 'success' : 'error',
-      usage: completion.usage,
-      cost: estimatedCost,
-      errorCode,
-      errorMessage: completion.errorMessage,
-    });
 
     return {
       slot: slotLabel,
@@ -505,10 +447,10 @@ export class ExperimentsService {
       tokenUsageSource,
       estimatedCost,
       errorCode,
-      errorMessage: completion.errorMessage,
-      configurationHint: completion.configurationHint,
+      errorMessage: execution.errorMessage,
+      configurationHint: execution.configurationHint,
       criteriaResults,
-      traceId: trace?.traceId,
+      traceId: execution.traceId,
     };
   }
 

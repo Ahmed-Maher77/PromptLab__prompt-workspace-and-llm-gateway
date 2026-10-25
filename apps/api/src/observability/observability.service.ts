@@ -77,7 +77,7 @@ export class ObservabilityService {
    */
   startTrace(params: {
     name: string;
-    operation: 'playground.execute' | 'comparison.slot' | 'conversation.turn' | 'gateway.request';
+    operation: 'playground.execute' | 'comparison.slot' | 'conversation.turn' | 'compaction.preview' | 'gateway.request';
     model: string;
     provider: string;
     userId?: string;

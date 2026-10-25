@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
@@ -65,8 +65,8 @@ export class SettingsService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
-    @Optional() private readonly usageService?: UsageService,
-    @Optional() private readonly observabilityService?: ObservabilityService,
+    private readonly usageService: UsageService,
+    private readonly observabilityService: ObservabilityService,
   ) {}
 
   async getSettings(): Promise<SystemSettingsResponse> {

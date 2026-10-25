@@ -3,6 +3,9 @@ import { BadRequestException, NotFoundException, ConflictException } from '@nest
 import { PromptsService } from './prompts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
+import { UsageService } from '../usage/usage.service';
+import { ObservabilityService } from '../observability/observability.service';
+import { LlmExecutionService } from '../llm/llm-execution.service';
 import { Prisma } from '@prisma/client';
 
 describe('PromptsService', () => {
@@ -35,11 +38,27 @@ describe('PromptsService', () => {
       executeChatCompletion: jest.fn(),
     };
 
+    const mockUsage = {
+      reserveUsage: jest.fn().mockResolvedValue({ success: true }),
+      reconcileUsage: jest.fn().mockResolvedValue({ success: true }),
+    };
+
+    const mockObservability = {
+      startTrace: jest.fn().mockReturnValue({
+        traceId: 'trace-1',
+        startSpan: jest.fn().mockReturnValue({ id: 'span-1', end: jest.fn() }),
+        complete: jest.fn(),
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PromptsService,
+        LlmExecutionService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ProvidersService, useValue: mockProviders },
+        { provide: UsageService, useValue: mockUsage },
+        { provide: ObservabilityService, useValue: mockObservability },
       ],
     }).compile();
 

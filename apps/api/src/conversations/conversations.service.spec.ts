@@ -2,6 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConversationsService } from './conversations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
+import { UsageService } from '../usage/usage.service';
+import { ObservabilityService } from '../observability/observability.service';
+import { LlmExecutionService } from '../llm/llm-execution.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 describe('ConversationsService', () => {
@@ -40,11 +43,27 @@ describe('ConversationsService', () => {
       executeChatCompletion: jest.fn(),
     };
 
+    const mockUsage = {
+      reserveUsage: jest.fn().mockResolvedValue({ success: true }),
+      reconcileUsage: jest.fn().mockResolvedValue({ success: true }),
+    };
+
+    const mockObservability = {
+      startTrace: jest.fn().mockReturnValue({
+        traceId: 'trace-conv',
+        startSpan: jest.fn().mockReturnValue({ id: 'span-1', end: jest.fn() }),
+        complete: jest.fn(),
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ConversationsService,
+        LlmExecutionService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ProvidersService, useValue: mockProviders },
+        { provide: UsageService, useValue: mockUsage },
+        { provide: ObservabilityService, useValue: mockObservability },
       ],
     }).compile();
 
