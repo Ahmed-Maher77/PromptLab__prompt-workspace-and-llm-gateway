@@ -37,6 +37,26 @@ export interface UsageRecordItem {
   reconciledAt: Date | null;
 }
 
+import { UsageRecord } from '@prisma/client';
+
+export interface StoredLlmResponse {
+  success: boolean;
+  content: string;
+  model: string;
+  latencyMs: number;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    source: 'provider-reported' | 'estimated';
+  };
+  cost?: number | null;
+  traceId?: string;
+  requestId?: string;
+  error?: string;
+  errorType?: string;
+}
+
 export interface ReservationResult {
   success: boolean;
   requestId: string;
@@ -44,5 +64,6 @@ export interface ReservationResult {
   remainingTokens: number;
   periodId: string;
   created: boolean;
-  record: any;
+  record: UsageRecord | null;
 }
+

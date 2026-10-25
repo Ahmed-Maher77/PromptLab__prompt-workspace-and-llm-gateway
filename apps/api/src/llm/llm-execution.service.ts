@@ -3,6 +3,7 @@ import { ProvidersService, CompletionResult } from '../providers/providers.servi
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService, ActiveTraceContext } from '../observability/observability.service';
 import { calculateCost } from '../experiments/cost-calculator';
+import { StoredLlmResponse } from '../usage/usage.types';
 
 export type LlmOperation =
   | 'playground.execute'
@@ -80,6 +81,7 @@ export class LlmExecutionService {
     });
 
     let reserved = false;
+    let isReplay = false;
     let completionResult: CompletionResult | undefined;
     let executionError: any;
     let llmSpan: any;
@@ -110,26 +112,31 @@ export class LlmExecutionService {
         }
 
         if (existingRecord.status === 'reconciled') {
-          if (existingRecord.responseBody) {
-            return existingRecord.responseBody as LlmExecutionResult;
+          if (!existingRecord.responseBody) {
+            throw new ConflictException('IDEMPOTENCY_RESULT_UNAVAILABLE');
           }
 
-          const cost =
-            existingRecord.estimatedCost ??
-            calculateCost(existingRecord.model, existingRecord.inputTokens, existingRecord.outputTokens);
+          isReplay = true;
+          const stored = existingRecord.responseBody as unknown as StoredLlmResponse;
+          completionResult = {
+            success: stored.success,
+            content: stored.content,
+            model: stored.model,
+            latencyMs: stored.latencyMs,
+            usage: stored.usage,
+            errorMessage: stored.error,
+            errorType: stored.errorType as CompletionResult['errorType'],
+          };
+          calculatedCost = stored.cost ?? null;
 
           return {
-            success: true,
-            model: existingRecord.model,
-            content: '',
-            latencyMs: 0,
-            usage: {
-              promptTokens: existingRecord.inputTokens,
-              completionTokens: existingRecord.outputTokens,
-              totalTokens: existingRecord.inputTokens + existingRecord.outputTokens,
-              source: (existingRecord.tokenUsageSource as any) || 'provider-reported',
-            },
-            cost,
+            success: stored.success,
+            content: stored.content,
+            model: stored.model,
+            latencyMs: stored.latencyMs,
+            usage: stored.usage,
+            cost: stored.cost ?? null,
+            traceId: trace?.traceId || stored.traceId,
             requestId,
           };
         }
@@ -222,7 +229,10 @@ export class LlmExecutionService {
       let traceStatus: 'success' | 'error' | 'rate_limited' = 'error';
       let errorCode = completionResult?.errorType || (executionError ? 'EXECUTION_EXCEPTION' : undefined);
 
-      if (completionResult?.success) {
+      if (isReplay) {
+        traceStatus = 'success';
+        errorCode = undefined;
+      } else if (completionResult?.success) {
         traceStatus = 'success';
       } else if (
         !reserved &&
@@ -238,10 +248,12 @@ export class LlmExecutionService {
         usage: completionResult?.usage,
         cost: calculatedCost,
         errorCode,
-        errorMessage:
-          completionResult?.errorMessage ||
-          executionError?.message ||
-          (executionError ? String(executionError) : undefined),
+        errorMessage: isReplay
+          ? undefined
+          : completionResult?.errorMessage ||
+            executionError?.message ||
+            (executionError ? String(executionError) : undefined),
+        metadata: isReplay ? { replayed: true } : undefined,
       });
     }
 

@@ -41,7 +41,16 @@ describe('UsageService', () => {
         findMany: jest.fn(),
         aggregate: jest.fn().mockResolvedValue({ _sum: { estimatedCost: 0.042 } }),
       },
-      $queryRaw: jest.fn().mockRejectedValue(new Error('MOCK_NO_RAW_SQL')),
+      $queryRaw: jest.fn().mockImplementation(async () => [
+        {
+          id: 'rec-1',
+          requestId: 'req-1',
+          userId: 'dev-user-001',
+          reservedTokens: 2_000,
+          status: 'reserved',
+          createdAt: new Date(),
+        },
+      ]),
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback(mockPrisma);
       }),
@@ -245,11 +254,7 @@ describe('UsageService', () => {
 
       const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
       expect(periodUpdate.data.reservedTokens).toEqual({ increment: 2_000 });
-
-      const recordCreate = mockPrisma.usageRecord.create.mock.calls[0][0];
-      expect(recordCreate.data.requestId).toBe('req-1');
-      expect(recordCreate.data.status).toBe('reserved');
-      expect(recordCreate.data.reservedTokens).toBe(2_000);
+      expect(mockPrisma.$queryRaw).toHaveBeenCalled();
     });
 
     it('should reject reservation with 429 QUOTA_EXCEEDED when quota is exhausted', async () => {
@@ -302,8 +307,10 @@ describe('UsageService', () => {
         requestRateLimit: 60,
       });
 
+      mockPrisma.$queryRaw.mockResolvedValueOnce([]);
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
         requestId: 'req-duplicate',
+        userId: 'dev-user-001',
         reservedTokens: 1500,
         status: 'reserved',
       });
@@ -327,8 +334,8 @@ describe('UsageService', () => {
       expect(res.created).toBe(false);
       expect(res.requestId).toBe('req-duplicate');
       expect(res.reservedTokens).toBe(1500);
-      // Ensure no secondary record creation or reservation increment
-      expect(mockPrisma.usageRecord.create).not.toHaveBeenCalled();
+      // Ensure no quota reservation increment for duplicate key
+      expect(mockPrisma.quotaPeriod.update).not.toHaveBeenCalled();
     });
 
     it('should reject second concurrent request when parallel reservations would collectively exceed quota', async () => {
@@ -459,6 +466,7 @@ describe('UsageService', () => {
 
       const res = await service.reconcileUsage({
         requestId: 'req-success',
+        userId: 'dev-user-001',
         success: true,
         usage: {
           promptTokens: 800,
@@ -502,6 +510,7 @@ describe('UsageService', () => {
 
       const res = await service.reconcileUsage({
         requestId: 'req-fail',
+        userId: 'dev-user-001',
         success: false,
         error: 'Missing API key: provider authentication error',
       });
@@ -537,6 +546,7 @@ describe('UsageService', () => {
 
       const res = await service.reconcileUsage({
         requestId: 'req-timeout-1',
+        userId: 'dev-user-001',
         success: false,
         error: 'Request timed out after 30000ms while awaiting response from gateway.',
       });
@@ -560,11 +570,13 @@ describe('UsageService', () => {
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
         id: 'rec-already',
         requestId: 'req-already',
+        userId: 'dev-user-001',
         status: 'reconciled',
       });
 
       const res = await service.reconcileUsage({
         requestId: 'req-already',
+        userId: 'dev-user-001',
         success: true,
       });
 

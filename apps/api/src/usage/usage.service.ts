@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UsageRecord } from '@prisma/client';
 import { calculateCost } from '../experiments/cost-calculator';
 import {
   UpdateQuotaPolicyDto,
@@ -279,21 +280,16 @@ export class UsageService {
   }
 
   /**
-   * Retrieves a usage record by its unique requestId / idempotency key, optionally scoped by userId.
+   * Retrieves a usage record by its unique requestId / idempotency key and scoped userId.
    */
-  async getUsageRecord(requestId: string, userId?: string) {
-    if (userId) {
-      return this.prisma.usageRecord.findUnique({
-        where: {
-          userId_requestId: {
-            userId,
-            requestId,
-          },
+  async getUsageRecord(requestId: string, userId: string): Promise<UsageRecord | null> {
+    return this.prisma.usageRecord.findUnique({
+      where: {
+        userId_requestId: {
+          userId,
+          requestId,
         },
-      });
-    }
-    return this.prisma.usageRecord.findFirst({
-      where: { requestId },
+      },
     });
   }
 
@@ -315,56 +311,25 @@ export class UsageService {
     const estimatedTokens = Math.max(1, dto.estimatedTokens || 1);
     const id = crypto.randomUUID();
 
+    // Ensure the current month quota period exists BEFORE opening the transaction.
+    // Out-of-transaction P2002 handling ensures no transaction is aborted.
+    const currentPeriod = await this.getCurrentPeriodRecord(uid);
+
     // 2. Database transaction: Claim first via INSERT ... ON CONFLICT ("userId", "requestId") DO NOTHING RETURNING
     return await this.prisma.$transaction(async (tx) => {
-      let insertedRows: any[] = [];
-      try {
-        insertedRows = await tx.$queryRaw<any[]>`
-          INSERT INTO "usage_records" (
-            "id", "requestId", "userId", "conversationId", "provider", "model",
-            "inputTokens", "outputTokens", "tokenUsageSource", "reservedTokens",
-            "status", "createdAt"
-          ) VALUES (
-            ${id}, ${dto.requestId}, ${uid}, ${dto.conversationId || null}, ${dto.provider}, ${dto.model},
-            ${0}, ${0}, ${'estimated'}, ${estimatedTokens},
-            ${'reserved'}, NOW()
-          )
-          ON CONFLICT ("userId", "requestId") DO NOTHING
-          RETURNING *;
-        `;
-      } catch {
-        // Fallback for mocks / unit tests where $queryRaw is mocked without raw SQL engine
-        const existing = await tx.usageRecord.findUnique({
-          where: { userId_requestId: { userId: uid, requestId: dto.requestId } },
-        });
-        if (existing) {
-          return {
-            success: true,
-            requestId: dto.requestId,
-            reservedTokens: existing.reservedTokens,
-            remainingTokens: 0,
-            periodId: '',
-            created: false,
-            record: existing,
-          };
-        }
-        const created = await tx.usageRecord.create({
-          data: {
-            id,
-            requestId: dto.requestId,
-            userId: uid,
-            conversationId: dto.conversationId || null,
-            provider: dto.provider,
-            model: dto.model,
-            inputTokens: 0,
-            outputTokens: 0,
-            tokenUsageSource: 'estimated',
-            reservedTokens: estimatedTokens,
-            status: 'reserved',
-          },
-        });
-        insertedRows = [created];
-      }
+      const insertedRows = await tx.$queryRaw<UsageRecord[]>`
+        INSERT INTO "usage_records" (
+          "id", "requestId", "userId", "conversationId", "provider", "model",
+          "inputTokens", "outputTokens", "tokenUsageSource", "reservedTokens",
+          "status", "createdAt"
+        ) VALUES (
+          ${id}, ${dto.requestId}, ${uid}, ${dto.conversationId || null}, ${dto.provider}, ${dto.model},
+          ${0}, ${0}, ${'estimated'}, ${estimatedTokens},
+          ${'reserved'}, NOW()
+        )
+        ON CONFLICT ("userId", "requestId") DO NOTHING
+        RETURNING *;
+      `;
 
       // If no rows returned, record already exists! Only the creator may call provider
       if (!insertedRows || insertedRows.length === 0) {
@@ -376,60 +341,23 @@ export class UsageService {
           requestId: dto.requestId,
           reservedTokens: existingRecord?.reservedTokens ?? 0,
           remainingTokens: 0,
-          periodId: '',
+          periodId: currentPeriod.id,
           created: false,
-          record: existingRecord!,
+          record: existingRecord,
         };
       }
 
       // We created the record (created: true). Now check and increment quota on active quota period.
-      const { periodStart, periodEnd } = this.getUtcMonthBounds();
-
-      let period;
-      try {
-        period = await tx.quotaPeriod.upsert({
-          where: {
-            userId_periodStart: {
-              userId: uid,
-              periodStart,
-            },
-          },
-          update: {},
-          create: {
-            userId: uid,
-            periodStart,
-            periodEnd,
-            tokenLimit: policy.monthlyTokenLimit,
-            reservedTokens: 0,
-            actualTokens: 0,
-            status: 'active',
-          },
-        });
-      } catch (err: any) {
-        if (err?.code === 'P2002') {
-          period = (await tx.quotaPeriod.findUnique({
-            where: {
-              userId_periodStart: {
-                userId: uid,
-                periodStart,
-              },
-            },
-          }))!;
-        } else {
-          throw err;
-        }
-      }
-
       // Row-level lock to serialize concurrent requests and eliminate stale reads
-      let activeActual = period.actualTokens;
-      let activeReserved = period.reservedTokens;
-      let activeLimit = period.tokenLimit;
+      let activeActual = currentPeriod.actualTokens;
+      let activeReserved = currentPeriod.reservedTokens;
+      let activeLimit = currentPeriod.tokenLimit;
 
       if (typeof tx.$queryRawUnsafe === 'function') {
         try {
           const rows = (await tx.$queryRawUnsafe(
             `SELECT id, "tokenLimit", "reservedTokens", "actualTokens" FROM "quota_periods" WHERE id = $1 FOR UPDATE`,
-            period.id,
+            currentPeriod.id,
           )) as Array<{ id: string; tokenLimit: number; reservedTokens: number; actualTokens: number }>;
 
           if (rows && rows.length > 0) {
@@ -459,7 +387,7 @@ export class UsageService {
             reservedTokens: activeReserved,
             requestedTokens: estimatedTokens,
             remainingTokens: remaining,
-            resetDate: period.periodEnd.toISOString(),
+            resetDate: currentPeriod.periodEnd.toISOString(),
           },
           HttpStatus.TOO_MANY_REQUESTS,
         );
@@ -467,7 +395,7 @@ export class UsageService {
 
       // Atomically increment reserved tokens
       const updatedPeriod = await tx.quotaPeriod.update({
-        where: { id: period.id },
+        where: { id: currentPeriod.id },
         data: {
           reservedTokens: { increment: estimatedTokens },
         },
@@ -494,22 +422,19 @@ export class UsageService {
    * Reconciles reservation against provider-reported or estimated completion usage.
    * Idempotent: multiple calls for the same requestId will safely reconcile once.
    */
-  async reconcileUsage(dto: ReconcileUsageDto): Promise<{ success: boolean; record: any }> {
+  async reconcileUsage(dto: ReconcileUsageDto): Promise<{ success: boolean; record: UsageRecord | null }> {
     return await this.prisma.$transaction(async (tx) => {
-      let record = await tx.usageRecord.findFirst({
-        where: dto.userId
-          ? { userId: dto.userId, requestId: dto.requestId }
-          : { requestId: dto.requestId },
+      const record = await tx.usageRecord.findUnique({
+        where: {
+          userId_requestId: {
+            userId: dto.userId,
+            requestId: dto.requestId,
+          },
+        },
       });
 
-      if (!record && typeof tx.usageRecord.findUnique === 'function') {
-        record = await tx.usageRecord.findUnique({
-          where: { requestId: dto.requestId } as any,
-        });
-      }
-
       if (!record) {
-        this.logger.warn(`Cannot reconcile unknown requestId: ${dto.requestId}`);
+        this.logger.warn(`Cannot reconcile unknown requestId: ${dto.requestId} for user: ${dto.userId}`);
         return { success: false, record: null };
       }
 

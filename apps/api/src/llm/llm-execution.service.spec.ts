@@ -252,6 +252,34 @@ describe('LlmExecutionService', () => {
       expect(result.content).toBe('Original cached assistant response');
       expect(providersServiceMock.executeChatCompletion).not.toHaveBeenCalled();
       expect(usageServiceMock.reconcileUsage).not.toHaveBeenCalled();
+      expect(mockTrace.complete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: 'success',
+          metadata: { replayed: true },
+        }),
+      );
+    });
+
+    it('throws 409 ConflictException (IDEMPOTENCY_RESULT_UNAVAILABLE) when reconciled record has no stored responseBody', async () => {
+      usageServiceMock.reserveUsage.mockResolvedValueOnce({
+        success: true,
+        created: false,
+        record: {
+          id: 'rec-legacy',
+          requestId: 'legacy-key',
+          userId: 'user-001',
+          status: 'reconciled',
+          responseBody: null,
+        },
+      });
+
+      const params: ExecuteLlmParams = {
+        ...baseParams,
+        idempotencyKey: 'legacy-key',
+      };
+
+      await expect(service.execute(params)).rejects.toThrow('IDEMPOTENCY_RESULT_UNAVAILABLE');
+      expect(providersServiceMock.executeChatCompletion).not.toHaveBeenCalled();
     });
 
     it('throws 409 ConflictException (REQUEST_IN_PROGRESS) when idempotencyKey is currently reserved', async () => {
