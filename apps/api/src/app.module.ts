@@ -14,6 +14,7 @@ import { UsageModule } from './usage/usage.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { LlmModule } from './llm/llm.module';
 import { SettingsModule } from './settings/settings.module';
+import { ScheduleModule } from '@nestjs/schedule';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthConfigModule } from './common/config/auth-config.module';
 import { validateEnvironment } from './common/config/env.validation';
@@ -33,6 +34,7 @@ import { RolesGuard } from './common/guards/roles.guard';
         path.resolve(__dirname, '../.env'),
       ],
     }),
+    ScheduleModule.forRoot(),
     JwtModule.register({
       global: true,
     }),

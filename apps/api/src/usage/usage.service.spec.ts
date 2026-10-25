@@ -38,19 +38,52 @@ describe('UsageService', () => {
         findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn(),
         aggregate: jest.fn().mockResolvedValue({ _sum: { estimatedCost: 0.042 } }),
       },
-      $queryRaw: jest.fn().mockImplementation(async () => [
-        {
-          id: 'rec-1',
-          requestId: 'req-1',
-          userId: 'dev-user-001',
-          reservedTokens: 2_000,
-          status: 'reserved',
-          createdAt: new Date(),
-        },
-      ]),
+      $queryRaw: jest.fn().mockImplementation(async (query: any) => {
+        const sql = Array.isArray(query)
+          ? query.join(' ')
+          : query?.strings
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('SELECT "id", "userId"') && sql.includes('FROM "usage_records"')) {
+          return [];
+        }
+        if (sql.includes('UPDATE "quota_periods"')) {
+          return [
+            {
+              id: 'period-1',
+              tokenLimit: 100_000,
+              reservedTokens: 2_000,
+              actualTokens: 10_000,
+              periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+            },
+          ];
+        }
+        if (sql.includes('SELECT "id", "tokenLimit"') || sql.includes('FROM "quota_periods"')) {
+          return [
+            {
+              id: 'period-1',
+              tokenLimit: 100_000,
+              reservedTokens: 2_000,
+              actualTokens: 10_000,
+              periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+            },
+          ];
+        }
+        return [
+          {
+            id: 'rec-1',
+            requestId: 'req-1',
+            userId: 'dev-user-001',
+            reservedTokens: 2_000,
+            status: 'reserved',
+            createdAt: new Date(),
+          },
+        ];
+      }),
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback(mockPrisma);
       }),
@@ -252,8 +285,6 @@ describe('UsageService', () => {
       expect(res.reservedTokens).toBe(2_000);
       expect(res.remainingTokens).toBe(88_000);
 
-      const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
-      expect(periodUpdate.data.reservedTokens).toEqual({ increment: 2_000 });
       expect(mockPrisma.$queryRaw).toHaveBeenCalled();
     });
 
@@ -276,6 +307,37 @@ describe('UsageService', () => {
         reservedTokens: 1_000,
       });
 
+      mockPrisma.$queryRaw.mockImplementation(async (query: any) => {
+        const sql = Array.isArray(query)
+          ? query.join(' ')
+          : query?.strings
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('UPDATE "quota_periods"')) {
+          return []; // Zero rows updated: quota condition violated
+        }
+        if (sql.includes('SELECT "id", "tokenLimit"') || sql.includes('FROM "quota_periods"')) {
+          return [
+            {
+              id: 'period-1',
+              tokenLimit: 50_000,
+              actualTokens: 49_000,
+              reservedTokens: 1_000,
+              periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+            },
+          ];
+        }
+        return [
+          {
+            id: 'rec-overflow',
+            requestId: 'req-overflow',
+            userId: 'dev-user-001',
+            reservedTokens: 2_000,
+            status: 'reserved',
+          },
+        ];
+      });
+
       let thrownError: any = null;
       try {
         await service.reserveUsage({
@@ -295,9 +357,9 @@ describe('UsageService', () => {
       const resp = thrownError.getResponse();
       expect(resp.error).toBe('QUOTA_EXCEEDED');
       expect(resp.tokenLimit).toBe(50_000);
-      expect(resp.actualTokens).toBe(48_000);
+      expect(resp.actualTokens).toBe(49_000);
       expect(resp.reservedTokens).toBe(1_000);
-      expect(resp.remainingTokens).toBe(1_000);
+      expect(resp.remainingTokens).toBe(0);
     });
 
     it('should be idempotent for duplicate reservation requests with the same requestId', async () => {
@@ -347,7 +409,7 @@ describe('UsageService', () => {
 
       mockPrisma.usageRecord.findUnique.mockResolvedValue(null);
 
-      let currentPeriodState = {
+      const currentPeriodState = {
         id: 'period-concurrency',
         userId: 'dev-user-001',
         periodStart: new Date('2026-10-01T00:00:00.000Z'),
@@ -358,11 +420,53 @@ describe('UsageService', () => {
       };
 
       mockPrisma.quotaPeriod.findUnique.mockImplementation(async () => ({ ...currentPeriodState }));
-      mockPrisma.quotaPeriod.update.mockImplementation(async (args: any) => {
-        if (args.data.reservedTokens?.increment) {
-          currentPeriodState.reservedTokens += args.data.reservedTokens.increment;
+
+      mockPrisma.$queryRaw.mockImplementation(async (query: any) => {
+        const sql = Array.isArray(query)
+          ? query.join(' ')
+          : query?.strings
+          ? query.strings.join(' ')
+          : String(query);
+        if (sql.includes('UPDATE "quota_periods"')) {
+          if (
+            currentPeriodState.actualTokens +
+              currentPeriodState.reservedTokens +
+              4_000 <=
+            currentPeriodState.tokenLimit
+          ) {
+            currentPeriodState.reservedTokens += 4_000;
+            return [
+              {
+                id: currentPeriodState.id,
+                tokenLimit: currentPeriodState.tokenLimit,
+                reservedTokens: currentPeriodState.reservedTokens,
+                actualTokens: currentPeriodState.actualTokens,
+                periodEnd: currentPeriodState.periodEnd,
+              },
+            ];
+          }
+          return []; // Conditional check fails on 2nd concurrent request
         }
-        return { ...currentPeriodState };
+        if (sql.includes('SELECT "id", "tokenLimit"') || sql.includes('FROM "quota_periods"')) {
+          return [
+            {
+              id: currentPeriodState.id,
+              tokenLimit: currentPeriodState.tokenLimit,
+              reservedTokens: currentPeriodState.reservedTokens,
+              actualTokens: currentPeriodState.actualTokens,
+              periodEnd: currentPeriodState.periodEnd,
+            },
+          ];
+        }
+        return [
+          {
+            id: 'rec-conc',
+            requestId: 'req-conc',
+            userId: 'dev-user-001',
+            reservedTokens: 4_000,
+            status: 'reserved',
+          },
+        ];
       });
 
       // Request 1: requests 4,000 tokens (4,000 actual + 0 reserved + 4,000 req = 8,000 <= 10,000) -> SUCCEEDS
@@ -567,6 +671,7 @@ describe('UsageService', () => {
     });
 
     it('should be idempotent and not double-reconcile already completed records', async () => {
+      mockPrisma.usageRecord.updateMany.mockResolvedValueOnce({ count: 0 });
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
         id: 'rec-already',
         requestId: 'req-already',
@@ -582,6 +687,108 @@ describe('UsageService', () => {
 
       expect(res.success).toBe(true);
       expect(mockPrisma.quotaPeriod.update).not.toHaveBeenCalled();
+    });
+
+    it('should log a warning if quota period row is missing during reconcile', async () => {
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+      mockPrisma.usageRecord.updateMany.mockResolvedValueOnce({ count: 1 });
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'rec-missing-period',
+        requestId: 'req-missing-period',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        reservedTokens: 1_000,
+        status: 'reserved',
+        createdAt: new Date(),
+      });
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce(null);
+
+      const res = await service.reconcileUsage({
+        requestId: 'req-missing-period',
+        userId: 'dev-user-001',
+        success: true,
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150, source: 'provider-reported' },
+      });
+
+      expect(res.success).toBe(true);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Quota period row missing at reconcile'),
+      );
+    });
+  });
+
+  describe('sweepExpiredReservations', () => {
+    it('should return sweptCount: 0 when no stale reservations exist', async () => {
+      mockPrisma.$queryRaw.mockResolvedValueOnce([]); // no stale records
+
+      const result = await service.sweepExpiredReservations(60_000);
+      expect(result.sweptCount).toBe(0);
+    });
+
+    it('should sweep stale reserved records, mark them expired, and release tokens', async () => {
+      const staleRecord = {
+        id: 'rec-stale-1',
+        userId: 'dev-user-001',
+        requestId: 'req-stale-1',
+        reservedTokens: 500,
+        createdAt: new Date(Date.now() - 120_000),
+      };
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        reservedTokens: 500,
+      });
+
+      mockPrisma.$queryRaw.mockImplementation(async (query: any) => {
+        const sql = Array.isArray(query) ? query.join(' ') : query?.strings ? query.strings.join(' ') : String(query);
+        if (sql.includes('SELECT "id", "userId"') && sql.includes('FROM "usage_records"')) {
+          return [staleRecord];
+        }
+        if (sql.includes('UPDATE "quota_periods"')) {
+          return [{ id: 'period-1' }];
+        }
+        return [];
+      });
+
+      const result = await service.sweepExpiredReservations(60_000);
+      expect(result.sweptCount).toBe(1);
+
+      expect(mockPrisma.usageRecord.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'rec-stale-1' },
+          data: expect.objectContaining({
+            status: 'expired',
+          }),
+        }),
+      );
+    });
+
+    it('should log a warning if quota period row is missing during token release in sweeper', async () => {
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+      const staleRecord = {
+        id: 'rec-stale-2',
+        userId: 'user-no-period',
+        requestId: 'req-stale-2',
+        reservedTokens: 500,
+        createdAt: new Date(Date.now() - 120_000),
+      };
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce(null);
+
+      mockPrisma.$queryRaw.mockImplementation(async (query: any) => {
+        const sql = Array.isArray(query) ? query.join(' ') : query?.strings ? query.strings.join(' ') : String(query);
+        if (sql.includes('SELECT "id", "userId"') && sql.includes('FROM "usage_records"')) {
+          return [staleRecord];
+        }
+        return [];
+      });
+
+      const result = await service.sweepExpiredReservations(60_000);
+      expect(result.sweptCount).toBe(1);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Quota period row missing when releasing expired reservation'),
+      );
     });
   });
 

@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsageRecord } from '@prisma/client';
 import { calculateCost } from '../experiments/cost-calculator';
@@ -347,60 +348,56 @@ export class UsageService {
         };
       }
 
-      // We created the record (created: true). Now check and increment quota on active quota period.
-      // Row-level lock to serialize concurrent requests and eliminate stale reads
-      let activeActual = currentPeriod.actualTokens;
-      let activeReserved = currentPeriod.reservedTokens;
-      let activeLimit = currentPeriod.tokenLimit;
+      // 3. Atomic conditional UPDATE on quota_periods in the same transaction as claim INSERT
+      const updatedPeriods = await tx.$queryRaw<Array<{
+        id: string;
+        tokenLimit: number;
+        reservedTokens: number;
+        actualTokens: number;
+        periodEnd: Date;
+      }>>`
+        UPDATE "quota_periods"
+        SET "reservedTokens" = "reservedTokens" + ${estimatedTokens}
+        WHERE "id" = ${currentPeriod.id}
+          AND ("actualTokens" + "reservedTokens" + ${estimatedTokens}) <= "tokenLimit"
+        RETURNING "id", "tokenLimit", "reservedTokens", "actualTokens", "periodEnd";
+      `;
 
-      if (typeof tx.$queryRawUnsafe === 'function') {
-        try {
-          const rows = (await tx.$queryRawUnsafe(
-            `SELECT id, "tokenLimit", "reservedTokens", "actualTokens" FROM "quota_periods" WHERE id = $1 FOR UPDATE`,
-            currentPeriod.id,
-          )) as Array<{ id: string; tokenLimit: number; reservedTokens: number; actualTokens: number }>;
-
-          if (rows && rows.length > 0) {
-            activeLimit = rows[0].tokenLimit ?? activeLimit;
-            activeReserved = rows[0].reservedTokens ?? activeReserved;
-            activeActual = rows[0].actualTokens ?? activeActual;
-          }
-        } catch {
-          // Continues safely in environments or mocks without raw SQL support
-        }
-      }
-
-      const totalProjected = activeActual + activeReserved + estimatedTokens;
-
-      if (totalProjected > activeLimit) {
+      if (!updatedPeriods || updatedPeriods.length === 0) {
+        const latestPeriodRows = await tx.$queryRaw<Array<{
+          id: string;
+          tokenLimit: number;
+          reservedTokens: number;
+          actualTokens: number;
+          periodEnd: Date;
+        }>>`
+          SELECT "id", "tokenLimit", "reservedTokens", "actualTokens", "periodEnd"
+          FROM "quota_periods"
+          WHERE "id" = ${currentPeriod.id};
+        `;
+        const latestPeriod = latestPeriodRows?.[0] || currentPeriod;
         const remaining = Math.max(
           0,
-          activeLimit - (activeActual + activeReserved),
+          latestPeriod.tokenLimit - (latestPeriod.actualTokens + latestPeriod.reservedTokens),
         );
+
         throw new HttpException(
           {
             statusCode: HttpStatus.TOO_MANY_REQUESTS,
             error: 'QUOTA_EXCEEDED',
             message: `Monthly token quota exceeded. Available: ${remaining.toLocaleString()} tokens, Requested reservation: ${estimatedTokens.toLocaleString()} tokens.`,
-            tokenLimit: activeLimit,
-            actualTokens: activeActual,
-            reservedTokens: activeReserved,
+            tokenLimit: latestPeriod.tokenLimit,
+            actualTokens: latestPeriod.actualTokens,
+            reservedTokens: latestPeriod.reservedTokens,
             requestedTokens: estimatedTokens,
             remainingTokens: remaining,
-            resetDate: currentPeriod.periodEnd.toISOString(),
+            resetDate: latestPeriod.periodEnd ? new Date(latestPeriod.periodEnd).toISOString() : new Date().toISOString(),
           },
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
 
-      // Atomically increment reserved tokens
-      const updatedPeriod = await tx.quotaPeriod.update({
-        where: { id: currentPeriod.id },
-        data: {
-          reservedTokens: { increment: estimatedTokens },
-        },
-      });
-
+      const updatedPeriod = updatedPeriods[0];
       const remainingAfter = Math.max(
         0,
         updatedPeriod.tokenLimit - (updatedPeriod.actualTokens + updatedPeriod.reservedTokens),
@@ -424,6 +421,39 @@ export class UsageService {
    */
   async reconcileUsage(dto: ReconcileUsageDto): Promise<{ success: boolean; record: UsageRecord | null }> {
     return await this.prisma.$transaction(async (tx) => {
+      // 1. Atomically claim the record for reconciliation: transition status 'reserved' -> 'reconciling'
+      const claimResult = await tx.usageRecord.updateMany({
+        where: {
+          userId: dto.userId,
+          requestId: dto.requestId,
+          status: 'reserved',
+        },
+        data: {
+          status: 'reconciling',
+        },
+      });
+
+      if (claimResult.count === 0) {
+        // Either not found or already claimed/reconciled/failed
+        const existingRecord = await tx.usageRecord.findUnique({
+          where: {
+            userId_requestId: {
+              userId: dto.userId,
+              requestId: dto.requestId,
+            },
+          },
+        });
+
+        if (!existingRecord) {
+          this.logger.warn(`Cannot reconcile unknown requestId: ${dto.requestId} for user: ${dto.userId}`);
+          return { success: false, record: null };
+        }
+
+        // Idempotent: already claimed, reconciled, or marked failed
+        return { success: true, record: existingRecord };
+      }
+
+      // We successfully claimed the record (count === 1). Retrieve it for processing.
       const record = await tx.usageRecord.findUnique({
         where: {
           userId_requestId: {
@@ -434,13 +464,7 @@ export class UsageService {
       });
 
       if (!record) {
-        this.logger.warn(`Cannot reconcile unknown requestId: ${dto.requestId} for user: ${dto.userId}`);
         return { success: false, record: null };
-      }
-
-      // Idempotency: if already reconciled or marked failed, do not double-process
-      if (record.status !== 'reserved') {
-        return { success: true, record };
       }
 
       const reservedAmount = record.reservedTokens;
@@ -471,6 +495,10 @@ export class UsageService {
               actualTokens: { increment: totalTokens },
             },
           });
+        } else {
+          this.logger.warn(
+            `Quota period row missing at reconcile for user: ${record.userId}, periodStart: ${periodStart.toISOString()}`,
+          );
         }
 
         const updatedRecord = await tx.usageRecord.update({
@@ -512,6 +540,10 @@ export class UsageService {
                 actualTokens: { increment: conservativeConsumed },
               },
             });
+          } else {
+            this.logger.warn(
+              `Quota period row missing at reconcile for user: ${record.userId}, periodStart: ${periodStart.toISOString()}`,
+            );
           }
 
           const cost = calculateCost(record.model, conservativeConsumed, 0);
@@ -541,6 +573,10 @@ export class UsageService {
               reservedTokens: { decrement: reservedAmount },
             },
           });
+        } else {
+          this.logger.warn(
+            `Quota period row missing at reconcile for user: ${record.userId}, periodStart: ${periodStart.toISOString()}`,
+          );
         }
 
         const updatedRecord = await tx.usageRecord.update({
@@ -611,5 +647,93 @@ export class UsageService {
       message: `Active period ${period.id} tokens reset to 0 for demo/testing.`,
       status: await this.getStatus(uid),
     };
+  }
+
+  /**
+   * Scheduled background sweeper: finds and reclaims leaked reservations older than 2x gateway timeout.
+   * Runs every minute. Safe across multi-instance clusters using row-level FOR UPDATE SKIP LOCKED.
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async handleSweepCron(): Promise<{ sweptCount: number }> {
+    return await this.sweepExpiredReservations();
+  }
+
+  /**
+   * Sweeps usage_records with status 'reserved' older than maxAgeMs (default 60s, i.e. 2x 30s timeout),
+   * marks them 'expired', and atomically releases reservedTokens back to their quota periods.
+   * Row-level FOR UPDATE SKIP LOCKED ensures multi-instance concurrency safety.
+   */
+  async sweepExpiredReservations(
+    maxAgeMs = 60_000,
+    batchSize = 100,
+  ): Promise<{ sweptCount: number }> {
+    const cutoffDate = new Date(Date.now() - maxAgeMs);
+
+    return await this.prisma.$transaction(async (tx) => {
+      // 1. Concurrency-safe selection using row-level FOR UPDATE SKIP LOCKED
+      const staleRecords = await tx.$queryRaw<Array<{
+        id: string;
+        userId: string;
+        requestId: string;
+        reservedTokens: number;
+        createdAt: Date;
+      }>>`
+        SELECT "id", "userId", "requestId", "reservedTokens", "createdAt"
+        FROM "usage_records"
+        WHERE "status" = 'reserved'
+          AND "createdAt" <= ${cutoffDate}
+        ORDER BY "createdAt" ASC
+        LIMIT ${batchSize}
+        FOR UPDATE SKIP LOCKED;
+      `;
+
+      if (!staleRecords || staleRecords.length === 0) {
+        return { sweptCount: 0 };
+      }
+
+      for (const record of staleRecords) {
+        const { periodStart } = this.getUtcMonthBounds(new Date(record.createdAt));
+
+        // Mark usage record as expired
+        await tx.usageRecord.update({
+          where: { id: record.id },
+          data: {
+            status: 'expired',
+            reconciledAt: new Date(),
+            responseBody: {
+              error: 'RESERVATION_EXPIRED',
+              message: 'Reservation timed out without reconciliation and was reclaimed by the sweeper.',
+            },
+          },
+        });
+
+        // Atomically release reservedTokens back to active quota period
+        if (record.reservedTokens > 0) {
+          const period = await tx.quotaPeriod.findUnique({
+            where: {
+              userId_periodStart: {
+                userId: record.userId,
+                periodStart,
+              },
+            },
+          });
+
+          if (period) {
+            await tx.$queryRaw`
+              UPDATE "quota_periods"
+              SET "reservedTokens" = GREATEST(0, "reservedTokens" - ${record.reservedTokens})
+              WHERE "id" = ${period.id};
+            `;
+          } else {
+            this.logger.warn(
+              `Quota period row missing when releasing expired reservation for user: ${record.userId}, periodStart: ${periodStart.toISOString()}`,
+            );
+          }
+        }
+      }
+
+      this.logger.log(`Sweeper reclaimed ${staleRecords.length} expired reservation(s) older than ${maxAgeMs}ms`);
+      return { sweptCount: staleRecords.length };
+    });
   }
 }

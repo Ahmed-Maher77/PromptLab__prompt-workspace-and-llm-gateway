@@ -671,6 +671,310 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(replayResult.content).toBe('Concurrent idempotency completion');
       expect(providerCalls).toBe(1); // Still 1!
     });
+
+    it('executes 50 concurrent reserveUsage calls against a limit allowing 10 → exactly 10 succeed (QUOTA-02)', async () => {
+      const prisma = app.get(PrismaService);
+      const usageService = app.get(UsageService);
+      const testUserId = `test-user-quota02-${Date.now()}`;
+
+      await prisma.user.create({
+        data: {
+          id: testUserId,
+          email: `${testUserId}@example.com`,
+          displayName: 'QUOTA02 Test User',
+          role: 'user',
+        },
+      });
+
+      // Set user policy to 1,000 monthly tokens with a high rate limit so rate limiting does not interfere
+      await prisma.quotaPolicy.create({
+        data: {
+          scope: 'user',
+          scopeId: testUserId,
+          monthlyTokenLimit: 1_000,
+          requestRateLimit: 500,
+        },
+      });
+
+      const { periodStart, periodEnd } = usageService.getUtcMonthBounds();
+      await prisma.quotaPeriod.create({
+        data: {
+          userId: testUserId,
+          periodStart,
+          periodEnd,
+          tokenLimit: 1_000,
+          reservedTokens: 0,
+          actualTokens: 0,
+          status: 'active',
+        },
+      });
+
+      // Launch 50 concurrent reservations, each requesting 100 tokens (10 * 100 = 1000 limit)
+      const concurrentReservations = Array.from({ length: 50 }, (_, i) =>
+        usageService.reserveUsage({
+          requestId: `req-quota02-${i}-${Date.now()}`,
+          userId: testUserId,
+          model: 'gpt-4o-mini',
+          provider: 'gateway',
+          estimatedTokens: 100,
+        }),
+      );
+
+      const results = await Promise.allSettled(concurrentReservations);
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      // Exactly 10 succeed, exactly 40 fail with QUOTA_EXCEEDED!
+      expect(fulfilled).toHaveLength(10);
+      expect(rejected).toHaveLength(40);
+
+      for (const res of fulfilled) {
+        expect((res as PromiseFulfilledResult<any>).value.success).toBe(true);
+        expect((res as PromiseFulfilledResult<any>).value.reservedTokens).toBe(100);
+      }
+
+      for (const rej of rejected) {
+        const error = (rej as PromiseRejectedResult).reason;
+        expect(error.getStatus()).toBe(429);
+        expect(error.getResponse().error).toBe('QUOTA_EXCEEDED');
+      }
+
+      // Check the quota period in PostgreSQL: reservedTokens must be exactly 1000 (never over-allocated)
+      const period = await prisma.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: testUserId,
+            periodStart,
+          },
+        },
+      });
+      expect(period?.reservedTokens).toBe(1_000);
+      expect(period?.actualTokens).toBe(0);
+
+      // Check usage records in PostgreSQL: exactly 10 records exist, all for the succeeded reservations
+      const records = await prisma.usageRecord.findMany({
+        where: { userId: testUserId },
+      });
+      expect(records).toHaveLength(10);
+      for (const rec of records) {
+        expect(rec.status).toBe('reserved');
+        expect(rec.reservedTokens).toBe(100);
+      }
+    });
+
+    it('executes 10 concurrent reconcileUsage calls for the same request → applies exactly once (QUOTA-03)', async () => {
+      const prisma = app.get(PrismaService);
+      const usageService = app.get(UsageService);
+      const testUserId = `user-quota03-${Date.now()}`;
+      const testRequestId = `req-quota03-${Date.now()}`;
+
+      await prisma.user.create({
+        data: {
+          id: testUserId,
+          email: `${testUserId}@example.com`,
+          displayName: 'QUOTA03 Test User',
+          role: 'user',
+        },
+      });
+
+      await prisma.quotaPolicy.create({
+        data: {
+          scope: 'user',
+          scopeId: testUserId,
+          monthlyTokenLimit: 10_000,
+          requestRateLimit: 500,
+        },
+      });
+
+      // 1. Initial reservation of 1,000 tokens
+      const reservation = await usageService.reserveUsage({
+        requestId: testRequestId,
+        userId: testUserId,
+        model: 'gpt-4o-mini',
+        provider: 'gateway',
+        estimatedTokens: 1_000,
+      });
+
+      expect(reservation.success).toBe(true);
+      expect(reservation.reservedTokens).toBe(1_000);
+
+      // Verify DB state before reconciles: 1,000 reserved, 0 actual
+      const { periodStart } = usageService.getUtcMonthBounds();
+      let period = await prisma.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: testUserId,
+            periodStart,
+          },
+        },
+      });
+      expect(period?.reservedTokens).toBe(1_000);
+      expect(period?.actualTokens).toBe(0);
+
+      // 2. Fire 10 concurrent reconciles of this exact same request
+      const concurrentReconciles = Array.from({ length: 10 }, () =>
+        usageService.reconcileUsage({
+          requestId: testRequestId,
+          userId: testUserId,
+          success: true,
+          usage: {
+            promptTokens: 400,
+            completionTokens: 200,
+            totalTokens: 600,
+            source: 'provider-reported',
+          },
+          responseBody: {
+            success: true,
+            content: 'Concurrent reconcile response',
+            model: 'gpt-4o-mini',
+            latencyMs: 120,
+          },
+        }),
+      );
+
+      const results = await Promise.all(concurrentReconciles);
+
+      // All 10 resolve successfully
+      for (const res of results) {
+        expect(res.success).toBe(true);
+        expect(res.record).toBeDefined();
+        expect(res.record?.status).toBe('reconciled');
+      }
+
+      // Check the quota period in PostgreSQL:
+      // reservedTokens MUST have been decremented by 1,000 exactly once (now 0, NOT negative -9,000)
+      // actualTokens MUST have been incremented by 600 exactly once (now 600, NOT 6,000)
+      period = await prisma.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: testUserId,
+            periodStart,
+          },
+        },
+      });
+      expect(period?.reservedTokens).toBe(0);
+      expect(period?.actualTokens).toBe(600);
+
+      // Check usage record in PostgreSQL: exactly 1 record exists with reconciled values
+      const record = await prisma.usageRecord.findUnique({
+        where: {
+          userId_requestId: {
+            userId: testUserId,
+            requestId: testRequestId,
+          },
+        },
+      });
+      expect(record?.status).toBe('reconciled');
+      expect(record?.inputTokens).toBe(400);
+      expect(record?.outputTokens).toBe(200);
+      expect(record?.reconciledAt).not.toBeNull();
+    });
+
+    it('releases a stale reservation exactly once across concurrent sweepers (QUOTA-04)', async () => {
+      const prisma = app.get(PrismaService);
+      const usageService = app.get(UsageService);
+      const testUserId = `user-quota04-${Date.now()}`;
+      const testRequestId = `req-quota04-${Date.now()}`;
+
+      await prisma.user.create({
+        data: {
+          id: testUserId,
+          email: `${testUserId}@example.com`,
+          displayName: 'QUOTA04 Test User',
+          role: 'user',
+        },
+      });
+
+      await prisma.quotaPolicy.create({
+        data: {
+          scope: 'user',
+          scopeId: testUserId,
+          monthlyTokenLimit: 10_000,
+          requestRateLimit: 500,
+        },
+      });
+
+      // 1. Initial reservation of 750 tokens
+      const reservation = await usageService.reserveUsage({
+        requestId: testRequestId,
+        userId: testUserId,
+        model: 'gpt-4o-mini',
+        provider: 'gateway',
+        estimatedTokens: 750,
+      });
+
+      expect(reservation.success).toBe(true);
+      expect(reservation.reservedTokens).toBe(750);
+
+      // Verify DB state before sweeper: 750 reserved, 0 actual
+      const { periodStart } = usageService.getUtcMonthBounds();
+      let period = await prisma.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: testUserId,
+            periodStart,
+          },
+        },
+      });
+      expect(period?.reservedTokens).toBe(750);
+      expect(period?.actualTokens).toBe(0);
+
+      // 2. Age the reservation so it is older than the 60s threshold (e.g. 120s ago)
+      const staleDate = new Date(Date.now() - 120_000);
+      await prisma.usageRecord.update({
+        where: {
+          userId_requestId: {
+            userId: testUserId,
+            requestId: testRequestId,
+          },
+        },
+        data: {
+          createdAt: staleDate,
+        },
+      });
+
+      // 3. Launch TWO sweepers concurrently (both targeting maxAgeMs = 60_000)
+      const [sweep1, sweep2] = await Promise.all([
+        usageService.sweepExpiredReservations(60_000),
+        usageService.sweepExpiredReservations(60_000),
+      ]);
+
+      // Exactly ONE sweeper locked and processed the stale reservation (FOR UPDATE SKIP LOCKED)
+      expect(sweep1.sweptCount + sweep2.sweptCount).toBe(1);
+
+      // 4. Verify in PostgreSQL: reservedTokens decremented by 750 exactly once (now 0, not negative!)
+      period = await prisma.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: testUserId,
+            periodStart,
+          },
+        },
+      });
+      expect(period?.reservedTokens).toBe(0);
+      expect(period?.actualTokens).toBe(0);
+
+      // 5. Verify usageRecord status is 'expired' in PostgreSQL
+      const record = await prisma.usageRecord.findUnique({
+        where: {
+          userId_requestId: {
+            userId: testUserId,
+            requestId: testRequestId,
+          },
+        },
+      });
+      expect(record?.status).toBe('expired');
+      expect(record?.reconciledAt).not.toBeNull();
+      expect(record?.responseBody).toEqual(
+        expect.objectContaining({
+          error: 'RESERVATION_EXPIRED',
+        }),
+      );
+
+      // 6. Running sweeper again reclaims 0 records (idempotent)
+      const sweepAgain = await usageService.sweepExpiredReservations(60_000);
+      expect(sweepAgain.sweptCount).toBe(0);
+    });
   });
 
 });

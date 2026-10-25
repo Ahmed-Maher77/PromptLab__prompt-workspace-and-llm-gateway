@@ -107,7 +107,7 @@ export class LlmExecutionService {
       // If this call did not create the record, handle replay / in-progress
       if (reservation.created === false) {
         const existingRecord = reservation.record;
-        if (!existingRecord || existingRecord.status === 'reserved') {
+        if (!existingRecord || existingRecord.status === 'reserved' || existingRecord.status === 'reconciling') {
           throw new ConflictException('REQUEST_IN_PROGRESS');
         }
 
