@@ -211,8 +211,9 @@ export class ExperimentsService {
     }
 
     // 1. Prepare templates and resolve prompt text for Slot A and Slot B
-    const resolvedSlotA = await this.prepareSlot(dto.slotA, dto.commonInput);
-    const resolvedSlotB = await this.prepareSlot(dto.slotB, dto.commonInput);
+    // EXP-01: validate both slots before any LLM calls: unknown promptVersionId -> 404, neither version nor non-empty templateBody -> 400
+    const resolvedSlotA = await this.prepareSlot(dto.slotA, dto.commonInput, 'slotA');
+    const resolvedSlotB = await this.prepareSlot(dto.slotB, dto.commonInput, 'slotB');
 
     // 2. Pre-compile evaluation criteria once for both slots
     const preparedCriteria = this.prepareCriteria(dto.evaluationCriteria || []);
@@ -340,9 +341,16 @@ export class ExperimentsService {
 
   /**
    * Resolves template text and metadata for a slot configuration.
+   * EXP-01: Validates slot configuration before executing LLM completions:
+   * - Unknown promptVersionId throws NotFoundException (404)
+   * - Missing or empty templateBody when promptVersionId is omitted throws BadRequestException (400)
    */
-  private async prepareSlot(slot: SlotConfigDto, commonInput: Record<string, string>) {
-    let templateBody = slot.templateBody || '';
+  private async prepareSlot(
+    slot: SlotConfigDto,
+    commonInput: Record<string, string>,
+    slotLabel: 'slotA' | 'slotB',
+  ) {
+    let templateBody = slot.templateBody?.trim() || '';
     let promptId: string | undefined = slot.promptId;
     let promptName: string | undefined;
     let versionNumber: number | undefined = slot.versionNumber;
@@ -353,12 +361,22 @@ export class ExperimentsService {
         include: { prompt: true },
       });
 
-      if (version) {
-        templateBody = version.templateBody;
-        promptId = version.prompt.id;
-        promptName = version.prompt.name;
-        versionNumber = version.versionNumber;
+      if (!version) {
+        throw new NotFoundException(
+          `Prompt version "${slot.promptVersionId}" for ${slotLabel} was not found.`,
+        );
       }
+
+      templateBody = version.templateBody;
+      promptId = version.prompt.id;
+      promptName = version.prompt.name;
+      versionNumber = version.versionNumber;
+    }
+
+    if (!templateBody) {
+      throw new BadRequestException(
+        `${slotLabel} must provide either a valid promptVersionId or a non-empty templateBody.`,
+      );
     }
 
     const preview = this.promptsService.resolveTemplate({

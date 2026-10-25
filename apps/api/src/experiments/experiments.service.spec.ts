@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { PromptsService } from '../prompts/prompts.service';
 import { UsageService } from '../usage/usage.service';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('ExperimentsService', () => {
   let service: ExperimentsService;
@@ -247,6 +247,53 @@ describe('ExperimentsService', () => {
         2,
         expect.objectContaining({ userId: 'caller-user-456' }),
       );
+    });
+
+    it('should throw NotFoundException (404) if promptVersionId does not exist and NOT call LLM or reserveUsage (EXP-01)', async () => {
+      mockPrisma.promptVersion.findUnique.mockResolvedValueOnce(null);
+
+      await expect(
+        service.runComparison({
+          name: 'Invalid version test',
+          commonInput: { input: 'test' },
+          slotA: {
+            promptVersionId: 'non-existent-version',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+          },
+          slotB: {
+            templateBody: 'Valid template {{input}}',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+          },
+        }, 'user-123'),
+      ).rejects.toThrow(NotFoundException);
+
+      // Verify no LLM calls and no usage reservations were made
+      expect(mockProviders.executeChatCompletion).not.toHaveBeenCalled();
+      expect(mockUsage.reserveUsage).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException (400) if slot provides neither promptVersionId nor non-empty templateBody (EXP-01)', async () => {
+      await expect(
+        service.runComparison({
+          name: 'Missing template test',
+          commonInput: { input: 'test' },
+          slotA: {
+            templateBody: '   ',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+          },
+          slotB: {
+            templateBody: 'Valid template {{input}}',
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+          },
+        }, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockProviders.executeChatCompletion).not.toHaveBeenCalled();
+      expect(mockUsage.reserveUsage).not.toHaveBeenCalled();
     });
   });
 
