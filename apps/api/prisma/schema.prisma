@@ -101,6 +101,7 @@ model Conversation {
   title     String
   provider  String
   model     String
+  contextBudget Int?
   status       String   @default("active") // active, archived
   lastSequence Int      @default(0)
   createdAt    DateTime @default(now())

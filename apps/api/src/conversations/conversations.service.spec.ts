@@ -6,6 +6,7 @@ import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { assembleConversationContext } from './context-policy';
 
 describe('ConversationsService', () => {
   let service: ConversationsService;
@@ -757,6 +758,279 @@ describe('ConversationsService', () => {
       expect(res.success).toBe(true);
       expect(res.activeCheckpoint?.id).toBe('chk-resumed');
       expect(res.originalMessagesRetained).toBe(3);
+    });
+  });
+
+  describe('contextBudget enforcement and sliding window (CONV-03)', () => {
+    it('keeps all messages and reports zero truncation when dialogue is within budget', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-within-budget',
+        title: 'Within Budget Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        contextBudget: 1000,
+        status: 'active',
+        messages: [
+          { id: 'm-1', role: 'system', content: 'You are a helpful assistant.', sequenceNumber: 1, status: 'complete' },
+          { id: 'm-2', role: 'user', content: 'Hello there', sequenceNumber: 2, status: 'complete' },
+          { id: 'm-3', role: 'assistant', content: 'General Kenobi', sequenceNumber: 3, status: 'complete' },
+        ],
+        checkpoints: [],
+      });
+
+      const inspection = await service.inspectContext('c-within-budget', 'How are you?', 'dev-user-001');
+
+      expect(inspection.withinBudget).toBe(true);
+      expect(inspection.inputBudget).toBe(1000);
+      expect(inspection.truncatedMessagesCount).toBe(0);
+      expect(inspection.retainedMessagesCount).toBe(2);
+      expect(inspection.assembledMessages.map((m) => m.content)).toEqual([
+        'You are a helpful assistant.',
+        'Hello there',
+        'General Kenobi',
+        'How are you?',
+      ]);
+    });
+
+    it('drops oldest retained messages via sliding window when over budget, keeping system, checkpoint, and whole user turns (CONV-03b)', async () => {
+      // System msg: ~8 tokens (32 chars)
+      // Checkpoint: ~28 tokens
+      // Retained m-3: 120 chars ~ 30 tokens (role: 'user')
+      // Retained m-4: 120 chars ~ 30 tokens (role: 'assistant')
+      // Retained m-5: 20 chars ~ 5 tokens (role: 'user')
+      // Proposed new message: 16 chars ~ 4 tokens
+      // Essential = 8 + 28 + 4 = 40 tokens
+      // With contextBudget = 80 tokens:
+      // Total without drop = 40 + 30 + 30 + 5 = 105 tokens > 80.
+      // Dropping m-3 (30 tokens) leaves 75 tokens <= 80, but leaves m-4 (assistant) as first retained.
+      // CONV-03b drops m-4 too so dialogue starts with m-5 (user) -> 45 tokens <= 80!
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-over-budget',
+        title: 'Over Budget Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        contextBudget: 80,
+        status: 'active',
+        messages: [
+          { id: 'm-1', role: 'system', content: 'You are a helpful test assistant', sequenceNumber: 1, status: 'complete' },
+          { id: 'm-2', role: 'user', content: 'Compacted early turn', sequenceNumber: 2, status: 'complete' },
+          { id: 'm-3', role: 'user', content: 'A'.repeat(120), sequenceNumber: 3, status: 'complete' },
+          { id: 'm-4', role: 'assistant', content: 'B'.repeat(120), sequenceNumber: 4, status: 'complete' },
+          { id: 'm-5', role: 'user', content: 'Short recent turn msg', sequenceNumber: 5, status: 'complete' },
+        ],
+        checkpoints: [
+          {
+            id: 'chk-1',
+            conversationId: 'c-over-budget',
+            summary: 'Compacted previous history facts.',
+            retainedFacts: ['Fact Alpha'],
+            compactedThroughSequence: 2,
+            createdAt: new Date(),
+          },
+        ],
+      });
+
+      const inspection = await service.inspectContext('c-over-budget', 'New turn input', 'dev-user-001');
+
+      expect(inspection.inputBudget).toBe(80);
+      expect(inspection.withinBudget).toBe(true);
+      // Both m-3 (user) and m-4 (assistant) dropped to avoid starting dialogue with orphaned reply
+      expect(inspection.truncatedMessagesCount).toBe(2);
+      expect(inspection.retainedMessagesCount).toBe(1); // m-5 kept
+
+      // Verify system instruction is kept
+      expect(inspection.assembledMessages[0].role).toBe('system');
+      expect(inspection.assembledMessages[0].source).toBe('system-instruction');
+
+      // Verify checkpoint summary is kept
+      expect(inspection.assembledMessages[1].source).toBe('checkpoint-summary');
+
+      // Verify surviving retained messages only include user m-5
+      const retainedMessages = inspection.assembledMessages.filter((m) => m.source === 'retained-message');
+      expect(retainedMessages.length).toBe(1);
+      expect(retainedMessages[0].role).toBe('user');
+      expect(retainedMessages[0].content).toBe('Short recent turn msg');
+
+      // Verify new user message is kept
+      const lastMsg = inspection.assembledMessages[inspection.assembledMessages.length - 1];
+      expect(lastMsg.source).toBe('current-input');
+      expect(lastMsg.content).toBe('New turn input');
+    });
+
+    it('caps effective contextBudget to model context limit (CONV-03a)', async () => {
+      // Known model: gpt-4o-mini (window 128,000, reservedOutput 1,024 -> maxInputBudget 126,976)
+      const convKnown = {
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        contextBudget: 1_048_576,
+        messages: [{ role: 'system', content: 'sys', sequenceNumber: 1, status: 'complete' }],
+      };
+      const resultKnown = assembleConversationContext(convKnown, 'hi');
+      expect(resultKnown.requestedBudget).toBe(1_048_576);
+      expect(resultKnown.inputBudget).toBe(126_976);
+
+      // Unknown model: contextWindow null -> maxInputBudget = defaultInputBudget = 4,096
+      const convUnknown = {
+        model: 'some-unknown-model',
+        provider: 'custom',
+        contextBudget: 1_048_576,
+        messages: [{ role: 'system', content: 'sys', sequenceNumber: 1, status: 'complete' }],
+      };
+      const resultUnknown = assembleConversationContext(convUnknown, 'hi');
+      expect(resultUnknown.requestedBudget).toBe(1_048_576);
+      expect(resultUnknown.inputBudget).toBe(4096);
+
+      // Null contextBudget falls back to defaultInputBudget
+      const convNull = {
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        contextBudget: null,
+        messages: [{ role: 'system', content: 'sys', sequenceNumber: 1, status: 'complete' }],
+      };
+      const resultNull = assembleConversationContext(convNull, 'hi');
+      expect(resultNull.requestedBudget).toBeNull();
+      expect(resultNull.inputBudget).toBe(8192); // 50% of 128k capped at 8192
+    });
+
+    it('clamps stored contextBudget to model maximum on conversation creation (CONV-03a)', async () => {
+      mockPrisma.$transaction.mockImplementationOnce(async (cb: any) => {
+        return cb(mockPrisma);
+      });
+      mockPrisma.conversation.create.mockResolvedValueOnce({
+        id: 'c-clamped',
+        ownerId: 'dev-user-001',
+        title: 'Clamped Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        contextBudget: 126_976,
+        status: 'active',
+        lastSequence: 0,
+      });
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce({
+        id: 'c-clamped',
+        ownerId: 'dev-user-001',
+        title: 'Clamped Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        contextBudget: 126_976,
+        status: 'active',
+        lastSequence: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        messages: [],
+        checkpoints: [],
+      });
+
+      await service.create(
+        {
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          contextBudget: 1_048_576,
+        },
+        'dev-user-001',
+      );
+
+      expect(mockPrisma.conversation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            contextBudget: 126_976, // clamped from 1,048,576
+          }),
+        }),
+      );
+    });
+
+    it('never starts the dialogue with an orphaned assistant reply across all budget ranges (CONV-03b)', () => {
+      // 6 user/assistant turns = 12 dialogue messages:
+      // seq 2 (user), seq 3 (assistant), seq 4 (user), seq 5 (assistant), ... seq 13 (assistant)
+      // Each message is 40 chars ~ 10 tokens.
+      const messages: any[] = [
+        { id: 'm-1', role: 'system', content: 'S'.repeat(40), sequenceNumber: 1, status: 'complete' },
+      ];
+      for (let turn = 1; turn <= 6; turn++) {
+        const userSeq = turn * 2;
+        const asstSeq = userSeq + 1;
+        messages.push({
+          id: `m-${userSeq}`,
+          role: 'user',
+          content: `U${turn}: `.padEnd(40, 'x'),
+          sequenceNumber: userSeq,
+          status: 'complete',
+        });
+        messages.push({
+          id: `m-${asstSeq}`,
+          role: 'assistant',
+          content: `A${turn}: `.padEnd(40, 'x'),
+          sequenceNumber: asstSeq,
+          status: 'complete',
+        });
+      }
+
+      // Essential tokens = System (10) + New user input (10) = 20 tokens
+      // Total tokens = 20 + 120 = 140 tokens
+      const newMsg = 'N'.repeat(40); // 10 tokens
+
+      for (let budget = 20; budget <= 160; budget += 5) {
+        const conv = {
+          model: 'gpt-4o-mini',
+          provider: 'openai',
+          contextBudget: budget,
+          messages,
+        };
+
+        const result = assembleConversationContext(conv, newMsg);
+
+        // Always fits within budget
+        expect(result.totalEstimatedInputTokens).toBeLessThanOrEqual(result.inputBudget);
+
+        // Surviving retained dialogue messages MUST begin with role 'user'
+        const retained = result.assembledMessages.filter((m: any) => m.source === 'retained-message');
+        if (retained.length > 0) {
+          expect(retained[0].role).toBe('user');
+        }
+
+        // Truncated count accurately matches dropped retained messages
+        expect(result.truncatedMessagesCount).toBe(12 - retained.length);
+      }
+    });
+
+    it('fails fast with 409 CONTEXT_BUDGET_EXCEEDED without calling llmExecutionService when essential tokens alone exceed budget', async () => {
+      // System prompt alone = 160 chars ~ 40 tokens
+      // Proposed new message = 120 chars ~ 30 tokens
+      // Essential = 70 tokens > budget of 50
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-impossible-budget',
+        title: 'Impossible Budget Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        contextBudget: 50,
+        status: 'active',
+        messages: [
+          { id: 'm-1', role: 'system', content: 'S'.repeat(160), sequenceNumber: 1, status: 'complete' },
+          { id: 'm-2', role: 'user', content: 'Existing turn', sequenceNumber: 2, status: 'complete' },
+        ],
+        checkpoints: [],
+      });
+
+      const llmService = (service as any).llmExecutionService;
+      const executeSpy = jest.spyOn(llmService, 'execute');
+
+      // 1. inspectContext reports withinBudget: false and essentialTokensExceeded: true
+      const inspection = await service.inspectContext('c-impossible-budget', 'U'.repeat(120), 'dev-user-001');
+      expect(inspection.withinBudget).toBe(false);
+      expect(inspection.essentialTokensExceeded).toBe(true);
+      expect(inspection.truncatedMessagesCount).toBe(1);
+
+      // 2. sendMessage throws 409 CONTEXT_BUDGET_EXCEEDED before executing LLM or reserving quota
+      await expect(
+        service.sendMessage(
+          'c-impossible-budget',
+          { content: 'U'.repeat(120) },
+          'dev-user-001',
+        ),
+      ).rejects.toThrow('CONTEXT_BUDGET_EXCEEDED');
+
+      // 3. Confirm provider / reserveUsage was NEVER called
+      expect(executeSpy).not.toHaveBeenCalled();
     });
   });
 });

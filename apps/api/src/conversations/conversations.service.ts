@@ -16,9 +16,11 @@ import {
 } from './dto/compact-conversation.dto';
 import {
   getModelContextPolicy,
+  getMaxInputBudget,
   estimateTokens,
   AssembledContextMessage,
   ContextInspectionResult,
+  assembleConversationContext,
 } from './context-policy';
 import { Prisma, ConversationMessage } from '@prisma/client';
 import { conflict } from '../common/utils/conflict.util';
@@ -48,6 +50,12 @@ export class ConversationsService {
       systemPromptContent && systemPromptContent.length > 0,
     );
 
+    const maxInputBudget = getMaxInputBudget(dto.model);
+    const storedBudget =
+      typeof dto.contextBudget === 'number' && dto.contextBudget > 0
+        ? Math.min(dto.contextBudget, maxInputBudget)
+        : null;
+
     const conversation = await this.prisma.$transaction(async (tx) => {
       const conv = await tx.conversation.create({
         data: {
@@ -55,6 +63,7 @@ export class ConversationsService {
           title,
           provider: dto.provider,
           model: dto.model,
+          contextBudget: storedBudget,
           status: 'active',
           lastSequence: hasSystemPrompt ? 1 : 0,
         },
@@ -124,6 +133,7 @@ export class ConversationsService {
         title: c.title,
         provider: c.provider,
         model: c.model,
+        contextBudget: c.contextBudget,
         status: c.status,
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
@@ -171,6 +181,7 @@ export class ConversationsService {
       title: conversation.title,
       provider: conversation.provider,
       model: conversation.model,
+      contextBudget: conversation.contextBudget,
       status: conversation.status,
       lastSequence: conversation.lastSequence,
       createdAt: conversation.createdAt,
@@ -211,125 +222,7 @@ export class ConversationsService {
     userId: string,
   ): Promise<ContextInspectionResult> {
     const conv = await this.findOne(id, userId);
-    const policy = getModelContextPolicy(conv.model);
-
-
-    const activeCheckpoint = conv.activeCheckpoint;
-    const isCompacted = !!activeCheckpoint;
-    const compactedThrough = activeCheckpoint
-      ? activeCheckpoint.compactedThroughSequence
-      : 0;
-
-    const assembledMessages: AssembledContextMessage[] = [];
-
-    // 1. System prompt (if sequence 1 is system and not failed)
-    const systemMsg = conv.messages.find(
-      (m) =>
-        m.role === 'system' &&
-        m.sequenceNumber === 1 &&
-        m.status !== 'failed',
-    );
-    if (systemMsg) {
-      assembledMessages.push({
-        role: 'system',
-        content: systemMsg.content,
-        source: 'system-instruction',
-        sequenceNumber: 1,
-        estimatedTokens: estimateTokens(systemMsg.content),
-      });
-    }
-
-    // 2. Checkpoint summary & facts (if compacted)
-    if (activeCheckpoint) {
-      const factsList = Array.isArray(activeCheckpoint.retainedFacts)
-        ? (activeCheckpoint.retainedFacts as string[])
-        : [];
-
-      const checkpointContent =
-        `[CONVERSATION CHECKPOINT SUMMARY]\n${activeCheckpoint.summary}\n\n` +
-        `[RETAINED FACTS & DECISIONS]\n` +
-        (factsList.length > 0
-          ? factsList.map((f) => `- ${f}`).join('\n')
-          : '(No specific facts listed)');
-
-      assembledMessages.push({
-        role: 'system',
-        content: checkpointContent,
-        source: 'checkpoint-summary',
-        sequenceNumber: activeCheckpoint.compactedThroughSequence,
-        estimatedTokens: estimateTokens(checkpointContent),
-      });
-    }
-
-    // 3. Retained uncompacted messages (messages with sequenceNumber > compactedThrough, skipping sequence 1 system msg and failed messages)
-    const uncompactedMessages = conv.messages.filter(
-      (m) =>
-        m.sequenceNumber > compactedThrough &&
-        !(m.role === 'system' && m.sequenceNumber === 1) &&
-        m.status !== 'failed',
-    );
-
-    for (const msg of uncompactedMessages) {
-      assembledMessages.push({
-        role: msg.role as 'system' | 'user' | 'assistant',
-        content: msg.content,
-        source: 'retained-message',
-        sequenceNumber: msg.sequenceNumber,
-        estimatedTokens: estimateTokens(msg.content),
-      });
-    }
-
-    // 4. Proposed current input (if provided)
-    if (proposedInput && proposedInput.trim().length > 0) {
-      assembledMessages.push({
-        role: 'user',
-        content: proposedInput.trim(),
-        source: 'current-input',
-        estimatedTokens: estimateTokens(proposedInput),
-      });
-    }
-
-    const totalEstimatedTokens = assembledMessages.reduce(
-      (sum, m) => sum + m.estimatedTokens,
-      0,
-    );
-
-    const compactedCount = activeCheckpoint
-      ? conv.messages.filter(
-          (m) =>
-            m.sequenceNumber <= activeCheckpoint.compactedThroughSequence &&
-            !(m.role === 'system' && m.sequenceNumber === 1) &&
-            m.status !== 'failed',
-        ).length
-      : 0;
-
-    return {
-      model: conv.model,
-      provider: conv.provider,
-      contextWindow: policy.contextWindow,
-      contextLimitStatus: policy.status,
-      inputBudget: policy.defaultInputBudget,
-      reservedOutputTokens: policy.reservedOutputTokens,
-      totalEstimatedInputTokens: totalEstimatedTokens,
-      tokenUsageSource: 'estimated',
-      isCompacted,
-      activeCheckpoint: activeCheckpoint
-        ? {
-            id: activeCheckpoint.id,
-            summary: activeCheckpoint.summary,
-            retainedFacts: Array.isArray(activeCheckpoint.retainedFacts)
-              ? (activeCheckpoint.retainedFacts as string[])
-              : [],
-            compactedThroughSequence: activeCheckpoint.compactedThroughSequence,
-            createdAt: activeCheckpoint.createdAt,
-          }
-        : null,
-      totalOriginalMessages: conv.messages.length,
-      retainedMessagesCount: uncompactedMessages.length,
-      compactedMessagesCount: compactedCount,
-      assembledMessages,
-      withinBudget: totalEstimatedTokens <= policy.defaultInputBudget,
-    };
+    return assembleConversationContext(conv, proposedInput);
   }
 
   /**
@@ -348,8 +241,17 @@ export class ConversationsService {
 
     const conv = await this.findOne(id, userId);
 
-    // 1. Build assembled context payload including proposed current input
-    const inspection = await this.inspectContext(id, dto.content.trim(), userId);
+    // 1. Build assembled context payload including proposed current input via shared assembly
+    const inspection = assembleConversationContext(conv, dto.content.trim());
+
+    // After sliding window truncation of dialogue messages, total estimated tokens
+    // are <= effectiveBudget unless the pinned essential tokens alone (system prompt,
+    // active checkpoint summary, and new user message) exceed the budget.
+    // Thus checking essentialTokensExceeded (or !withinBudget) catches impossible budgets fail-fast.
+    if (inspection.essentialTokensExceeded || !inspection.withinBudget) {
+      throw conflict('CONTEXT_BUDGET_EXCEEDED');
+    }
+
     const messagesPayload = inspection.assembledMessages.map((m) => ({
       role: m.role,
       content: m.content,

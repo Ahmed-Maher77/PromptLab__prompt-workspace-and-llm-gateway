@@ -1893,6 +1893,120 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       });
       await prisma.conversation.deleteMany({ where: { id: convId } });
     });
+
+    it('truncates older messages via sliding window and inspectContext matches dispatched payload (CONV-03)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+
+      let lastDispatchedMessages: any[] = [];
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (params) => {
+        lastDispatchedMessages = params.messages;
+        return {
+          success: true,
+          model: params.model,
+          content: 'Mock assistant response to turn',
+          latencyMs: 20,
+          usage: {
+            promptTokens: 25,
+            completionTokens: 15,
+            totalTokens: 40,
+            source: 'provider-reported',
+          },
+        };
+      });
+
+      // 1. Create a conversation with small contextBudget = 512 tokens
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Context Budget Truncation Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          contextBudget: 512,
+          systemPrompt: 'System instruction pinned: You are an architecture consultant.',
+        })
+        .expect(201);
+
+      const convId = convRes.body.id;
+      expect(convRes.body.contextBudget).toBe(512);
+
+      try {
+        // 2. Turn 1 (400 chars ~ 100 tokens)
+        await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .send({ content: 'Turn 1 user: ' + 'A'.repeat(400) })
+          .expect(201);
+
+        // 3. Turn 2 (400 chars ~ 100 tokens)
+        await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .send({ content: 'Turn 2 user: ' + 'B'.repeat(400) })
+          .expect(201);
+
+        // 4. Turn 3 (400 chars ~ 100 tokens)
+        await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .send({ content: 'Turn 3 user: ' + 'C'.repeat(400) })
+          .expect(201);
+
+        // 5. Turn 4 with 800 chars (~200 tokens). Total history (541 tokens) now exceeds 512 tokens budget.
+        const turn4Res = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .send({ content: 'Turn 4 user: ' + 'D'.repeat(800) })
+          .expect(201);
+
+        expect(turn4Res.body.success).toBe(true);
+
+        // Assert sliding window truncated oldest message(s):
+        // System instruction is preserved
+        expect(lastDispatchedMessages[0].role).toBe('system');
+        expect(lastDispatchedMessages[0].content).toContain('System instruction pinned');
+
+        // New user message is preserved
+        const lastSent = lastDispatchedMessages[lastDispatchedMessages.length - 1];
+        expect(lastSent.role).toBe('user');
+        expect(lastSent.content).toContain('Turn 4 user');
+
+        // Turn 1 content was truncated
+        const dispatchedContents = lastDispatchedMessages.map((m) => m.content);
+        expect(dispatchedContents.some((c) => c.includes('Turn 1 user'))).toBe(false);
+
+        // 6. inspectContext reports identical truncation
+        const inspectRes = await request(app.getHttpServer())
+          .get(`/api/conversations/${convId}/context`)
+          .set(authHeader)
+          .expect(200);
+
+        expect(inspectRes.body.inputBudget).toBe(512);
+        expect(inspectRes.body.requestedBudget).toBe(512);
+        expect(inspectRes.body.truncatedMessagesCount).toBeGreaterThan(0);
+        expect(inspectRes.body.withinBudget).toBe(true);
+
+        // System prompt and recent messages are in inspectRes.body.assembledMessages
+        expect(inspectRes.body.assembledMessages[0].role).toBe('system');
+        expect(inspectRes.body.assembledMessages[0].source).toBe('system-instruction');
+        const inspectContents = inspectRes.body.assembledMessages.map((m: any) => m.content);
+        expect(inspectContents.some((c: string) => c.includes('Turn 1 user'))).toBe(false);
+
+        // 7. Impossible budget: message alone exceeds budget -> 409 CONTEXT_BUDGET_EXCEEDED
+        const impossibleRes = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .send({ content: 'X'.repeat(3000) }) // 3000 chars ~ 750 tokens > 600 budget
+          .expect(409);
+
+        expect(impossibleRes.body.status).toBe(409);
+        expect(impossibleRes.body.code).toBe('CONTEXT_BUDGET_EXCEEDED');
+      } finally {
+        await prisma.conversation.deleteMany({ where: { id: convId } });
+        jest.restoreAllMocks();
+      }
+    });
   });
 
 });

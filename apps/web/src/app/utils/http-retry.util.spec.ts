@@ -108,6 +108,15 @@ describe('isUnknownOutcomeError', () => {
         }),
       ),
     ).toBeFalse();
+
+    expect(
+      isUnknownOutcomeError(
+        new HttpErrorResponse({
+          status: 409,
+          error: { code: 'CONTEXT_BUDGET_EXCEEDED', message: 'Context budget exceeded' },
+        }),
+      ),
+    ).toBeFalse();
   });
 
   it('returns false for other status codes (400, 401, 403, 404, 422, 500)', () => {

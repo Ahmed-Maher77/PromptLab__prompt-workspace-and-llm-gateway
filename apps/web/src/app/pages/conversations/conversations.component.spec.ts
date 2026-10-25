@@ -137,6 +137,7 @@ describe('ConversationsComponent', () => {
     totalOriginalMessages: 4,
     retainedMessagesCount: 1,
     compactedMessagesCount: 2,
+    truncatedMessagesCount: 0,
     assembledMessages: [
       {
         role: 'system',
@@ -355,6 +356,36 @@ describe('ConversationsComponent', () => {
     );
 
     component.sendMessage();
+    expect(component.currentSendMessageKey).toBeNull();
+  });
+
+  it('maps 409 CONTEXT_BUDGET_EXCEEDED to a friendly error message and rotates key', () => {
+    component.selectedConversation.set({
+      id: 'c-1',
+      title: 'Active Conv',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      status: 'active',
+      createdAt: '2026-10-19T00:00:00Z',
+      updatedAt: '2026-10-19T00:00:00Z',
+      messages: [],
+      checkpoints: [],
+      activeCheckpoint: null,
+    });
+
+    mockConversationService.sendMessage.and.returnValue(
+      throwError(() => ({
+        status: 409,
+        error: { code: 'CONTEXT_BUDGET_EXCEEDED', message: 'CONTEXT_BUDGET_EXCEEDED' },
+      })),
+    );
+
+    component.messageInput.set('Massive message');
+    component.sendMessage();
+
+    expect(component.chatError()).toBe(
+      "This message plus the pinned context exceeds the conversation's budget — compact history or shorten the message.",
+    );
     expect(component.currentSendMessageKey).toBeNull();
   });
 

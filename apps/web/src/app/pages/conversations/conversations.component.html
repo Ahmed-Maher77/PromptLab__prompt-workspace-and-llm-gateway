@@ -149,6 +149,20 @@
         </div>
       </div>
 
+      <!-- Truncation Warning Banner (CONV-03) -->
+      @if (contextData()?.truncatedMessagesCount && contextData()!.truncatedMessagesCount > 0) {
+        <div class="alert alert-warning truncation-alert" role="status">
+          <svg lucideCircleAlert [size]="16"></svg>
+          <span class="truncation-alert-text">
+            <strong>Context sliding window active:</strong> {{ contextData()!.truncatedMessagesCount }} older message(s) are truncated to fit within budget (~{{ contextData()!.inputBudget }} tokens
+            @if (contextData()?.requestedBudget && contextData()!.requestedBudget! > contextData()!.inputBudget) {
+              <span>, capped to {{ contextData()!.inputBudget }} for this model</span>
+            }).
+          </span>
+          <button class="btn btn-sm btn-secondary" (click)="openCompactModal()">Compact History</button>
+        </div>
+      }
+
       <!-- Resume Confirmation Banner -->
       @if (resumeMessage()) {
         <div class="alert alert-info">
@@ -378,7 +392,34 @@
                 {{ contextData()?.compactedMessagesCount }} compacted, {{ contextData()?.retainedMessagesCount }} active
               </span>
             </div>
+
+            <div class="c-metric-card" [class.c-metric-card-warning]="(contextData()?.truncatedMessagesCount || 0) > 0">
+              <span class="c-metric-label">Truncated Messages</span>
+              <span class="c-metric-value" [class.text-warning]="(contextData()?.truncatedMessagesCount || 0) > 0">
+                {{ contextData()?.truncatedMessagesCount || 0 }} dropped
+              </span>
+              <span class="c-metric-sub">
+                Sliding budget: ~{{ contextData()?.inputBudget }} tokens
+                @if (contextData()?.requestedBudget && contextData()!.requestedBudget! > contextData()!.inputBudget) {
+                  <span> (capped to {{ contextData()!.inputBudget }} for this model)</span>
+                }
+              </span>
+            </div>
           </div>
+
+          <!-- Truncation Compaction Suggestion inside Inspector -->
+          @if (contextData()?.truncatedMessagesCount && contextData()!.truncatedMessagesCount > 0) {
+            <div class="alert alert-warning inspector-truncation-alert" role="status">
+              <svg lucideCircleAlert [size]="16"></svg>
+              <span class="truncation-alert-text">
+                <strong>{{ contextData()!.truncatedMessagesCount }} message(s) truncated:</strong> Context exceeds budget (~{{ contextData()!.inputBudget }} tokens
+                @if (contextData()?.requestedBudget && contextData()!.requestedBudget! > contextData()!.inputBudget) {
+                  <span>, capped to {{ contextData()!.inputBudget }} for this model</span>
+                }). Oldest messages were dropped; compacting history will preserve key facts.
+              </span>
+              <button class="btn btn-sm btn-primary" (click)="closeContextModal(); openCompactModal()">Compact History</button>
+            </div>
+          }
 
           <!-- Assembled Messages List -->
           <div class="assembled-messages-section">

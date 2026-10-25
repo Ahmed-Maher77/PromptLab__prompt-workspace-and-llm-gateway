@@ -182,6 +182,7 @@ describe('ConversationService', () => {
       totalOriginalMessages: 2,
       retainedMessagesCount: 2,
       compactedMessagesCount: 0,
+      truncatedMessagesCount: 0,
       assembledMessages: [],
       withinBudget: true,
     };

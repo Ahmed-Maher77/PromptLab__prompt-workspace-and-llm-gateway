@@ -249,7 +249,14 @@ export class ConversationsComponent implements OnInit {
       },
       error: (err) => {
         this.sendingMessage.set(false);
-        this.chatError.set(err.error?.message || 'Failed to transmit message.');
+        const code = err.error?.code || err.error?.message;
+        if (code === 'CONTEXT_BUDGET_EXCEEDED') {
+          this.chatError.set(
+            "This message plus the pinned context exceeds the conversation's budget — compact history or shorten the message.",
+          );
+        } else {
+          this.chatError.set(err.error?.message || 'Failed to transmit message.');
+        }
         // CONV-02 / QUOTA-05c: keep the idempotency key only for unknown outcomes (network error, 502/503/504, 409 REQUEST_IN_PROGRESS).
         // Rotate it on every other error (reading `code` from problem-details body).
         if (!isUnknownOutcomeError(err)) {

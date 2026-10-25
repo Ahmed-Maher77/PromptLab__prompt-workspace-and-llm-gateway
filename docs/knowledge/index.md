@@ -41,7 +41,8 @@ docs/knowledge/
 │   ├── adr-005-summarize-and-truncate-compaction.md
 │   ├── adr-006-privacy-redaction-engine.md
 │   ├── adr-007-read-only-system-settings.md
-│   └── adr-008-backward-compatible-pagination.md
+│   ├── adr-008-backward-compatible-pagination.md
+│   └── adr-009-context-budget-sliding-window.md
 └── operations/              # Operational runbooks, verification, and setup
     ├── index.md
     ├── local-development.md

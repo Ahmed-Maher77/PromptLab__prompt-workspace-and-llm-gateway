@@ -47,6 +47,7 @@ export interface ConversationDetail {
   title: string;
   provider: string;
   model: string;
+  contextBudget?: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -76,6 +77,7 @@ export interface ContextInspectionResult {
   provider: string;
   contextWindow: number | null;
   contextLimitStatus: 'known' | 'unknown';
+  requestedBudget?: number | null;
   inputBudget: number;
   reservedOutputTokens: number;
   totalEstimatedInputTokens: number;
@@ -91,6 +93,7 @@ export interface ContextInspectionResult {
   totalOriginalMessages: number;
   retainedMessagesCount: number;
   compactedMessagesCount: number;
+  truncatedMessagesCount: number;
   assembledMessages: AssembledContextMessage[];
   withinBudget: boolean;
 }
