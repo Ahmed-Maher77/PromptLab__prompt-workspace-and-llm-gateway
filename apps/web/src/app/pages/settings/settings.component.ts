@@ -1,10 +1,40 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import {
+  LucideRefreshCw,
+  LucideCircleAlert,
+  LucideServer,
+  LucideBox,
+  LucideDatabase,
+  LucideClock,
+  LucideTriangleAlert,
+  LucideLock,
+  LucideActivity,
+  LucideCheck,
+  LucideShield,
+  LucideUser,
+  LucideGlobe,
+} from '@lucide/angular';
 import { SettingsService, SystemSettings } from '../../services/settings.service';
 
 @Component({
   selector: 'app-settings',
-  imports: [CommonModule],
+  imports: [
+    CommonModule,
+    LucideRefreshCw,
+    LucideCircleAlert,
+    LucideServer,
+    LucideBox,
+    LucideDatabase,
+    LucideClock,
+    LucideTriangleAlert,
+    LucideLock,
+    LucideActivity,
+    LucideCheck,
+    LucideShield,
+    LucideUser,
+    LucideGlobe,
+  ],
   templateUrl: './settings.component.html',
   styleUrl: './settings.component.css',
 })

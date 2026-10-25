@@ -17,18 +17,10 @@
     <div class="header-actions">
       <button class="btn btn-secondary" (click)="loadSettings()" [disabled]="loading">
         <svg
-          width="15"
-          height="15"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
+          lucideRefreshCw
+          [size]="15"
           [class.spin]="loading"
-        >
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
+        ></svg>
         <span>{{ loading ? 'Inspecting...' : 'Refresh Status' }}</span>
       </button>
     </div>
@@ -36,11 +28,7 @@
 
   <!-- Error Alert -->
   <div *ngIf="errorMessage" class="alert alert-error">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="12" cy="12" r="10"></circle>
-      <line x1="12" y1="8" x2="12" y2="12"></line>
-      <line x1="12" y1="16" x2="12.01" y2="16"></line>
-    </svg>
+    <svg lucideCircleAlert [size]="18"></svg>
     <div class="alert-content">
       <strong>Gateway Connection Error</strong>
       <p>{{ errorMessage }}</p>
@@ -58,12 +46,7 @@
     <div class="status-strip">
       <div class="status-metric-card">
         <div class="metric-icon-wrap" [class.success]="settings.gateway.connected" [class.danger]="!settings.gateway.connected">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-            <line x1="6" y1="6" x2="6.01" y2="6"></line>
-            <line x1="6" y1="18" x2="6.01" y2="18"></line>
-          </svg>
+          <svg lucideServer [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Gateway Status</span>
@@ -78,9 +61,7 @@
 
       <div class="status-metric-card">
         <div class="metric-icon-wrap primary">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-          </svg>
+          <svg lucideBox [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Model Catalog</span>
@@ -93,11 +74,7 @@
 
       <div class="status-metric-card">
         <div class="metric-icon-wrap" [class.success]="settings.database.connected" [class.danger]="!settings.database.connected">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-            <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-          </svg>
+          <svg lucideDatabase [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Database Engine</span>
@@ -110,10 +87,7 @@
 
       <div class="status-metric-card">
         <div class="metric-icon-wrap warning">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
+          <svg lucideClock [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Token Quota</span>
@@ -134,12 +108,7 @@
           <div class="box-header">
             <div class="box-title-group">
               <div class="box-icon-badge blue">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
-                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
-                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
-                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
-                </svg>
+                <svg lucideServer [size]="16"></svg>
               </div>
               <div>
                 <h2 class="box-title">LiteLLM Proxy Gateway</h2>
@@ -165,11 +134,7 @@
             </div>
 
             <div *ngIf="settings.gateway.error" class="notice notice-warning">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
+              <svg lucideTriangleAlert [size]="14"></svg>
               <span>{{ settings.gateway.error }}</span>
             </div>
 
@@ -204,10 +169,7 @@
             </div>
 
             <div class="security-banner">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
+              <svg lucideLock [size]="14"></svg>
               <span>Provider API keys reside strictly on the server and are never exposed to client bundles.</span>
             </div>
           </div>
@@ -218,11 +180,7 @@
           <div class="box-header">
             <div class="box-title-group">
               <div class="box-icon-badge emerald">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
-                  <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
-                  <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
-                </svg>
+                <svg lucideDatabase [size]="16"></svg>
               </div>
               <div>
                 <h2 class="box-title">Database & Platform</h2>
@@ -274,10 +232,7 @@
           <div class="box-header">
             <div class="box-title-group">
               <div class="box-icon-badge amber">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
+                <svg lucideClock [size]="16"></svg>
               </div>
               <div>
                 <h2 class="box-title">Active Quota Policy</h2>
@@ -321,10 +276,7 @@
             </div>
 
             <div class="architectural-callout">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
+              <svg lucideLock [size]="15"></svg>
               <div>
                 <strong>Pessimistic Locking Active:</strong>
                 <span>Budget enforcement uses row-level locking (<code>SELECT ... FOR UPDATE</code>) in PostgreSQL to eliminate concurrency race conditions.</span>
@@ -338,9 +290,7 @@
           <div class="box-header">
             <div class="box-title-group">
               <div class="box-icon-badge purple">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                </svg>
+                <svg lucideActivity [size]="16"></svg>
               </div>
               <div>
                 <h2 class="box-title">Telemetry & Observability</h2>
@@ -369,9 +319,7 @@
                 <div class="telemetry-item-header">
                   <span class="telemetry-title">Privacy & Sanitization</span>
                   <span class="badge badge-success">
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                      <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
+                    <svg lucideCheck [size]="10"></svg>
                     Enforced
                   </span>
                 </div>
@@ -424,9 +372,7 @@
       <div class="box-header">
         <div class="box-title-group">
           <div class="box-icon-badge indigo">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-            </svg>
+            <svg lucideShield [size]="16"></svg>
           </div>
           <div>
             <h2 class="box-title">Security & Environment Boundaries</h2>
@@ -441,10 +387,7 @@
           <div class="security-card">
             <div class="security-card-header">
               <div class="shield-circle">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
+                <svg lucideUser [size]="14"></svg>
               </div>
               <span class="security-card-title">Authentication Model</span>
             </div>
@@ -456,11 +399,7 @@
           <div class="security-card">
             <div class="security-card-header">
               <div class="shield-circle">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="2" y1="12" x2="22" y2="12"></line>
-                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                </svg>
+                <svg lucideGlobe [size]="14"></svg>
               </div>
               <span class="security-card-title">CORS Restrictions</span>
             </div>
@@ -472,10 +411,7 @@
           <div class="security-card">
             <div class="security-card-header">
               <div class="shield-circle">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                </svg>
+                <svg lucideLock [size]="14"></svg>
               </div>
               <span class="security-card-title">Zero-Secret Vaulting</span>
             </div>

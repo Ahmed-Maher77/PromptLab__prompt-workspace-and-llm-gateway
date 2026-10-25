@@ -2,6 +2,12 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
+  LucideRefreshCw,
+  LucideCircleAlert,
+  LucideCircleCheck,
+  LucideClock,
+} from '@lucide/angular';
+import {
   UsageService,
   QuotaPeriodStatus,
   UsageRecordItem,
@@ -11,7 +17,14 @@ import {
 @Component({
   selector: 'app-usage',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    LucideRefreshCw,
+    LucideCircleAlert,
+    LucideCircleCheck,
+    LucideClock,
+  ],
   templateUrl: './usage.component.html',
   styleUrls: ['./usage.component.css'],
 })

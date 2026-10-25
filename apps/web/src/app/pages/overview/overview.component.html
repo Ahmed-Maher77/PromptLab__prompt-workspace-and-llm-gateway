@@ -6,6 +6,7 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" (click)="refreshHealth()" [disabled]="isLoading" aria-label="Refresh status">
+        <svg lucideRefreshCw [size]="14" [class.spin]="isLoading"></svg>
         <span *ngIf="isLoading">Checking…</span>
         <span *ngIf="!isLoading">Refresh status</span>
       </button>
@@ -107,42 +108,42 @@
           <strong>Prompt Studio</strong>
           <small>Author templates, test variables, and manage immutable versions</small>
         </span>
-        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
       </a>
       <a class="module-link" routerLink="/compare">
         <span class="module-info">
           <strong>Compare</strong>
           <small>Run side-by-side experiments across models and prompts</small>
         </span>
-        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
       </a>
       <a class="module-link" routerLink="/conversations">
         <span class="module-info">
           <strong>Conversations</strong>
           <small>Inspect dialogue turns, token budgets, and compaction</small>
         </span>
-        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
       </a>
       <a class="module-link" routerLink="/usage">
         <span class="module-info">
           <strong>Usage &amp; quotas</strong>
           <small>Monitor monthly token limits, reservations, and audit ledger</small>
         </span>
-        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
       </a>
       <a class="module-link" routerLink="/observability">
         <span class="module-info">
           <strong>Observability</strong>
           <small>Inspect distributed traces, gateway latency, and telemetry</small>
         </span>
-        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
       </a>
       <a class="module-link" routerLink="/settings">
         <span class="module-info">
           <strong>Settings</strong>
           <small>Inspect configured model routes and service connectivity</small>
         </span>
-        <span class="module-arrow" aria-hidden="true">&rarr;</span>
+        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
       </a>
     </nav>
   </section>

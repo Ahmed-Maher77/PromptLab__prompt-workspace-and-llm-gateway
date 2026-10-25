@@ -9,18 +9,11 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" (click)="clearTraces()" [disabled]="clearing || traces.length === 0">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="3 6 5 6 21 6"></polyline>
-          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-        </svg>
+        <svg lucideTrash [size]="14"></svg>
         Clear Traces
       </button>
       <button class="btn btn-secondary" (click)="loadData()" [disabled]="loading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
+        <svg lucideRefreshCw [size]="14"></svg>
         Refresh
       </button>
     </div>
@@ -28,19 +21,12 @@
 
   <!-- Alerts -->
   <div *ngIf="errorMessage" class="alert alert-error">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="12" cy="12" r="10"></circle>
-      <line x1="12" y1="8" x2="12" y2="12"></line>
-      <line x1="12" y1="16" x2="12.01" y2="16"></line>
-    </svg>
+    <svg lucideCircleAlert [size]="16"></svg>
     <span>{{ errorMessage }}</span>
   </div>
 
   <div *ngIf="successMessage" class="alert alert-success">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-      <polyline points="22 4 12 14.01 9 11.01"></polyline>
-    </svg>
+    <svg lucideCircleCheck [size]="16"></svg>
     <span>{{ successMessage }}</span>
   </div>
 
@@ -159,9 +145,7 @@
     <div class="traces-table-container">
       <div *ngIf="traces.length === 0 && !loading" class="empty-state">
         <div class="empty-icon-circle">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-          </svg>
+          <svg lucideActivity [size]="24"></svg>
         </div>
         <h3 class="empty-title">No traces recorded yet</h3>
         <p class="empty-desc">
@@ -241,7 +225,7 @@
           <span class="mono text-muted drawer-subtitle">{{ selectedTrace.id }}</span>
         </div>
         <button class="btn btn-ghost btn-xs close-btn" (click)="closeDrawer()" aria-label="Close inspector">
-          ✕
+          <svg lucideX [size]="14"></svg>
         </button>
       </div>
 
@@ -314,7 +298,8 @@
           <div class="waterfall-container">
             <div *ngFor="let span of selectedTrace.spans" class="span-row">
               <div class="span-info" (click)="toggleSpanExpanded(span.id)">
-                <span class="expand-icon">{{ isSpanExpanded(span.id) ? '▾' : '▸' }}</span>
+                <svg *ngIf="isSpanExpanded(span.id)" lucideChevronDown [size]="14" class="expand-icon"></svg>
+                <svg *ngIf="!isSpanExpanded(span.id)" lucideChevronRight [size]="14" class="expand-icon"></svg>
                 <span class="span-name mono">{{ span.name }}</span>
                 <span class="span-duration mono">{{ formatDuration(span.durationMs) }}</span>
                 <span class="badge badge-xs" [ngClass]="span.status === 'ok' ? 'badge-success' : 'badge-danger'">

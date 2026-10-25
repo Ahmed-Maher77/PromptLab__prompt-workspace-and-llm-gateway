@@ -5,10 +5,7 @@
       <p class="page-description">Continue a session, inspect its context, or start a new conversation.</p>
     </div>
     <button class="btn btn-primary" (click)="openNewModal()">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-      </svg>
+      <svg lucidePlus [size]="15" aria-hidden="true"></svg>
       New conversation
     </button>
   </header>
@@ -50,10 +47,7 @@
                   (click)="deleteConversation(conv.id, $event)"
                   title="Delete conversation"
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
+                  <svg lucideX [size]="12"></svg>
                 </button>
               </div>
 
@@ -84,17 +78,12 @@
       <div class="no-selection-state">
         <div class="empty-card">
           <div class="empty-icon-circle">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
+            <svg lucideMessageSquare [size]="24"></svg>
           </div>
           <h4>No conversation selected</h4>
           <p>Choose an existing session from the list on the left, or launch a new conversation with an initial prompt.</p>
           <button class="btn btn-primary" (click)="openNewModal()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
+            <svg lucidePlus [size]="14"></svg>
             New Conversation
           </button>
         </div>
@@ -117,29 +106,17 @@
 
         <div class="chat-header-actions">
           <button class="btn btn-secondary btn-sm" (click)="openContextModal()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="16" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
+            <svg lucideInfo [size]="14"></svg>
             Inspect Context
           </button>
 
           <button class="btn btn-secondary btn-sm" (click)="openCompactModal()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="4 14 10 14 10 20"></polyline>
-              <polyline points="20 10 14 10 14 4"></polyline>
-              <line x1="14" y1="10" x2="21" y2="3"></line>
-              <line x1="3" y1="21" x2="10" y2="14"></line>
-            </svg>
+            <svg lucideMinimize2 [size]="14"></svg>
             Compact History
           </button>
 
           <button class="btn btn-ghost btn-sm" (click)="toggleHistoryDrawer()" title="View Checkpoints & History">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
+            <svg lucideBookmark [size]="14"></svg>
             Checkpoints ({{ selectedConversation()?.checkpoints?.length || 0 }})
           </button>
         </div>
@@ -175,9 +152,7 @@
       <!-- Resume Confirmation Banner -->
       @if (resumeMessage()) {
         <div class="alert alert-info">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
+          <svg lucideCheck [size]="16"></svg>
           <span>{{ resumeMessage() }}</span>
         </div>
       }
@@ -185,11 +160,7 @@
       <!-- Chat Error Banner -->
       @if (chatError()) {
         <div class="alert alert-danger">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
+          <svg lucideCircleAlert [size]="16"></svg>
           <div class="alert-content">
             <strong>Provider Execution Error:</strong>
             <p>{{ chatError() }}</p>
@@ -210,9 +181,7 @@
               <div class="checkpoint-divider">
                 <div class="divider-line"></div>
                 <div class="divider-badge">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-                  </svg>
+                  <svg lucideBookmark [size]="12"></svg>
                   <span>Active Compaction Checkpoint (Messages above are summarized in context)</span>
                 </div>
                 <div class="divider-line"></div>
@@ -281,10 +250,7 @@
                 <span>Transmitting...</span>
               } @else {
                 <span>Send</span>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
+                <svg lucideSend [size]="14"></svg>
               }
             </button>
           </div>
@@ -300,10 +266,7 @@
       <div class="drawer-header">
         <h4>Compaction Checkpoints</h4>
         <button class="btn-icon" (click)="toggleHistoryDrawer()">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
+          <svg lucideX [size]="16"></svg>
         </button>
       </div>
 
@@ -369,7 +332,7 @@
             <h3>Context Window Inspector</h3>
             <span class="badge badge-neutral">{{ contextData()?.model }}</span>
           </div>
-          <button class="btn-icon" (click)="closeContextModal()">✕</button>
+          <button class="btn-icon" (click)="closeContextModal()"><svg lucideX [size]="16"></svg></button>
         </div>
 
         <div class="modal-body">
@@ -446,7 +409,7 @@
       <div class="modal-card modal-lg" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <h3>Manual Conversation Compaction</h3>
-          <button class="btn-icon" (click)="closeCompactModal()">✕</button>
+          <button class="btn-icon" (click)="closeCompactModal()"><svg lucideX [size]="16"></svg></button>
         </div>
 
         <div class="modal-body">
@@ -554,7 +517,7 @@
       <div class="modal-card" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <h3>Create New Conversation</h3>
-          <button class="btn-icon" (click)="closeNewModal()">✕</button>
+          <button class="btn-icon" (click)="closeNewModal()"><svg lucideX [size]="16"></svg></button>
         </div>
 
         <div class="modal-body">

@@ -3,6 +3,17 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import {
+  LucidePlus,
+  LucideX,
+  LucideMessageSquare,
+  LucideInfo,
+  LucideMinimize2,
+  LucideBookmark,
+  LucideCheck,
+  LucideCircleAlert,
+  LucideSend,
+} from '@lucide/angular';
+import {
   ConversationService,
   ConversationSummary,
   ConversationDetail,
@@ -15,7 +26,20 @@ import { PromptService, ModelMetadata } from '../../services/prompt.service';
 @Component({
   selector: 'app-conversations',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterModule,
+    LucidePlus,
+    LucideX,
+    LucideMessageSquare,
+    LucideInfo,
+    LucideMinimize2,
+    LucideBookmark,
+    LucideCheck,
+    LucideCircleAlert,
+    LucideSend,
+  ],
   templateUrl: './conversations.component.html',
   styleUrls: ['./conversations.component.css'],
 })

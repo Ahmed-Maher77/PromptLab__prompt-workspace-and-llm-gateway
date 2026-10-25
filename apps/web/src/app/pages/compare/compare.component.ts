@@ -3,6 +3,14 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import {
+  LucideClock,
+  LucidePlay,
+  LucideCircleAlert,
+  LucideCheck,
+  LucideX,
+  LucideInfo,
+} from '@lucide/angular';
+import {
   ExperimentService,
   ComparisonResult,
   SavedExperimentSummary,
@@ -19,7 +27,17 @@ import {
 @Component({
   selector: 'app-compare',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterModule,
+    LucideClock,
+    LucidePlay,
+    LucideCircleAlert,
+    LucideCheck,
+    LucideX,
+    LucideInfo,
+  ],
   templateUrl: './compare.component.html',
   styleUrls: ['./compare.component.css'],
 })

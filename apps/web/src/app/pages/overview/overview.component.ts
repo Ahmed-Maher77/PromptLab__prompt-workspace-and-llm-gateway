@@ -1,12 +1,13 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { LucideRefreshCw, LucideArrowRight } from '@lucide/angular';
 import { HealthService, HealthResponse } from '../../services/health.service';
 
 @Component({
   selector: 'app-overview',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, LucideRefreshCw, LucideArrowRight],
   templateUrl: './overview.component.html',
   styleUrls: ['./overview.component.css'],
 })

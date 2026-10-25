@@ -3,6 +3,16 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import {
+  LucidePlus,
+  LucideClock,
+  LucideSearch,
+  LucideCircleAlert,
+  LucideFileText,
+  LucideTriangleAlert,
+  LucidePlay,
+  LucideX,
+} from '@lucide/angular';
+import {
   PromptService,
   PromptSummary,
   PromptDetail,
@@ -18,7 +28,19 @@ export type StudioViewMode = 'library' | 'editor';
 @Component({
   selector: 'app-prompt-studio',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterModule,
+    LucidePlus,
+    LucideClock,
+    LucideSearch,
+    LucideCircleAlert,
+    LucideFileText,
+    LucideTriangleAlert,
+    LucidePlay,
+    LucideX,
+  ],
   templateUrl: './prompt-studio.component.html',
   styleUrls: ['./prompt-studio.component.css'],
 })

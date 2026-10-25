@@ -9,11 +9,7 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" (click)="loadAll()" [disabled]="loading">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
+        <svg lucideRefreshCw [size]="14"></svg>
         Refresh
       </button>
     </div>
@@ -21,19 +17,12 @@
 
   <!-- Alerts -->
   <div *ngIf="errorMessage" class="alert alert-error">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="12" cy="12" r="10"></circle>
-      <line x1="12" y1="8" x2="12" y2="12"></line>
-      <line x1="12" y1="16" x2="12.01" y2="16"></line>
-    </svg>
+    <svg lucideCircleAlert [size]="16"></svg>
     <span>{{ errorMessage }}</span>
   </div>
 
   <div *ngIf="successMessage" class="alert alert-success">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-      <polyline points="22 4 12 14.01 9 11.01"></polyline>
-    </svg>
+    <svg lucideCircleCheck [size]="16"></svg>
     <span>{{ successMessage }}</span>
   </div>
 
@@ -317,10 +306,7 @@
 
         <!-- Empty State -->
         <div *ngIf="filteredLedger.length === 0" class="empty-ledger">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
+          <svg lucideClock [size]="32"></svg>
           <p class="empty-title">No usage records found</p>
           <p class="empty-sub">
             Model requests from Prompt Studio, Comparison experiments, or Conversations will be recorded here with reservation and reconciliation metadata.

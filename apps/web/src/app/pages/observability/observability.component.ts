@@ -2,6 +2,16 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
+  LucideTrash,
+  LucideRefreshCw,
+  LucideCircleAlert,
+  LucideCircleCheck,
+  LucideActivity,
+  LucideX,
+  LucideChevronDown,
+  LucideChevronRight,
+} from '@lucide/angular';
+import {
   ObservabilityService,
   ObservabilityStatus,
   TraceRecord,
@@ -11,7 +21,18 @@ import {
 @Component({
   selector: 'app-observability',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    LucideTrash,
+    LucideRefreshCw,
+    LucideCircleAlert,
+    LucideCircleCheck,
+    LucideActivity,
+    LucideX,
+    LucideChevronDown,
+    LucideChevronRight,
+  ],
   templateUrl: './observability.component.html',
   styleUrls: ['./observability.component.css'],
 })
