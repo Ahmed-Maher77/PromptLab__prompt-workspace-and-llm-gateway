@@ -9,11 +9,11 @@
 .login-card {
   width: 100%;
   max-width: 480px;
-  background: var(--surface, #1e222b);
-  border: 1px solid var(--border, #2d3340);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   padding: 36px 32px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.36);
+  box-shadow: none;
 }
 
 .login-header {
@@ -28,8 +28,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
+  background: var(--color-info-bg);
+  color: var(--color-primary);
   border-radius: 20px;
   margin-bottom: 12px;
 }
@@ -37,13 +37,13 @@
 .login-title {
   font-size: 24px;
   font-weight: 700;
-  color: var(--text-primary, #f1f5f9);
+  color: var(--color-text);
   margin: 0 0 8px 0;
 }
 
 .login-subtitle {
   font-size: 14px;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--color-text-muted);
   margin: 0;
   line-height: 1.5;
 }
@@ -63,7 +63,7 @@
 .form-label {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary, #cbd5e1);
+  color: var(--color-text-secondary);
 }
 
 .form-input {
@@ -71,33 +71,33 @@
   padding: 12px 14px;
   font-size: 14px;
   font-family: monospace;
-  background: var(--bg-input, #0f1218);
-  border: 1px solid var(--border, #333a4d);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  color: #f8fafc;
+  color: var(--color-text);
   outline: none;
   transition: border-color 0.15s ease;
   box-sizing: border-box;
 }
 
 .form-input:focus {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-focus);
 }
 
 .error-banner {
   padding: 10px 14px;
   border-radius: 6px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
   font-size: 13px;
 }
 
 .submit-button {
   padding: 12px;
-  background: #6366f1;
-  color: #ffffff;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
   border: none;
   border-radius: 8px;
   font-size: 14px;
@@ -107,7 +107,7 @@
 }
 
 .submit-button:hover {
-  background: #4f46e5;
+  background: var(--color-primary-hover);
 }
 
 .security-note {
@@ -115,7 +115,7 @@
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--text-muted, #64748b);
+  color: var(--color-text-muted);
   line-height: 1.4;
   margin-top: 4px;
 }

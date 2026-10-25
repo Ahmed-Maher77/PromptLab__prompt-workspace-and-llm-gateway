@@ -194,19 +194,19 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background-color: #10B981;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+  background-color: var(--color-success);
+  box-shadow: 0 0 0 3px var(--color-success-bg);
 }
 
 .footer-status-text {
   font-size: 12px;
   font-weight: 500;
-  color: #334155;
+  color: var(--color-text-secondary);
 }
 
 .footer-version-tag {
   font-size: 11px;
-  color: #94A3B8;
+  color: var(--color-text-subtle);
   font-family: var(--font-mono);
 }
 
