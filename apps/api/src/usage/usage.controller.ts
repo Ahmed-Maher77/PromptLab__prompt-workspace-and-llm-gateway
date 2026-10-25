@@ -8,7 +8,6 @@ import {
   Query,
   ForbiddenException,
   Inject,
-  Optional,
 } from '@nestjs/common';
 import { UsageService } from './usage.service';
 import { UpdateQuotaPolicyDto } from './dto/usage.dto';
@@ -20,7 +19,7 @@ import { AUTH_CONFIG, ValidatedEnvironment } from '../common/config/env.validati
 export class UsageController {
   constructor(
     private readonly usageService: UsageService,
-    @Optional() @Inject(AUTH_CONFIG) private readonly authConfig?: ValidatedEnvironment,
+    @Inject(AUTH_CONFIG) private readonly authConfig: ValidatedEnvironment,
   ) {}
 
   @Get('status')

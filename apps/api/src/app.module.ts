@@ -13,7 +13,7 @@ import { UsageModule } from './usage/usage.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { SettingsModule } from './settings/settings.module';
 import { JwtModule } from '@nestjs/jwt';
-import { AUTH_CONFIG, validateEnvironment } from './common/config/env.validation';
+import { AuthConfigModule } from './common/config/auth-config.module';
 import { AuthGuard } from './common/guards/auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -26,6 +26,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     JwtModule.register({
       global: true,
     }),
+    AuthConfigModule,
     // SEC-04a: per-IP rate limiting — 60 requests per 60 s window, burst cap of 20/s
     ThrottlerModule.forRoot([
       {
@@ -50,10 +51,6 @@ import { RolesGuard } from './common/guards/roles.guard';
     SettingsModule,
   ],
   providers: [
-    {
-      provide: AUTH_CONFIG,
-      useFactory: () => validateEnvironment(),
-    },
     {
       // SEC-04a: global rate limiting via ThrottlerGuard registered BEFORE AuthGuard to throttle unauthenticated credential guessing
       provide: APP_GUARD,

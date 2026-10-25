@@ -7,7 +7,6 @@ import {
   NotFoundException,
   ForbiddenException,
   Inject,
-  Optional,
 } from '@nestjs/common';
 import { ObservabilityService } from './observability.service';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -26,7 +25,7 @@ import { AUTH_CONFIG, ValidatedEnvironment } from '../common/config/env.validati
 export class ObservabilityController {
   constructor(
     private readonly observabilityService: ObservabilityService,
-    @Optional() @Inject(AUTH_CONFIG) private readonly authConfig?: ValidatedEnvironment,
+    @Inject(AUTH_CONFIG) private readonly authConfig: ValidatedEnvironment,
   ) {}
 
   @Get('traces')
