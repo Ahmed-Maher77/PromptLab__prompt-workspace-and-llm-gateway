@@ -42,29 +42,38 @@ export class ConversationsService {
       dto.title?.trim() ||
       `Conversation (${dto.model} — ${new Date().toLocaleDateString()})`;
 
-    const conversation = await this.prisma.conversation.create({
-      data: {
-        ownerId,
-        title,
-        provider: dto.provider,
-        model: dto.model,
-        status: 'active',
-      },
-    });
+    const systemPromptContent = dto.systemPrompt?.trim();
+    const hasSystemPrompt = Boolean(
+      systemPromptContent && systemPromptContent.length > 0,
+    );
 
-    // If an initial system prompt is provided, insert it as sequence 1
-    if (dto.systemPrompt && dto.systemPrompt.trim().length > 0) {
-      await this.prisma.conversationMessage.create({
+    const conversation = await this.prisma.$transaction(async (tx) => {
+      const conv = await tx.conversation.create({
         data: {
-          conversationId: conversation.id,
-          role: 'system',
-          content: dto.systemPrompt.trim(),
-          sequenceNumber: 1,
-          inputTokens: estimateTokens(dto.systemPrompt),
-          tokenUsageSource: 'estimated',
+          ownerId,
+          title,
+          provider: dto.provider,
+          model: dto.model,
+          status: 'active',
+          lastSequence: hasSystemPrompt ? 1 : 0,
         },
       });
-    }
+
+      if (hasSystemPrompt) {
+        await tx.conversationMessage.create({
+          data: {
+            conversationId: conv.id,
+            role: 'system',
+            content: systemPromptContent!,
+            sequenceNumber: 1,
+            inputTokens: estimateTokens(systemPromptContent!),
+            tokenUsageSource: 'estimated',
+          },
+        });
+      }
+
+      return conv;
+    });
 
     return this.findOne(conversation.id, ownerId);
   }
@@ -160,6 +169,7 @@ export class ConversationsService {
       provider: conversation.provider,
       model: conversation.model,
       status: conversation.status,
+      lastSequence: conversation.lastSequence,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
       messages: conversation.messages,
@@ -382,26 +392,50 @@ export class ConversationsService {
       throw new ConflictException('REQUEST_IN_PROGRESS');
     }
 
-    // Concurrency safety: find current max sequence number
-    const maxSeq = conv.messages.reduce(
-      (max, m) => Math.max(max, m.sequenceNumber),
-      0,
-    );
-    const userSeq = maxSeq + 1;
-
     if (!execution.success) {
-      // Create user message if provider failed
-      const userMessage = await this.prisma.conversationMessage.create({
-        data: {
-          conversationId: conv.id,
-          requestId: execution.requestId,
-          role: 'user',
-          content: dto.content.trim(),
-          sequenceNumber: userSeq,
-          inputTokens: estimateTokens(dto.content),
-          tokenUsageSource: 'estimated',
-        },
-      });
+      // Create user message if provider failed, allocating sequence number atomically
+      let userMessage: ConversationMessage;
+      try {
+        userMessage = await this.prisma.$transaction(async (tx) => {
+          const updatedConv = await tx.conversation.update({
+            where: { id: conv.id },
+            data: {
+              lastSequence: { increment: 1 },
+              updatedAt: new Date(),
+            },
+            select: { lastSequence: true },
+          });
+
+          return await tx.conversationMessage.create({
+            data: {
+              conversationId: conv.id,
+              requestId: execution.requestId,
+              role: 'user',
+              content: dto.content.trim(),
+              sequenceNumber: updatedConv.lastSequence,
+              inputTokens: estimateTokens(dto.content),
+              tokenUsageSource: 'estimated',
+            },
+          });
+        });
+      } catch (error: any) {
+        if (this.isRequestIdUniqueViolation(error) && execution.requestId) {
+          const existing = await this.prisma.conversationMessage.findFirst({
+            where: {
+              conversationId: conv.id,
+              requestId: execution.requestId,
+              role: 'user',
+            },
+          });
+          if (existing) {
+            userMessage = existing;
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
 
       return {
         success: false,
@@ -415,13 +449,24 @@ export class ConversationsService {
     }
 
     // 4. Persist user message and assistant response together atomically in transaction
-    const assistantSeq = userSeq + 1;
     let userMessage: ConversationMessage;
     let assistantMessage: ConversationMessage;
 
     try {
-      const results = await this.prisma.$transaction([
-        this.prisma.conversationMessage.create({
+      const persistedTurn = await this.prisma.$transaction(async (tx) => {
+        const updatedConv = await tx.conversation.update({
+          where: { id: conv.id },
+          data: {
+            lastSequence: { increment: 2 },
+            updatedAt: new Date(),
+          },
+          select: { lastSequence: true },
+        });
+
+        const assistantSeq = updatedConv.lastSequence;
+        const userSeq = assistantSeq - 1;
+
+        const uMsg = await tx.conversationMessage.create({
           data: {
             conversationId: conv.id,
             requestId: execution.requestId,
@@ -431,8 +476,9 @@ export class ConversationsService {
             inputTokens: estimateTokens(dto.content),
             tokenUsageSource: 'estimated',
           },
-        }),
-        this.prisma.conversationMessage.create({
+        });
+
+        const aMsg = await tx.conversationMessage.create({
           data: {
             conversationId: conv.id,
             requestId: execution.requestId,
@@ -443,18 +489,16 @@ export class ConversationsService {
             outputTokens: execution.usage?.completionTokens || estimateTokens(execution.content || ''),
             tokenUsageSource: execution.usage?.source || 'provider-reported',
           },
-        }),
-        this.prisma.conversation.update({
-          where: { id: conv.id },
-          data: { updatedAt: new Date() },
-        }),
-      ]);
+        });
 
-      userMessage = results[0] as ConversationMessage;
-      assistantMessage = results[1] as ConversationMessage;
+        return { userMessage: uMsg, assistantMessage: aMsg };
+      });
+
+      userMessage = persistedTurn.userMessage;
+      assistantMessage = persistedTurn.assistantMessage;
     } catch (error: any) {
-      // Treat P2002 unique constraint violation as already persisted by a racing execution
-      if (error?.code === 'P2002' && execution.requestId) {
+      // Treat P2002 unique constraint violation as already persisted by a racing execution ONLY if target is requestId
+      if (this.isRequestIdUniqueViolation(error) && execution.requestId) {
         const turnMessages = await this.prisma.conversationMessage.findMany({
           where: {
             conversationId: conv.id,
@@ -483,6 +527,28 @@ export class ConversationsService {
       usage: execution.usage,
       traceId: execution.traceId,
     };
+  }
+
+  /**
+   * Identifies whether a Prisma P2002 unique constraint violation is specifically
+   * for the requestId constraint (conversationId, requestId, role).
+   * Non-requestId collisions (e.g. sequenceNumber) must not be treated as already persisted.
+   */
+  private isRequestIdUniqueViolation(error: any): boolean {
+    if (error?.code !== 'P2002') {
+      return false;
+    }
+    const target = error.meta?.target;
+    if (Array.isArray(target)) {
+      return target.includes('requestId');
+    }
+    if (typeof target === 'string') {
+      return (
+        target.includes('requestId') ||
+        target.includes('conversationId_requestId_role')
+      );
+    }
+    return false;
   }
 
   /**

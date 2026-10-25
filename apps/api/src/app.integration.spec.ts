@@ -10,6 +10,8 @@ import { UsageService } from './usage/usage.service';
 import { LlmExecutionService } from './llm/llm-execution.service';
 import { ProvidersService } from './providers/providers.service';
 import { APP_CONFIG } from './common/config/env.validation';
+import * as fs from 'fs';
+import * as path from 'path';
 
 describe('HTTP Routing & App Integration (E2E)', () => {
   let app: INestApplication;
@@ -896,6 +898,9 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         },
       });
 
+      // Clear any pre-existing stale reservations from previous aborted test runs
+      await usageService.sweepExpiredReservations(0);
+
       // 1. Initial reservation of 750 tokens
       const reservation = await usageService.reserveUsage({
         requestId: testRequestId,
@@ -1418,6 +1423,180 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
       } finally {
         jest.restoreAllMocks();
+      }
+    });
+
+    it('allocates sequence numbers atomically under parallel sends with different keys (CONV-01)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Parallel Sequence Allocation Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          systemPrompt: 'You are an atomic assistant.',
+        })
+        .expect(201);
+      const convId = convRes.body.id;
+
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (params) => {
+        // Small random delay (5-30ms) to interleave concurrent requests
+        await new Promise((resolve) => setTimeout(resolve, Math.floor(Math.random() * 25) + 5));
+        return {
+          success: true,
+          model: params.model,
+          content: 'Atomic response content',
+          latencyMs: 25,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 10,
+            totalTokens: 20,
+            source: 'provider-reported',
+          },
+        };
+      });
+
+      try {
+        const parallelCount = 6;
+        const sendPromises = Array.from({ length: parallelCount }, (_, idx) => {
+          const idempKey = `conv-par-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 8)}`;
+          return request(app.getHttpServer())
+            .post(`/api/conversations/${convId}/messages`)
+            .set(authHeader)
+            .set('Idempotency-Key', idempKey)
+            .send({ content: `Parallel message ${idx}` });
+        });
+
+        const responses = await Promise.all(sendPromises);
+        for (const res of responses) {
+          expect(res.status).toBe(201);
+          expect(res.body.success).toBe(true);
+        }
+
+        // Fetch all messages from Postgres ordered by sequenceNumber
+        const allMessages = await prisma.conversationMessage.findMany({
+          where: { conversationId: convId },
+          orderBy: { sequenceNumber: 'asc' },
+        });
+
+        // System prompt (seq 1) + 6 pairs of (user, assistant) = 13 messages total
+        const expectedTotal = 1 + parallelCount * 2;
+        expect(allMessages.length).toBe(expectedTotal);
+
+        const seqNumbers = allMessages.map((m) => m.sequenceNumber);
+        const expectedSeq = Array.from({ length: expectedTotal }, (_, i) => i + 1);
+
+        // Verify strictly continuous sequence numbers: no duplicates, no gaps!
+        expect(seqNumbers).toEqual(expectedSeq);
+
+        // Verify conversation lastSequence in database matches highest allocated sequence
+        const convRecord = await prisma.conversation.findUnique({
+          where: { id: convId },
+        });
+        expect(convRecord?.lastSequence).toBe(expectedTotal);
+      } finally {
+        jest.restoreAllMocks();
+      }
+    });
+
+    it('de-duplicates existing duplicate sequence rows during migration CONV-01a', async () => {
+      const prisma = app.get(PrismaService);
+
+      // Create a test conversation directly in DB
+      const conv = await prisma.conversation.create({
+        data: {
+          ownerId: 'dev-user-001',
+          title: 'Pre-migration Duplicates Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          status: 'active',
+          lastSequence: 0,
+        },
+      });
+
+      // Temporarily drop the unique index to simulate a pre-migration database state
+      await prisma.$executeRawUnsafe(
+        'DROP INDEX IF EXISTS "conversation_messages_conversationId_sequenceNumber_key";',
+      );
+      await prisma.$executeRawUnsafe(
+        'CREATE INDEX IF NOT EXISTS "conversation_messages_conversationId_sequenceNumber_idx" ON "conversation_messages"("conversationId", "sequenceNumber");',
+      );
+
+      try {
+        // Seed duplicate sequence rows:
+        // m1 at seq 1
+        // m2, m3 at seq 2 (duplicate)
+        // m4, m5 at seq 3 (duplicate)
+        const t0 = new Date('2026-01-01T10:00:00Z');
+        const t1 = new Date('2026-01-01T10:01:00Z');
+        const t2 = new Date('2026-01-01T10:02:00Z');
+        const t3 = new Date('2026-01-01T10:03:00Z');
+        const t4 = new Date('2026-01-01T10:04:00Z');
+
+        const prefix = `msg-dedup-${Date.now()}`;
+        await prisma.$executeRawUnsafe(`
+          INSERT INTO "conversation_messages" ("id", "conversationId", "role", "content", "sequenceNumber", "createdAt")
+          VALUES
+            ('${prefix}-1', '${conv.id}', 'system', 'sys', 1, '${t0.toISOString()}'),
+            ('${prefix}-2', '${conv.id}', 'user', 'q1', 2, '${t1.toISOString()}'),
+            ('${prefix}-3', '${conv.id}', 'assistant', 'a1', 2, '${t2.toISOString()}'),
+            ('${prefix}-4', '${conv.id}', 'user', 'q2', 3, '${t3.toISOString()}'),
+            ('${prefix}-5', '${conv.id}', 'assistant', 'a2', 3, '${t4.toISOString()}');
+        `);
+
+        // Read and apply the exact migration SQL file
+        const migrationPath = path.resolve(
+          __dirname,
+          '../prisma/migrations/20261025210000_conv_01_conversation_sequence_uniqueness/migration.sql',
+        );
+        const migrationSql = fs.readFileSync(migrationPath, 'utf8');
+
+        // Split statements by semicolon and execute each statement in order
+        const statements = migrationSql
+          .split(';')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+
+        for (const stmt of statements) {
+          await prisma.$executeRawUnsafe(stmt);
+        }
+
+        // Fetch messages for this conversation ordered by sequenceNumber
+        const messages = await prisma.conversationMessage.findMany({
+          where: { conversationId: conv.id },
+          orderBy: { sequenceNumber: 'asc' },
+        });
+
+        expect(messages).toHaveLength(5);
+        const seqs = messages.map((m) => m.sequenceNumber);
+        // Sequence numbers must be strictly unique and contiguous [1, 2, 3, 4, 5]
+        expect(seqs).toEqual([1, 2, 3, 4, 5]);
+
+        // lastSequence on conversation must equal MAX(sequenceNumber) = 5
+        const updatedConv = await prisma.conversation.findUnique({
+          where: { id: conv.id },
+        });
+        expect(updatedConv?.lastSequence).toBe(5);
+
+        // Verify that inserting a duplicate sequence row now fails (unique constraint enforced)
+        await expect(
+          prisma.$executeRawUnsafe(`
+            INSERT INTO "conversation_messages" ("id", "conversationId", "role", "content", "sequenceNumber", "createdAt")
+            VALUES ('${prefix}-fail', '${conv.id}', 'user', 'fail', 1, NOW());
+          `),
+        ).rejects.toThrow();
+      } finally {
+        // Clean up test conversation and messages
+        await prisma.conversation.deleteMany({
+          where: { id: conv.id },
+        });
+        // Ensure index is restored in case of any failure
+        await prisma.$executeRawUnsafe(
+          'CREATE UNIQUE INDEX IF NOT EXISTS "conversation_messages_conversationId_sequenceNumber_key" ON "conversation_messages"("conversationId", "sequenceNumber");',
+        );
       }
     });
   });

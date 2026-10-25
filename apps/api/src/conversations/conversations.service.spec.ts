@@ -25,7 +25,14 @@ describe('ConversationsService', () => {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         findFirst: jest.fn(),
-        update: jest.fn(),
+        update: jest.fn().mockImplementation(async (args: any) => {
+          const inc = args?.data?.lastSequence?.increment ?? 0;
+          return {
+            id: args?.where?.id,
+            lastSequence: inc > 0 ? 1 + inc : 2,
+            ...args?.data,
+          };
+        }),
         delete: jest.fn(),
       },
       conversationMessage: {
@@ -522,6 +529,84 @@ describe('ConversationsService', () => {
           'req-in-flight-999',
         ),
       ).rejects.toThrow('REQUEST_IN_PROGRESS');
+    });
+
+    it('treats P2002 as already persisted only when meta.target matches requestId', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-racing',
+        ownerId: 'dev-user-001',
+        provider: 'gateway',
+        model: 'gpt-4o-mini',
+        messages: [],
+        checkpoints: [],
+      });
+
+      const llmService = (service as any).llmExecutionService;
+      jest.spyOn(llmService, 'execute').mockResolvedValueOnce({
+        success: true,
+        content: 'Racing output',
+        model: 'gpt-4o-mini',
+        latencyMs: 120,
+        requestId: 'req-racing-target',
+        isReplay: false,
+      });
+
+      const p2002Error: any = new Error('Unique constraint failed on the fields: (`requestId`)');
+      p2002Error.code = 'P2002';
+      p2002Error.meta = { target: ['conversationId', 'requestId', 'role'] };
+
+      mockPrisma.conversationMessage.create.mockRejectedValueOnce(p2002Error);
+
+      const persistedUserMsg = { id: 'm-u', role: 'user', content: 'Racing input', sequenceNumber: 1 };
+      const persistedAsstMsg = { id: 'm-a', role: 'assistant', content: 'Racing output', sequenceNumber: 2 };
+      mockPrisma.conversationMessage.findMany.mockResolvedValueOnce([persistedUserMsg, persistedAsstMsg]);
+
+      const result = await service.sendMessage(
+        'c-racing',
+        { content: 'Racing input' },
+        'dev-user-001',
+        'req-racing-target',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.userMessage).toEqual(persistedUserMsg);
+      expect(result.assistantMessage).toEqual(persistedAsstMsg);
+    });
+
+    it('rethrows P2002 when meta.target indicates sequenceNumber collision', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-seq-collision',
+        ownerId: 'dev-user-001',
+        provider: 'gateway',
+        model: 'gpt-4o-mini',
+        messages: [],
+        checkpoints: [],
+      });
+
+      const llmService = (service as any).llmExecutionService;
+      jest.spyOn(llmService, 'execute').mockResolvedValueOnce({
+        success: true,
+        content: 'Collision output',
+        model: 'gpt-4o-mini',
+        latencyMs: 120,
+        requestId: 'req-seq-collision',
+        isReplay: false,
+      });
+
+      const seqP2002Error: any = new Error('Unique constraint failed on (conversationId, sequenceNumber)');
+      seqP2002Error.code = 'P2002';
+      seqP2002Error.meta = { target: ['conversationId', 'sequenceNumber'] };
+
+      mockPrisma.conversationMessage.create.mockRejectedValueOnce(seqP2002Error);
+
+      await expect(
+        service.sendMessage(
+          'c-seq-collision',
+          { content: 'Collision input' },
+          'dev-user-001',
+          'req-seq-collision',
+        ),
+      ).rejects.toThrow('Unique constraint failed on (conversationId, sequenceNumber)');
     });
   });
 
