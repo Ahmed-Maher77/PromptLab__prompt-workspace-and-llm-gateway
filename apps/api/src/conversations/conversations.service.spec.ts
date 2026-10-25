@@ -49,6 +49,7 @@ describe('ConversationsService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
       },
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'c-1' }]),
       $transaction: jest.fn(async (actions: any) => {
         if (Array.isArray(actions)) {
           return Promise.all(actions);
@@ -1031,6 +1032,238 @@ describe('ConversationsService', () => {
 
       // 3. Confirm provider / reserveUsage was NEVER called
       expect(executeSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('CONV-04: Resumable Checkpoints (resume)', () => {
+    const mockCheckpoints = [
+      {
+        id: 'chk-2',
+        conversationId: 'c-resume-1',
+        summary: 'Summary through turn 4',
+        retainedFacts: ['fact-turn-4'],
+        compactedThroughSequence: 4,
+        createdAt: new Date('2026-10-26T01:00:00Z'),
+      },
+      {
+        id: 'chk-1',
+        conversationId: 'c-resume-1',
+        summary: 'Summary through turn 2',
+        retainedFacts: ['fact-turn-2'],
+        compactedThroughSequence: 2,
+        createdAt: new Date('2026-10-25T01:00:00Z'),
+      },
+    ];
+
+    const mockMessages = [
+      { id: 'm-1', role: 'system', content: 'System instruction', sequenceNumber: 1, status: 'complete' },
+      { id: 'm-2', role: 'user', content: 'User turn 2', sequenceNumber: 2, status: 'complete' },
+      { id: 'm-3', role: 'assistant', content: 'Assistant turn 3', sequenceNumber: 3, status: 'complete' },
+      { id: 'm-4', role: 'user', content: 'User turn 4', sequenceNumber: 4, status: 'complete' },
+      { id: 'm-5', role: 'assistant', content: 'Assistant turn 5', sequenceNumber: 5, status: 'complete' },
+      { id: 'm-6', role: 'user', content: 'User turn 6', sequenceNumber: 6, status: 'complete' },
+    ];
+
+    it('persists activeCheckpointId and updates assembled context when resuming an older checkpoint', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-resume-1',
+        ownerId: 'u-1',
+        title: 'Resume Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        contextBudget: 4096,
+        status: 'active',
+        activeCheckpointId: 'chk-2',
+        messages: mockMessages,
+        checkpoints: mockCheckpoints,
+      });
+
+      const res = await service.resume('c-resume-1', 'chk-1', 'u-1');
+
+      // 1. Confirms activeCheckpoint was set to chk-1
+      expect(res.success).toBe(true);
+      expect(res.activeCheckpoint?.id).toBe('chk-1');
+      expect(res.activeCheckpoint?.compactedThroughSequence).toBe(2);
+
+      // 2. Verified activeCheckpointId was persisted in PostgreSQL
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'c-resume-1' },
+        data: {
+          activeCheckpointId: 'chk-1',
+          updatedAt: expect.any(Date),
+        },
+      });
+
+      // 3. Assembled context uses chk-1 summary and retains messages after sequence 2 (seq 3, 4, 5, 6)
+      const chkMsg = res.contextInspection.assembledMessages.find(
+        (m) => m.source === 'checkpoint-summary',
+      );
+      expect(chkMsg?.content).toContain('Summary through turn 2');
+
+      // Note: Sequence 3 is an assistant message whose preceding user message (seq 2) was summarized
+      // into chk-1. Per CONV-03b whole-turn pruning, orphaned assistant messages are dropped so dialogue
+      // starts cleanly with user turn 4.
+      const retainedSeqs = res.contextInspection.assembledMessages
+        .filter((m) => m.source === 'retained-message')
+        .map((m) => m.sequenceNumber);
+      expect(retainedSeqs).toEqual([4, 5, 6]);
+      expect(res.originalMessagesRetained).toBe(6);
+    });
+
+    it('throws NotFoundException when resuming a non-existent checkpoint ID', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-resume-1',
+        ownerId: 'u-1',
+        title: 'Resume Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        status: 'active',
+        messages: mockMessages,
+        checkpoints: mockCheckpoints,
+      });
+
+      await expect(
+        service.resume('c-resume-1', 'chk-non-existent', 'u-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws NotFoundException when checkpoint belongs to a different conversation or user', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-resume-1',
+        ownerId: 'u-1',
+        title: 'Resume Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        status: 'active',
+        messages: mockMessages,
+        checkpoints: mockCheckpoints, // only contains chk-1 and chk-2
+      });
+
+      // chk-foreign-99 belongs to another conversation
+      await expect(
+        service.resume('c-resume-1', 'chk-foreign-99', 'u-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('CONV-05: Compaction Range Validation and Concurrency Serialization (applyCompaction)', () => {
+    const mockMessages = [
+      { id: 'm-1', role: 'system', content: 'System instruction', sequenceNumber: 1, status: 'complete' },
+      { id: 'm-2', role: 'user', content: 'Turn 2', sequenceNumber: 2, status: 'complete' },
+      { id: 'm-3', role: 'assistant', content: 'Turn 3', sequenceNumber: 3, status: 'complete' },
+      { id: 'm-4', role: 'user', content: 'Turn 4', sequenceNumber: 4, status: 'complete' },
+      { id: 'm-5', role: 'assistant', content: 'Turn 5', sequenceNumber: 5, status: 'complete' },
+      { id: 'm-6', role: 'user', content: 'Turn 6', sequenceNumber: 6, status: 'complete' },
+    ];
+
+    it('rejects with 400 and INVALID_COMPACTION_RANGE when compactedThroughSequence <= activeCheckpoint.compactedThroughSequence', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-comp-1',
+        ownerId: 'u-1',
+        title: 'Compaction Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        status: 'active',
+        activeCheckpointId: 'chk-1',
+        messages: mockMessages,
+        checkpoints: [
+          {
+            id: 'chk-1',
+            conversationId: 'c-comp-1',
+            summary: 'Checkpoint 1',
+            compactedThroughSequence: 3,
+            createdAt: new Date(),
+          },
+        ],
+      });
+
+      try {
+        await service.applyCompaction(
+          'c-comp-1',
+          { summary: 'New summary', compactedThroughSequence: 3, retainedFacts: ['fact-1'] },
+          'u-1',
+        );
+        fail('Expected BadRequestException to be thrown');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        const resp = err.getResponse();
+        expect(resp.code).toBe('INVALID_COMPACTION_RANGE');
+      }
+    });
+
+    it('rejects with 400 and INVALID_COMPACTION_RANGE when compactedThroughSequence >= maxSeq (latest message must remain uncompacted)', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-comp-1',
+        ownerId: 'u-1',
+        title: 'Compaction Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        status: 'active',
+        messages: mockMessages, // maxSeq is 6
+        checkpoints: [],
+      });
+
+      try {
+        await service.applyCompaction(
+          'c-comp-1',
+          { summary: 'New summary', compactedThroughSequence: 6, retainedFacts: ['fact-1'] },
+          'u-1',
+        );
+        fail('Expected BadRequestException to be thrown');
+      } catch (err: any) {
+        expect(err).toBeInstanceOf(BadRequestException);
+        const resp = err.getResponse();
+        expect(resp.code).toBe('INVALID_COMPACTION_RANGE');
+      }
+    });
+
+    it('locks conversation row with FOR UPDATE, creates checkpoint, and sets activeCheckpointId in one transaction', async () => {
+      mockPrisma.conversation.findUnique.mockResolvedValue({
+        id: 'c-comp-1',
+        ownerId: 'u-1',
+        title: 'Compaction Conv',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        contextBudget: 4096,
+        status: 'active',
+        messages: mockMessages,
+        checkpoints: [],
+      });
+
+      mockPrisma.conversationCheckpoint.create.mockResolvedValue({
+        id: 'chk-created-1',
+        conversationId: 'c-comp-1',
+        summary: 'Newly created compaction checkpoint',
+        retainedFacts: ['fact-a'],
+        compactedThroughSequence: 4,
+        createdAt: new Date(),
+      });
+
+      const res = await service.applyCompaction(
+        'c-comp-1',
+        {
+          summary: 'Newly created compaction checkpoint',
+          compactedThroughSequence: 4,
+          retainedFacts: ['fact-a'],
+        },
+        'u-1',
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.checkpoint.id).toBe('chk-created-1');
+      expect(res.checkpoint.compactedThroughSequence).toBe(4);
+
+      // Verify row lock was issued via $queryRaw
+      expect(mockPrisma.$queryRaw).toHaveBeenCalled();
+
+      // Verify activeCheckpointId was set in the transaction
+      expect(mockPrisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'c-comp-1' },
+        data: {
+          activeCheckpointId: 'chk-created-1',
+          updatedAt: expect.any(Date),
+        },
+      });
     });
   });
 });

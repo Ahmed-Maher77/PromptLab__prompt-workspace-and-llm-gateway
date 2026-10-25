@@ -42,7 +42,8 @@ docs/knowledge/
 │   ├── adr-006-privacy-redaction-engine.md
 │   ├── adr-007-read-only-system-settings.md
 │   ├── adr-008-backward-compatible-pagination.md
-│   └── adr-009-context-budget-sliding-window.md
+│   ├── adr-009-context-budget-sliding-window.md
+│   └── adr-010-resumable-checkpoints-and-compaction-validation.md
 └── operations/              # Operational runbooks, verification, and setup
     ├── index.md
     ├── local-development.md

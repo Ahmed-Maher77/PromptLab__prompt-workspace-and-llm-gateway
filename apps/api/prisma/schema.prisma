@@ -102,14 +102,16 @@ model Conversation {
   provider  String
   model     String
   contextBudget Int?
+  activeCheckpointId String?
   status       String   @default("active") // active, archived
   lastSequence Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  owner       User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  messages    ConversationMessage[]
-  checkpoints ConversationCheckpoint[]
+  owner            User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  messages         ConversationMessage[]
+  checkpoints      ConversationCheckpoint[] @relation("ConversationCheckpoints")
+  activeCheckpoint ConversationCheckpoint?  @relation("ActiveConversationCheckpoint", fields: [activeCheckpointId], references: [id], onDelete: SetNull)
 
   @@map("conversations")
 }
@@ -143,7 +145,8 @@ model ConversationCheckpoint {
   contextPolicyVersion     String   @default("v1")
   createdAt                DateTime @default(now())
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation           Conversation   @relation("ConversationCheckpoints", fields: [conversationId], references: [id], onDelete: Cascade)
+  activeForConversations Conversation[] @relation("ActiveConversationCheckpoint")
 
   @@map("conversation_checkpoints")
 }

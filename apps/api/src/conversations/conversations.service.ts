@@ -172,8 +172,11 @@ export class ConversationsService {
       throw new NotFoundException(`Conversation with ID "${id}" was not found.`);
     }
 
-    const latestCheckpoint =
-      conversation.checkpoints.length > 0 ? conversation.checkpoints[0] : null;
+    const activeCheckpoint = conversation.activeCheckpointId
+      ? conversation.checkpoints.find((c) => c.id === conversation.activeCheckpointId) || null
+      : conversation.checkpoints.length > 0
+        ? conversation.checkpoints[0]
+        : null;
 
     return {
       id: conversation.id,
@@ -183,12 +186,13 @@ export class ConversationsService {
       model: conversation.model,
       contextBudget: conversation.contextBudget,
       status: conversation.status,
+      activeCheckpointId: conversation.activeCheckpointId,
       lastSequence: conversation.lastSequence,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
       messages: conversation.messages,
       checkpoints: conversation.checkpoints,
-      activeCheckpoint: latestCheckpoint,
+      activeCheckpoint,
     };
   }
 
@@ -631,50 +635,107 @@ export class ConversationsService {
    * Crucially, all original conversation messages remain stored in PostgreSQL.
    */
   async applyCompaction(id: string, dto: ApplyCompactionDto, userId: string) {
-    const conv = await this.findOne(id, userId);
-
     if (!dto.summary || dto.summary.trim().length === 0) {
       throw new BadRequestException('Compaction summary cannot be empty.');
     }
 
-    const maxSeq = conv.messages.reduce(
-      (max, m) => Math.max(max, m.sequenceNumber),
-      0,
-    );
+    const checkpointData = await this.prisma.$transaction(async (tx) => {
+      // Guard against concurrent applyCompaction calls creating overlapping checkpoints
+      // Lock the conversation row in PostgreSQL
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "conversations" WHERE "id" = ${id} AND "ownerId" = ${userId} FOR UPDATE;
+      `;
 
-    if (dto.compactedThroughSequence > maxSeq) {
-      throw new BadRequestException(
-        `Cannot compact beyond latest message sequence (${maxSeq}).`,
+      if (!locked || locked.length === 0) {
+        throw new NotFoundException(`Conversation with ID "${id}" was not found.`);
+      }
+
+      const conv = await tx.conversation.findUnique({
+        where: { id },
+        include: {
+          messages: {
+            orderBy: { sequenceNumber: 'asc' },
+          },
+          checkpoints: {
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      });
+
+      if (!conv || (conv.ownerId && conv.ownerId !== userId)) {
+        throw new NotFoundException(`Conversation with ID "${id}" was not found.`);
+      }
+
+      const activeCheckpoint = conv.activeCheckpointId
+        ? conv.checkpoints.find((c) => c.id === conv.activeCheckpointId) || null
+        : conv.checkpoints.length > 0
+          ? conv.checkpoints[0]
+          : null;
+
+      const currentCompactedThrough = activeCheckpoint
+        ? activeCheckpoint.compactedThroughSequence
+        : 0;
+
+      const nonSystemMessages = conv.messages.filter((m) => m.role !== 'system');
+      const maxSeq = nonSystemMessages.reduce(
+        (max, m) => Math.max(max, m.sequenceNumber),
+        0,
       );
-    }
 
-    const checkpoint = await this.prisma.conversationCheckpoint.create({
-      data: {
-        conversationId: conv.id,
-        summary: dto.summary.trim(),
-        retainedFacts: (dto.retainedFacts || []) as unknown as Prisma.InputJsonValue,
-        compactedThroughSequence: dto.compactedThroughSequence,
-        contextPolicyVersion: 'v1',
-      },
+      // CONV-05 Validation:
+      // compactedThroughSequence must be > activeCheckpoint.compactedThroughSequence and < latest message sequence.
+      // Return 400 with { message, code: 'INVALID_COMPACTION_RANGE' } otherwise.
+      if (dto.compactedThroughSequence <= currentCompactedThrough) {
+        throw new BadRequestException({
+          message: `Target sequence (${dto.compactedThroughSequence}) must be greater than current active checkpoint sequence (${currentCompactedThrough}).`,
+          code: 'INVALID_COMPACTION_RANGE',
+        });
+      }
+
+      if (dto.compactedThroughSequence >= maxSeq) {
+        throw new BadRequestException({
+          message: `Cannot compact through or beyond latest message (${maxSeq}). Recent turns must remain uncompacted.`,
+          code: 'INVALID_COMPACTION_RANGE',
+        });
+      }
+
+      const created = await tx.conversationCheckpoint.create({
+        data: {
+          conversationId: conv.id,
+          summary: dto.summary.trim(),
+          retainedFacts: (dto.retainedFacts || []) as unknown as Prisma.InputJsonValue,
+          compactedThroughSequence: dto.compactedThroughSequence,
+          contextPolicyVersion: 'v1',
+        },
+      });
+
+      // Update activeCheckpointId and updatedAt in one transaction
+      await tx.conversation.update({
+        where: { id: conv.id },
+        data: {
+          activeCheckpointId: created.id,
+          updatedAt: new Date(),
+        },
+      });
+
+      return { checkpoint: created, conv };
     });
 
-    // Touch conversation updated timestamp
-    await this.prisma.conversation.update({
-      where: { id: conv.id },
-      data: { updatedAt: new Date() },
+    const inspection = assembleConversationContext({
+      ...checkpointData.conv,
+      activeCheckpointId: checkpointData.checkpoint.id,
+      activeCheckpoint: checkpointData.checkpoint,
+      checkpoints: [checkpointData.checkpoint, ...checkpointData.conv.checkpoints],
     });
-
-    const inspection = await this.inspectContext(conv.id, undefined, userId);
-
 
     return {
       success: true,
       checkpoint: {
-        id: checkpoint.id,
-        summary: checkpoint.summary,
+        id: checkpointData.checkpoint.id,
+        summary: checkpointData.checkpoint.summary,
         retainedFacts: dto.retainedFacts || [],
-        compactedThroughSequence: checkpoint.compactedThroughSequence,
-        createdAt: checkpoint.createdAt,
+        compactedThroughSequence: checkpointData.checkpoint.compactedThroughSequence,
+        createdAt: checkpointData.checkpoint.createdAt,
       },
       contextStatus: inspection,
     };
@@ -682,22 +743,41 @@ export class ConversationsService {
 
   /**
    * Resumes conversation from a selected checkpoint.
-   * Confirms active checkpoint and provides context inspection.
+   * Confirms active checkpoint, persists activeCheckpointId, and provides context inspection.
    */
   async resume(id: string, checkpointId: string | undefined, userId: string) {
     const conv = await this.findOne(id, userId);
 
     let targetCheckpoint = conv.activeCheckpoint;
+    let targetCheckpointId: string | null = null;
+
     if (checkpointId) {
       const found = conv.checkpoints.find((c) => c.id === checkpointId);
       if (!found) {
         throw new NotFoundException(`Checkpoint with ID "${checkpointId}" was not found.`);
       }
       targetCheckpoint = found;
+      targetCheckpointId = found.id;
+    } else {
+      targetCheckpointId = conv.activeCheckpoint?.id ?? null;
     }
 
-    const inspection = await this.inspectContext(conv.id, undefined, userId);
+    if (targetCheckpointId !== conv.activeCheckpointId) {
+      await this.prisma.conversation.update({
+        where: { id: conv.id },
+        data: {
+          activeCheckpointId: targetCheckpointId,
+          updatedAt: new Date(),
+        },
+      });
+    }
 
+    const updatedConv = {
+      ...conv,
+      activeCheckpointId: targetCheckpointId,
+      activeCheckpoint: targetCheckpoint,
+    };
+    const inspection = assembleConversationContext(updatedConv);
 
     return {
       success: true,

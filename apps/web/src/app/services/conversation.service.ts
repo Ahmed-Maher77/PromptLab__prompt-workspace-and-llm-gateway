@@ -53,6 +53,7 @@ export interface ConversationDetail {
   updatedAt: string;
   messages: ConversationMessage[];
   checkpoints: ConversationCheckpoint[];
+  activeCheckpointId?: string | null;
   activeCheckpoint: ConversationCheckpoint | null;
 }
 

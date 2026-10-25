@@ -2036,6 +2036,221 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         jest.restoreAllMocks();
       }
     });
+
+    it('compacts twice, resumes first checkpoint, and asserts inspectContext and provider payload use it (CONV-04)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+
+      let lastDispatchedMessages: any[] = [];
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (req: any) => {
+        lastDispatchedMessages = req.messages || [];
+        return {
+          success: true,
+          content: 'Model assistant reply.',
+          latencyMs: 15,
+          model: 'gpt-4o-mini',
+          usage: {
+            promptTokens: 25,
+            completionTokens: 15,
+            totalTokens: 40,
+            source: 'provider-reported',
+          },
+        };
+      });
+
+      // 1. Create a conversation
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Resumable Checkpoints Integration Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          systemPrompt: 'System instruction pinned: You are a helpful assistant.',
+        })
+        .expect(201);
+
+      const convId = convRes.body.id;
+
+      try {
+        // 2. Add 5 dialogue turns (messages up to sequence 11)
+        for (let i = 1; i <= 5; i++) {
+          await request(app.getHttpServer())
+            .post(`/api/conversations/${convId}/messages`)
+            .set(authHeader)
+            .send({ content: `Turn ${i} user message` })
+            .expect(201);
+        }
+
+        // 3. First compaction through turn 2 (sequence 5: sys 1, u 2, a 3, u 4, a 5)
+        const comp1Res = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/compact/apply`)
+          .set(authHeader)
+          .send({
+            summary: 'Summary through turn 2 (seq 5)',
+            compactedThroughSequence: 5,
+            retainedFacts: ['Fact from turn 2'],
+          })
+          .expect(201);
+
+        const chk1Id = comp1Res.body.checkpoint.id;
+        expect(chk1Id).toBeDefined();
+
+        // 4. Second compaction through turn 4 (sequence 9: u 6, a 7, u 8, a 9)
+        const comp2Res = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/compact/apply`)
+          .set(authHeader)
+          .send({
+            summary: 'Summary through turn 4 (seq 9)',
+            compactedThroughSequence: 9,
+            retainedFacts: ['Fact from turn 4'],
+          })
+          .expect(201);
+
+        const chk2Id = comp2Res.body.checkpoint.id;
+        expect(chk2Id).toBeDefined();
+
+        // Verify active checkpoint is currently chk2
+        const inspectBeforeResume = await request(app.getHttpServer())
+          .get(`/api/conversations/${convId}/context`)
+          .set(authHeader)
+          .expect(200);
+
+        const chkMsgBefore = inspectBeforeResume.body.assembledMessages.find(
+          (m: any) => m.source === 'checkpoint-summary',
+        );
+        expect(chkMsgBefore?.content).toContain('Summary through turn 4 (seq 9)');
+
+        // 5. Resume the first checkpoint (chk1)
+        const resumeRes = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/resume`)
+          .set(authHeader)
+          .send({ checkpointId: chk1Id })
+          .expect(200);
+
+        expect(resumeRes.body.success).toBe(true);
+        expect(resumeRes.body.activeCheckpoint.id).toBe(chk1Id);
+
+        // 6. Assert inspectContext uses chk1 and retains messages after sequence 5
+        const inspectAfterResume = await request(app.getHttpServer())
+          .get(`/api/conversations/${convId}/context`)
+          .set(authHeader)
+          .expect(200);
+
+        const chkMsgAfter = inspectAfterResume.body.assembledMessages.find(
+          (m: any) => m.source === 'checkpoint-summary',
+        );
+        expect(chkMsgAfter?.content).toContain('Summary through turn 2 (seq 5)');
+
+        // Messages after sequence 5 (e.g. sequence 6, 7, 8, 9, 10, 11) remain retained
+        const retainedSeqs = inspectAfterResume.body.assembledMessages
+          .filter((m: any) => m.source === 'retained-message')
+          .map((m: any) => m.sequenceNumber);
+        expect(retainedSeqs).toContain(6);
+        expect(retainedSeqs).toContain(10);
+
+        // 7. Send a new message and assert the dispatched provider payload uses chk1
+        await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .send({ content: 'Message after resuming chk1' })
+          .expect(201);
+
+        const dispatchedChk = lastDispatchedMessages.find(
+          (m: any) => m.content && m.content.includes('Summary through turn 2 (seq 5)'),
+        );
+        expect(dispatchedChk).toBeDefined();
+
+        // Checkpoint 2 summary should NOT be present in dispatched payload
+        const dispatchedChk2 = lastDispatchedMessages.find(
+          (m: any) => m.content && m.content.includes('Summary through turn 4 (seq 9)'),
+        );
+        expect(dispatchedChk2).toBeUndefined();
+      } finally {
+        await prisma.conversation.deleteMany({ where: { id: convId } });
+        jest.restoreAllMocks();
+      }
+    });
+
+    it('serializes concurrent applyCompaction calls cleanly using row-level locking (CONV-05)', async () => {
+      const providersService = app.get(ProvidersService);
+      const prisma = app.get(PrismaService);
+
+      jest.spyOn(providersService, 'executeChatCompletion').mockResolvedValue({
+        success: true,
+        content: 'Assistant turn reply.',
+        latencyMs: 15,
+        model: 'gpt-4o-mini',
+        usage: {
+          promptTokens: 25,
+          completionTokens: 15,
+          totalTokens: 40,
+          source: 'provider-reported',
+        },
+      });
+
+      // 1. Create a conversation
+      const convRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Concurrent Compaction Serialization Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          systemPrompt: 'System instruction.',
+        })
+        .expect(201);
+
+      const convId = convRes.body.id;
+
+      try {
+        // 2. Add 3 dialogue turns (messages up to sequence 7)
+        for (let i = 1; i <= 3; i++) {
+          await request(app.getHttpServer())
+            .post(`/api/conversations/${convId}/messages`)
+            .set(authHeader)
+            .send({ content: `Turn ${i}` })
+            .expect(201);
+        }
+
+        // 3. Issue two concurrent applyCompaction calls for sequence 4
+        const [resA, resB] = await Promise.all([
+          request(app.getHttpServer())
+            .post(`/api/conversations/${convId}/compact/apply`)
+            .set(authHeader)
+            .send({
+              summary: 'Compaction attempt A',
+              compactedThroughSequence: 4,
+              retainedFacts: ['Fact A'],
+            }),
+          request(app.getHttpServer())
+            .post(`/api/conversations/${convId}/compact/apply`)
+            .set(authHeader)
+            .send({
+              summary: 'Compaction attempt B',
+              compactedThroughSequence: 4,
+              retainedFacts: ['Fact B'],
+            }),
+        ]);
+
+        const statuses = [resA.status, resB.status].sort();
+        // One must succeed with 201; the second must cleanly reject with 400 INVALID_COMPACTION_RANGE
+        expect(statuses).toEqual([201, 400]);
+
+        const failedRes = resA.status === 400 ? resA : resB;
+        expect(failedRes.body.code).toBe('INVALID_COMPACTION_RANGE');
+
+        // Verify only 1 checkpoint was created in Postgres
+        const checkpoints = await prisma.conversationCheckpoint.findMany({
+          where: { conversationId: convId },
+        });
+        expect(checkpoints).toHaveLength(1);
+        expect(checkpoints[0].compactedThroughSequence).toBe(4);
+      } finally {
+        await prisma.conversation.deleteMany({ where: { id: convId } });
+        jest.restoreAllMocks();
+      }
+    });
   });
 
 });

@@ -562,9 +562,31 @@
 .chk-card-top {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 4px;
+}
+
+.chk-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.active-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.active-indicator {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  display: inline-block;
+  padding: 4px 0;
 }
 
 .chk-range {

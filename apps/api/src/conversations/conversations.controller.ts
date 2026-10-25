@@ -6,6 +6,8 @@ import {
   Param,
   Body,
   Query,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
@@ -93,11 +95,14 @@ export class ConversationsController {
   }
 
   @Post(':id/resume')
+  @HttpCode(HttpStatus.OK)
   async resume(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-    @Query('checkpointId') checkpointId?: string,
+    @Query('checkpointId') queryCheckpointId?: string,
+    @Body('checkpointId') bodyCheckpointId?: string,
   ) {
+    const checkpointId = queryCheckpointId || bodyCheckpointId;
     return this.conversationsService.resume(id, checkpointId, userId);
   }
 }

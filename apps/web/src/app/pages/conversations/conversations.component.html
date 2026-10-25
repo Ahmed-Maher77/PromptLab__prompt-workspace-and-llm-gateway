@@ -306,7 +306,12 @@
             @for (chk of selectedConversation()?.checkpoints; track chk.id) {
               <div class="checkpoint-card" [class.active-chk]="selectedConversation()?.activeCheckpoint?.id === chk.id">
                 <div class="chk-card-top">
-                  <span class="chk-title">Checkpoint #{{ chk.id.slice(0, 8) }}</span>
+                  <div class="chk-title-wrapper">
+                    <span class="chk-title">Checkpoint #{{ chk.id.slice(0, 8) }}</span>
+                    @if (selectedConversation()?.activeCheckpoint?.id === chk.id) {
+                      <span class="badge badge-accent badge-sm active-badge">Active</span>
+                    }
+                  </div>
                   <span class="chk-date">{{ chk.createdAt | date:'short' }}</span>
                 </div>
 
@@ -331,9 +336,13 @@
                 }
 
                 <div class="chk-actions">
-                  <button class="btn btn-secondary btn-sm" (click)="resumeCheckpoint(chk.id)">
-                    Resume from this Checkpoint
-                  </button>
+                  @if (selectedConversation()?.activeCheckpoint?.id === chk.id) {
+                    <span class="active-indicator">Currently active in context</span>
+                  } @else {
+                    <button class="btn btn-secondary btn-sm" (click)="resumeCheckpoint(chk.id)">
+                      Resume from this Checkpoint
+                    </button>
+                  }
                 </div>
               </div>
             }

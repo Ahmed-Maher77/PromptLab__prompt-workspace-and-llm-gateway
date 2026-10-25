@@ -475,6 +475,37 @@ describe('ConversationsComponent', () => {
     expect(component.resumeMessage()).toContain('All 4 original messages remain safely stored in PostgreSQL');
   });
 
+  it('should not display resume confirmation banner if resume API fails', () => {
+    spyOn(window, 'alert');
+    mockConversationService.resume.and.returnValue(
+      throwError(() => ({ error: { message: 'Checkpoint not found' } })),
+    );
+
+    component.resumeMessage.set(null);
+    component.resumeCheckpoint('chk-missing');
+
+    expect(mockConversationService.resume).toHaveBeenCalledWith('c-1', 'chk-missing');
+    expect(component.resumeMessage()).toBeNull();
+    expect(window.alert).toHaveBeenCalledWith('Checkpoint not found');
+  });
+
+  it('marks active checkpoint in checkpoint drawer and displays active indicator', () => {
+    component.showHistoryDrawer.set(true);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const activeCard = compiled.querySelector('.checkpoint-card.active-chk');
+    expect(activeCard).toBeTruthy();
+
+    const activeBadge = compiled.querySelector('.active-badge');
+    expect(activeBadge).toBeTruthy();
+    expect(activeBadge?.textContent).toContain('Active');
+
+    const activeIndicator = compiled.querySelector('.active-indicator');
+    expect(activeIndicator).toBeTruthy();
+    expect(activeIndicator?.textContent).toContain('Currently active in context');
+  });
+
   it('should create a new conversation with custom title and initial system prompt', () => {
     mockConversationService.createConversation.and.returnValue(
       of({
