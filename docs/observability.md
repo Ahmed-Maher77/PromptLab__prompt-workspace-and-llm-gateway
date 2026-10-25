@@ -21,16 +21,18 @@ PromptLab uses **native, spec-compliant custom instrumentation and OTLP/HTTP exp
 
 Each LLM execution creates a root trace and child spans capturing specific stages of the lifecycle:
 
-```
-Root Span: [playground.execute | comparison.slot | conversation.turn]
-  │
-  ├── 1. [quota.reserve]             ── Atomic reservation against monthly token budget
-  │
-  ├── 2. [litellm.chat_completion]   ── Upstream call to LiteLLM Gateway / configured LLM provider
-  │
-  ├── 3. [quota.reconcile]           ── Reconciles actual tokens against reservation in usage ledger
-  │
-  └── 4. [evaluations.criteria]      ── (Comparison experiments) Regex/automated criteria checks
+```mermaid
+graph TD
+    Root["Root Span<br/>(playground.execute | comparison.slot | conversation.turn)"]
+    S1["1. [quota.reserve]<br/>Atomic reservation against monthly token budget"]
+    S2["2. [litellm.chat_completion]<br/>Upstream call to LiteLLM Gateway / configured LLM provider"]
+    S3["3. [quota.reconcile]<br/>Reconciles actual tokens against reservation in usage ledger"]
+    S4["4. [evaluations.criteria]<br/>(Comparison experiments) Regex/automated criteria checks"]
+
+    Root --> S1
+    Root --> S2
+    Root --> S3
+    Root --> S4
 ```
 
 ### Trace Context Propagation
