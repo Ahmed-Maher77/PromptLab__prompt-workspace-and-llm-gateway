@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
   UnauthorizedException,
+  ConflictException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
@@ -53,7 +54,12 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
   ) {
     const mergedEnv = { ...process.env, ...envOverrides };
     const validatedConfig = validateEnvironment(mergedEnv);
-    return new AuthGuard(reflector, validatedConfig, jwtService, prismaService);
+    const mockPrisma = prismaService || {
+      user: {
+        upsert: jest.fn().mockResolvedValue({ id: 'any' }),
+      },
+    };
+    return new AuthGuard(reflector, validatedConfig, jwtService, mockPrisma);
   }
 
   function createMockContext(
@@ -504,6 +510,47 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       const allowed2 = await guard.canActivate(ctx);
       expect(allowed2).toBe(true);
       expect(mockPrisma.user.upsert).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects with ConflictException (409) when upsert encounters P2002 email unique constraint conflict (SEC-01f)', async () => {
+      const p2002Error = new Error('Unique constraint failed on the fields: (`email`)') as any;
+      p2002Error.code = 'P2002';
+
+      const mockPrisma = {
+        user: {
+          upsert: jest.fn().mockRejectedValue(p2002Error),
+        },
+      };
+
+      const guard = createAuthGuard({}, mockPrisma);
+      const ctx = createMockContext({ authorization: 'Bearer dev-user-token' });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(ConflictException);
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        /is already associated with another account/,
+      );
+    });
+
+    it('re-syncs user after TTL expires (SEC-01f)', async () => {
+      const mockPrisma = {
+        user: {
+          upsert: jest.fn().mockResolvedValue({ id: 'user-002' }),
+        },
+      };
+
+      const guard = createAuthGuard({}, mockPrisma);
+      const ctx = createMockContext({ authorization: 'Bearer dev-user-token' });
+
+      await guard.canActivate(ctx);
+      expect(mockPrisma.user.upsert).toHaveBeenCalledTimes(1);
+
+      // Advance time by 6 minutes (TTL is 5 minutes)
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 6 * 60 * 1000);
+
+      await guard.canActivate(ctx);
+      expect(mockPrisma.user.upsert).toHaveBeenCalledTimes(2);
+
+      nowSpy.mockRestore();
     });
   });
 });

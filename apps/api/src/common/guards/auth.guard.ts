@@ -4,8 +4,8 @@ import {
   Inject,
   Injectable,
   Logger,
-  Optional,
   UnauthorizedException,
+  ConflictException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
@@ -30,12 +30,16 @@ import { PrismaService } from '../../prisma/prisma.service';
  *  - JWTs verified cryptographically with pinned HS256 algorithm.
  *  - JWTs require 'exp' claim and enforce maximum lifetime (exp - iat <= maxLifetime).
  *  - Checks issuer and audience when configured.
- *  - SEC-01e: Upserts authenticated user into DB on first request to ensure FK integrity.
+ *  - SEC-01e / SEC-01f: Upserts authenticated user into DB with bounded TTL cache; rejects email conflicts with 409.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
-  private readonly ensuredUserIds = new Set<string>();
+  // SEC-01f: Bounded TTL cache (up to 10k users, 5 min TTL) to allow role re-syncing without unbounded memory growth
+  private readonly ensuredUsers = new Map<string, number>();
+  private static readonly ENSURED_USER_TTL_MS = 5 * 60 * 1000;
+  private static readonly MAX_ENSURED_USERS = 10_000;
+
   private devAdminDigest?: Buffer;
   private devUserDigest?: Buffer;
 
@@ -43,7 +47,7 @@ export class AuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     @Inject(AUTH_CONFIG) private readonly authConfig: ValidatedEnvironment,
     private readonly jwtService: JwtService,
-    @Optional() private readonly prisma?: PrismaService,
+    private readonly prisma: PrismaService,
   ) {
     this.initDevDigests();
   }
@@ -103,14 +107,14 @@ export class AuthGuard implements CanActivate {
     }
 
     request.user = user;
-    if (this.prisma) {
-      await this.ensureUserPersisted(user);
-    }
+    await this.ensureUserPersisted(user);
     return true;
   }
 
   private async ensureUserPersisted(user: AuthenticatedUser): Promise<void> {
-    if (this.ensuredUserIds.has(user.id)) {
+    const now = Date.now();
+    const lastEnsured = this.ensuredUsers.get(user.id);
+    if (lastEnsured && now - lastEnsured < AuthGuard.ENSURED_USER_TTL_MS) {
       return;
     }
     const email = user.email || `${user.id}@promptlab.local`;
@@ -118,7 +122,7 @@ export class AuthGuard implements CanActivate {
     const role = user.role || 'user';
 
     try {
-      await this.prisma!.user.upsert({
+      await this.prisma.user.upsert({
         where: { id: user.id },
         update: {
           role,
@@ -131,8 +135,21 @@ export class AuthGuard implements CanActivate {
           role,
         },
       });
-      this.ensuredUserIds.add(user.id);
-    } catch (err) {
+
+      // SEC-01f: Maintain bounded cache size (LRU eviction of oldest key if limit reached)
+      if (this.ensuredUsers.size >= AuthGuard.MAX_ENSURED_USERS) {
+        const oldestKey = this.ensuredUsers.keys().next().value;
+        if (oldestKey) {
+          this.ensuredUsers.delete(oldestKey);
+        }
+      }
+      this.ensuredUsers.set(user.id, now);
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        throw new ConflictException(
+          `User email "${email}" is already associated with another account`,
+        );
+      }
       this.logger.warn(
         `Failed to upsert authenticated user ${user.id}: ${(err as Error).message}`,
       );
