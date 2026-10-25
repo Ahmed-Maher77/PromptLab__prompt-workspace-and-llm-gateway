@@ -71,5 +71,5 @@ jobs:
         run: npm run test:integration
 
       - name: Dependency security audit
-        run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true
+        run: npm run audit
+
