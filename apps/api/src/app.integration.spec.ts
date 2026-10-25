@@ -4,6 +4,8 @@ import * as request from 'supertest';
 import { AppModule } from './app.module';
 import { validateEnvironment } from './common/config/env.validation';
 import { configureApp } from './configure-app';
+import { PrismaService } from './prisma/prisma.service';
+import { UsageService } from './usage/usage.service';
 
 describe('HTTP Routing & App Integration (E2E)', () => {
   let app: INestApplication;
@@ -542,4 +544,47 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
+  describe('Concurrency & Quota Management (Phase 3)', () => {
+    it('handles concurrent first-of-month quota period and policy creation without P2002 conflict (QUOTA-01)', async () => {
+      const prisma = app.get(PrismaService);
+      const usageService = app.get(UsageService);
+      const testUserId = `test-user-quota01-${Date.now()}`;
+
+      await prisma.user.create({
+        data: {
+          id: testUserId,
+          email: `${testUserId}@example.com`,
+          displayName: 'Quota01 Test User',
+          role: 'user',
+        },
+      });
+
+      // Fire 10 concurrent reserveUsage calls simultaneously for a fresh user with no existing policy or period
+      const concurrentReservations = Array.from({ length: 10 }, (_, i) =>
+        usageService.reserveUsage({
+          requestId: `req-quota01-${i}-${Date.now()}`,
+          userId: testUserId,
+          model: 'gpt-4o-mini',
+          provider: 'gateway',
+          estimatedTokens: 100,
+        }),
+      );
+
+      const results = await Promise.allSettled(concurrentReservations);
+      const rejected = results.filter((r) => r.status === 'rejected');
+      expect(rejected).toHaveLength(0); // Zero P2002 failures!
+
+      const policy = await prisma.quotaPolicy.findUnique({
+        where: { scope_scopeId: { scope: 'user', scopeId: testUserId } },
+      });
+      expect(policy).toBeDefined();
+
+      const periods = await prisma.quotaPeriod.findMany({
+        where: { userId: testUserId },
+      });
+      expect(periods).toHaveLength(1);
+    });
+  });
+
 });
+

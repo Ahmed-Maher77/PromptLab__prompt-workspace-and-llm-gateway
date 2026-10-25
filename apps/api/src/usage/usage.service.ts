@@ -29,32 +29,26 @@ export class UsageService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Retrieves or creates the quota policy for a user.
+   * Retrieves or creates the quota policy for a user atomically via upsert.
    */
   async getPolicy(userId: string) {
     const uid = userId;
 
-    let policy = await this.prisma.quotaPolicy.findUnique({
+    return await this.prisma.quotaPolicy.upsert({
       where: {
         scope_scopeId: {
           scope: 'user',
           scopeId: uid,
         },
       },
+      update: {},
+      create: {
+        scope: 'user',
+        scopeId: uid,
+        monthlyTokenLimit: 1_000_000,
+        requestRateLimit: 60,
+      },
     });
-
-    if (!policy) {
-      policy = await this.prisma.quotaPolicy.create({
-        data: {
-          scope: 'user',
-          scopeId: uid,
-          monthlyTokenLimit: 1_000_000,
-          requestRateLimit: 60,
-        },
-      });
-    }
-
-    return policy;
   }
 
   /**
@@ -135,30 +129,24 @@ export class UsageService {
       },
     });
 
-    let period = await this.prisma.quotaPeriod.findUnique({
+    return await this.prisma.quotaPeriod.upsert({
       where: {
         userId_periodStart: {
           userId,
           periodStart,
         },
       },
+      update: {},
+      create: {
+        userId,
+        periodStart,
+        periodEnd,
+        tokenLimit: policy.monthlyTokenLimit,
+        reservedTokens: 0,
+        actualTokens: 0,
+        status: 'active',
+      },
     });
-
-    if (!period) {
-      period = await this.prisma.quotaPeriod.create({
-        data: {
-          userId,
-          periodStart,
-          periodEnd,
-          tokenLimit: policy.monthlyTokenLimit,
-          reservedTokens: 0,
-          actualTokens: 0,
-          status: 'active',
-        },
-      });
-    }
-
-    return period;
   }
 
   /**
@@ -310,28 +298,24 @@ export class UsageService {
     return await this.prisma.$transaction(async (tx) => {
       const { periodStart, periodEnd } = this.getUtcMonthBounds();
 
-      let period = await tx.quotaPeriod.findUnique({
+      const period = await tx.quotaPeriod.upsert({
         where: {
           userId_periodStart: {
             userId: uid,
             periodStart,
           },
         },
+        update: {},
+        create: {
+          userId: uid,
+          periodStart,
+          periodEnd,
+          tokenLimit: policy.monthlyTokenLimit,
+          reservedTokens: 0,
+          actualTokens: 0,
+          status: 'active',
+        },
       });
-
-      if (!period) {
-        period = await tx.quotaPeriod.create({
-          data: {
-            userId: uid,
-            periodStart,
-            periodEnd,
-            tokenLimit: policy.monthlyTokenLimit,
-            reservedTokens: 0,
-            actualTokens: 0,
-            status: 'active',
-          },
-        });
-      }
 
       // Row-level lock to serialize concurrent requests and eliminate stale reads
       let activeActual = period.actualTokens;

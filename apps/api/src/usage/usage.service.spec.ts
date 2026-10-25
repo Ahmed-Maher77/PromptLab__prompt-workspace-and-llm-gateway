@@ -18,12 +18,20 @@ describe('UsageService', () => {
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        upsert: jest.fn().mockImplementation(async (args) => {
+          const existing = await mockPrisma.quotaPolicy.findUnique();
+          return existing || { id: 'qp-mock', ...args.create };
+        }),
       },
       quotaPeriod: {
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
+        upsert: jest.fn().mockImplementation(async (args) => {
+          const existing = await mockPrisma.quotaPeriod.findUnique();
+          return existing || { id: 'period-mock', ...args.create };
+        }),
       },
       usageRecord: {
         findUnique: jest.fn(),
@@ -62,7 +70,7 @@ describe('UsageService', () => {
 
       expect(policy.monthlyTokenLimit).toBe(1_000_000);
       expect(policy.requestRateLimit).toBe(60);
-      expect(mockPrisma.quotaPolicy.create).toHaveBeenCalled();
+      expect(mockPrisma.quotaPolicy.upsert).toHaveBeenCalled();
     });
 
     it('should update quota policy and active quota period limit', async () => {
