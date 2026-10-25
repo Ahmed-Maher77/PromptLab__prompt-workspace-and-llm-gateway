@@ -55,15 +55,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    // Generate or propagate x-request-id
-    const incomingRequestId = request?.headers?.['x-request-id'];
+    // Generate or propagate x-request-id (reuse req.id set by middleware)
+    const incomingRequestId =
+      (request as any)?.id || request?.headers?.['x-request-id'];
     const requestId =
       typeof incomingRequestId === 'string' && incomingRequestId.trim()
-        ? incomingRequestId
+        ? incomingRequestId.trim()
         : crypto.randomUUID();
 
     if (typeof response?.setHeader === 'function') {
       response.setHeader('x-request-id', requestId);
+      response.setHeader('Content-Type', 'application/problem+json');
     }
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -72,17 +74,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let title: string | undefined;
     let restExtensions: Record<string, unknown> = {};
 
-    // 1. Prisma Known Request Errors mapping
-    const isPrismaError =
-      exception instanceof Prisma.PrismaClientKnownRequestError ||
-      (exception !== null &&
-        typeof exception === 'object' &&
-        'code' in exception &&
-        typeof (exception as { code: unknown }).code === 'string' &&
-        (exception as { code: string }).code.startsWith('P'));
-
-    if (isPrismaError) {
-      const prismaCode = (exception as { code: string }).code;
+    // 1. Prisma database errors mapping using real Prisma error instances
+    if (exception instanceof Prisma.PrismaClientValidationError) {
+      status = HttpStatus.BAD_REQUEST;
+      title = 'Bad Request';
+      code = 'VALIDATION_ERROR';
+      message = 'Database validation error: check submitted fields and types.';
+    } else if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      const prismaCode = exception.code;
       code = prismaCode;
 
       switch (prismaCode) {
@@ -168,11 +167,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     // Handle 429 Too Many Requests -> set Retry-After header and body field
+    // (Preserve existing Retry-After header if set by Throttler)
     if (status === HttpStatus.TOO_MANY_REQUESTS) {
-      const retryAfterSeconds =
-        typeof restExtensions.retryAfterSeconds === 'number'
-          ? restExtensions.retryAfterSeconds
-          : 60;
+      const existingHeader =
+        typeof response?.getHeader === 'function'
+          ? response.getHeader('Retry-After')
+          : undefined;
+
+      let retryAfterSeconds: number;
+      if (typeof restExtensions.retryAfterSeconds === 'number') {
+        retryAfterSeconds = restExtensions.retryAfterSeconds;
+      } else if (existingHeader) {
+        retryAfterSeconds = parseInt(String(existingHeader), 10) || 60;
+      } else {
+        retryAfterSeconds = 60;
+      }
 
       if (typeof response?.setHeader === 'function') {
         response.setHeader('Retry-After', String(retryAfterSeconds));

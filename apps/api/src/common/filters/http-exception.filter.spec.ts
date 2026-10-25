@@ -8,6 +8,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
     status: jest.Mock;
     json: jest.Mock;
     setHeader: jest.Mock;
+    getHeader: jest.Mock;
   };
   let mockRequest: {
     method: string;
@@ -24,6 +25,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
       status: jest.fn().mockReturnThis(),
       json: jest.fn().mockReturnThis(),
       setHeader: jest.fn().mockReturnThis(),
+      getHeader: jest.fn(),
     };
     mockRequest = {
       method: 'POST',
@@ -220,9 +222,60 @@ describe('AllExceptionsFilter (ERR-01)', () => {
       expect(body.code).toBe('P2010');
       expect(loggerErrorSpy).toHaveBeenCalled();
     });
+
+    it('maps PrismaClientValidationError to 400 Bad Request (ERR-01a)', () => {
+      const validationError = new Prisma.PrismaClientValidationError(
+        'Invalid `prisma.user.create()` invocation: missing required argument email.',
+        { clientVersion: '6.4.1' },
+      );
+
+      filter.catch(validationError, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.status).toBe(HttpStatus.BAD_REQUEST);
+      expect(body.code).toBe('VALIDATION_ERROR');
+      expect(body.title).toBe('Bad Request');
+      expect(loggerWarnSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('RFC 9457 Content-Type and Throttler Retry-After preservation (ERR-01a)', () => {
+    it('sets Content-Type to application/problem+json on every error response', () => {
+      const exception = new HttpException('Bad Request', HttpStatus.BAD_REQUEST);
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.setHeader).toHaveBeenCalledWith('Content-Type', 'application/problem+json');
+    });
+
+    it('preserves existing Retry-After header already set by Throttler guard', () => {
+      mockResponse.getHeader.mockReturnValueOnce('15');
+
+      const throttlerException = new HttpException(
+        'ThrottlerException: Too Many Requests',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+
+      filter.catch(throttlerException, mockHost);
+
+      expect(mockResponse.setHeader).toHaveBeenCalledWith('Retry-After', '15');
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.retryAfterSeconds).toBe(15);
+    });
   });
 
   describe('Request ID handling', () => {
+    it('reuses req.id set by RequestIdMiddleware (ERR-01a)', () => {
+      (mockRequest as any).id = 'req-from-middleware-123';
+
+      const exception = new HttpException('Bad Request', HttpStatus.BAD_REQUEST);
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.setHeader).toHaveBeenCalledWith('x-request-id', 'req-from-middleware-123');
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.requestId).toBe('req-from-middleware-123');
+    });
+
     it('propagates incoming x-request-id header when provided', () => {
       mockRequest.headers['x-request-id'] = 'custom-req-id-12345';
 

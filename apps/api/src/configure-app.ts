@@ -3,6 +3,7 @@ import helmet from 'helmet';
 import { json, urlencoded } from 'express';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { ValidatedEnvironment } from './common/config/env.validation';
+import { requestIdHandler } from './common/middleware/request-id.middleware';
 
 /**
  * SEC-04: Apply the full HTTP hardening pipeline to a NestJS application instance.
@@ -34,6 +35,9 @@ export function configureApp(app: INestApplication, envConfig: ValidatedEnvironm
       }
     }
   }
+
+  // ERR-01a: Request ID middleware so every incoming request and log line has req.id and x-request-id
+  app.use(requestIdHandler);
 
   // Security headers (X-Content-Type-Options, X-Frame-Options, HSTS, CSP, etc.)
   app.use(helmet());
