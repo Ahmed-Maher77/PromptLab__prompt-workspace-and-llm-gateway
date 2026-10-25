@@ -32,7 +32,7 @@ export interface ValidatedEnvironment {
   CORS_ORIGIN: string | string[];
   LITELLM_GATEWAY_URL: string;
   LITELLM_MASTER_KEY: string;
-  TELEMETRY_ENABLED: boolean;
+  ENABLE_TELEMETRY: boolean;
   NODE_ENV: string;
   IS_DEV_OR_TEST: boolean;
   AUTH_DEV_TOKENS_ENABLED: boolean;
@@ -223,7 +223,7 @@ export function validateEnvironment(
       env.LITELLM_PROXY_URL ||
       DEFAULT_LITELLM_GATEWAY_URL,
     LITELLM_MASTER_KEY: masterKey ?? DEV_MASTER_KEY,
-    TELEMETRY_ENABLED: env.TELEMETRY_ENABLED !== 'false',
+    ENABLE_TELEMETRY: (env.ENABLE_TELEMETRY ?? env.TELEMETRY_ENABLED) !== 'false',
     NODE_ENV: rawNodeEnv || 'production', // default to production when unset for security
     IS_DEV_OR_TEST: isDevOrTest,
     AUTH_DEV_TOKENS_ENABLED: authDevTokensEnabled,

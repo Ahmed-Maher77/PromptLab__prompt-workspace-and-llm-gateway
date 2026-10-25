@@ -38,7 +38,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     expect(config.CORS_ORIGIN).toBe('http://localhost:4200');
     expect(config.LITELLM_GATEWAY_URL).toBe('http://127.0.0.1:4000');
     expect(config.LITELLM_MASTER_KEY).toBe(DEV_MASTER_KEY);
-    expect(config.TELEMETRY_ENABLED).toBe(true);
+    expect(config.ENABLE_TELEMETRY).toBe(true);
     expect(config.IS_DEV_OR_TEST).toBe(true);
     expect(config.AUTH_DEV_TOKENS_ENABLED).toBe(false);
   });
@@ -344,4 +344,42 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
       expect(configIp.TRUST_PROXY).toBe('127.0.0.1, 192.168.1.1');
     });
   });
+
+  describe('ENABLE_TELEMETRY validation (OBS-01)', () => {
+    it('defaults ENABLE_TELEMETRY to true when unset', () => {
+      const config = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+      });
+      expect(config.ENABLE_TELEMETRY).toBe(true);
+    });
+
+    it('sets ENABLE_TELEMETRY to false when ENABLE_TELEMETRY is "false"', () => {
+      const config = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        ENABLE_TELEMETRY: 'false',
+      });
+      expect(config.ENABLE_TELEMETRY).toBe(false);
+    });
+
+    it('sets ENABLE_TELEMETRY to true when ENABLE_TELEMETRY is "true"', () => {
+      const config = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        ENABLE_TELEMETRY: 'true',
+      });
+      expect(config.ENABLE_TELEMETRY).toBe(true);
+    });
+
+    it('falls back to TELEMETRY_ENABLED when ENABLE_TELEMETRY is unset', () => {
+      const config = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        TELEMETRY_ENABLED: 'false',
+      });
+      expect(config.ENABLE_TELEMETRY).toBe(false);
+    });
+  });
 });
+

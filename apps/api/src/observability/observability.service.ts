@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AUTH_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import {
   TraceRecord,
   TraceSpan,
@@ -46,9 +47,15 @@ export class ObservabilityService {
   private readonly traceBuffer: TraceRecord[] = [];
   private readonly maxBufferSize = 500;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() @Inject(AUTH_CONFIG) private readonly authConfig?: ValidatedEnvironment,
+  ) {}
 
   isTelemetryEnabled(): boolean {
+    if (this.authConfig !== undefined) {
+      return this.authConfig.ENABLE_TELEMETRY;
+    }
     const val = this.configService.get<string>('ENABLE_TELEMETRY');
     return val === undefined || val === '' || val === 'true' || val === '1';
   }

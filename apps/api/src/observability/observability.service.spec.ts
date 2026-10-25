@@ -127,6 +127,20 @@ describe('ObservabilityService', () => {
       const traces = service.getTraces();
       expect(traces.length).toBe(0);
     });
+
+    it('respects validated authConfig.ENABLE_TELEMETRY when provided (OBS-01)', () => {
+      const serviceWithConfig = new ObservabilityService(
+        configServiceMock as any,
+        { ENABLE_TELEMETRY: false } as any,
+      );
+      expect(serviceWithConfig.isTelemetryEnabled()).toBe(false);
+
+      const serviceWithConfigTrue = new ObservabilityService(
+        configServiceMock as any,
+        { ENABLE_TELEMETRY: true } as any,
+      );
+      expect(serviceWithConfigTrue.isTelemetryEnabled()).toBe(true);
+    });
   });
 
   describe('redaction and privacy', () => {
