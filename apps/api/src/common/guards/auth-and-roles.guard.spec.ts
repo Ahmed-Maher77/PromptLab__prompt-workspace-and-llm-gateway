@@ -162,6 +162,33 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
     });
 
+    it('rejects JWT with exp one year ahead and NO iat claim with HTTP 401 (SEC-01a-3)', async () => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+      const guard = createAuthGuard();
+      const oneYearAhead = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
+      // Exp is 1 year in future, but iat is not set
+      const tokenWithoutIat = jwtService.sign(
+        { sub: 'attacker-skipping-lifetime', role: 'admin', exp: oneYearAhead },
+        { secret: validJwtSecret, algorithm: 'HS256', noTimestamp: true },
+      );
+      const ctx = createMockContext({ authorization: `Bearer ${tokenWithoutIat}` });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejects JWT with iat in the future beyond 60s clock skew with HTTP 401 (SEC-01a-3)', async () => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+      const guard = createAuthGuard();
+      const now = Math.floor(Date.now() / 1000);
+      const tokenFutureIat = jwtService.sign(
+        { sub: 'user-1', role: 'user', iat: now + 300, exp: now + 3600 },
+        { secret: validJwtSecret, algorithm: 'HS256' },
+      );
+      const ctx = createMockContext({ authorization: `Bearer ${tokenFutureIat}` });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+    });
+
     it('rejects expired JWT with HTTP 401', async () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
       const guard = createAuthGuard();

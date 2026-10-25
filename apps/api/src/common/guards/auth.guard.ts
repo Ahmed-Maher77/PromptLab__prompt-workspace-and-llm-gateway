@@ -164,8 +164,12 @@ export class AuthGuard implements CanActivate {
           Record<string, unknown>
         >(token, verifyOptions);
 
-        // SEC-01a-2: Require exp claim
-        if (!payload || typeof payload.exp !== 'number') {
+        // SEC-01a-3: Require both exp and iat claims
+        if (
+          !payload ||
+          typeof payload.exp !== 'number' ||
+          typeof payload.iat !== 'number'
+        ) {
           return null;
         }
 
@@ -174,15 +178,18 @@ export class AuthGuard implements CanActivate {
           return null;
         }
 
-        // SEC-01a-2: Enforce max token lifetime when iat is present
-        if (typeof payload.iat === 'number') {
-          const lifetime = payload.exp - payload.iat;
-          if (
-            lifetime > this.authConfig.AUTH_JWT_MAX_LIFETIME_SECONDS ||
-            lifetime <= 0
-          ) {
-            return null;
-          }
+        // Reject if iat is in the future beyond 60s clock skew
+        if (payload.iat > now + 60) {
+          return null;
+        }
+
+        // SEC-01a-3: Enforce max token lifetime (exp - iat)
+        const lifetime = payload.exp - payload.iat;
+        if (
+          lifetime > this.authConfig.AUTH_JWT_MAX_LIFETIME_SECONDS ||
+          lifetime <= 0
+        ) {
+          return null;
         }
 
         if (payload.sub || payload.id) {
