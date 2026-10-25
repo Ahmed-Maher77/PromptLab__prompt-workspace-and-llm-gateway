@@ -44,7 +44,7 @@ export interface ValidatedEnvironment {
   AUTH_JWT_MAX_LIFETIME_SECONDS: number;
   AUTH_API_KEYS: ParsedApiKey[];
   ENABLE_DEMO_ENDPOINTS: boolean;
-  TRUST_PROXY?: string;
+  TRUST_PROXY: string | number | false;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   LANGFUSE_HOST?: string;
 }
@@ -235,7 +235,21 @@ export function validateEnvironment(
     AUTH_JWT_MAX_LIFETIME_SECONDS: authJwtMaxLifetimeSeconds,
     AUTH_API_KEYS: parsedApiKeys,
     ENABLE_DEMO_ENDPOINTS: isDevOrTest && env.ENABLE_DEMO_ENDPOINTS === 'true',
-    TRUST_PROXY: env.TRUST_PROXY?.trim() || '1',
+    TRUST_PROXY: (() => {
+      const raw = env.TRUST_PROXY?.trim();
+      if (!raw) return false;
+      if (raw === 'true') {
+        throw new Error(
+          '[Startup Error] TRUST_PROXY="true" is insecure and disallowed. Configure an explicit hop count (e.g. 1) or proxy IP/CIDR (e.g. 10.0.0.0/8), or leave unset to disable proxy trust.',
+        );
+      }
+      if (raw === 'false' || raw === '0') return false;
+      if (/^\d+$/.test(raw)) {
+        const hops = parseInt(raw, 10);
+        return hops > 0 ? hops : false;
+      }
+      return raw;
+    })(),
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
     LANGFUSE_HOST: env.LANGFUSE_HOST,
   };

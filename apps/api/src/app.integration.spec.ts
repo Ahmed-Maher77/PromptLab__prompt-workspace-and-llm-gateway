@@ -21,6 +21,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     process.env.AUTH_DEV_TOKENS_ENABLED = 'true';
     process.env.AUTH_DEV_ADMIN_TOKEN = 'dev-admin-token';
     process.env.AUTH_DEV_USER_TOKEN = 'dev-user-token';
+    delete process.env.TRUST_PROXY;
     const envConfig = validateEnvironment();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -521,6 +522,23 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         .set(authHeader)
         .send(largePayload)
         .expect(413);
+    });
+  });
+
+  describe('Proxy Trust & Rate Limiting (SEC-04b)', () => {
+    it('with TRUST_PROXY unset, 25 requests within 1 s using different X-Forwarded-For values must receive 429', async () => {
+      const requests = Array.from({ length: 25 }, (_, i) =>
+        request(app.getHttpServer())
+          .get('/api/health')
+          .set('X-Forwarded-For', `198.51.100.${i + 1}`),
+      );
+
+      const responses = await Promise.all(requests);
+      const statuses = responses.map((r) => r.status);
+      const throttledResponses = statuses.filter((status) => status === 429);
+
+      // Burst limit is 20 requests per 1 s window; without proxy trust, all 25 requests share the socket IP
+      expect(throttledResponses.length).toBeGreaterThanOrEqual(1);
     });
   });
 

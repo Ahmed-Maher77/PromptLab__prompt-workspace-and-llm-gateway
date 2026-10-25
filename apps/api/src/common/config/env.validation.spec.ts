@@ -269,4 +269,79 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
       expect(config.AUTH_DEV_USER_TOKEN).toBeUndefined();
     });
   });
+
+  describe('TRUST_PROXY validation (SEC-04b)', () => {
+    it('defaults TRUST_PROXY to false when unset or empty', () => {
+      const config = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+      });
+      expect(config.TRUST_PROXY).toBe(false);
+
+      const configEmpty = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        TRUST_PROXY: '   ',
+      });
+      expect(configEmpty.TRUST_PROXY).toBe(false);
+    });
+
+    it('resolves TRUST_PROXY to false when set to "false" or "0"', () => {
+      const configFalse = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        TRUST_PROXY: 'false',
+      });
+      expect(configFalse.TRUST_PROXY).toBe(false);
+
+      const configZero = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        TRUST_PROXY: '0',
+      });
+      expect(configZero.TRUST_PROXY).toBe(false);
+    });
+
+    it('rejects TRUST_PROXY="true" with startup error', () => {
+      expect(() =>
+        validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          TRUST_PROXY: 'true',
+        }),
+      ).toThrow(/TRUST_PROXY="true" is insecure and disallowed/);
+    });
+
+    it('parses numeric TRUST_PROXY as hop count', () => {
+      const config = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        TRUST_PROXY: '1',
+      });
+      expect(config.TRUST_PROXY).toBe(1);
+
+      const config2 = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        TRUST_PROXY: '2',
+      });
+      expect(config2.TRUST_PROXY).toBe(2);
+    });
+
+    it('accepts IP or CIDR strings for TRUST_PROXY', () => {
+      const configCidr = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        TRUST_PROXY: '10.0.0.0/8',
+      });
+      expect(configCidr.TRUST_PROXY).toBe('10.0.0.0/8');
+
+      const configIp = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        TRUST_PROXY: '127.0.0.1, 192.168.1.1',
+      });
+      expect(configIp.TRUST_PROXY).toBe('127.0.0.1, 192.168.1.1');
+    });
+  });
 });
