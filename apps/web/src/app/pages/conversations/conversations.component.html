@@ -259,7 +259,8 @@
           <textarea
             class="chat-textarea"
             rows="3"
-            [(ngModel)]="messageInput"
+            [ngModel]="messageInput()"
+            (ngModelChange)="messageInput.set($event)"
             placeholder="Type your message... (Ctrl+Enter to send)"
             (keydown.control.enter)="sendMessage()"
             [disabled]="sendingMessage()"
@@ -272,7 +273,7 @@
 
             <button
               class="btn btn-primary"
-              [disabled]="!messageInput.trim() || sendingMessage()"
+              [disabled]="!messageInput().trim() || sendingMessage()"
               (click)="sendMessage()"
             >
               @if (sendingMessage()) {

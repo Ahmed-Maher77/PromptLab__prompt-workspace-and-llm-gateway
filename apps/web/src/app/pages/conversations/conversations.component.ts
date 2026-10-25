@@ -29,7 +29,7 @@ export class ConversationsComponent implements OnInit {
   sendingMessage = signal<boolean>(false);
 
   // Chat Input
-  messageInput = '';
+  messageInput = signal<string>('');
   chatError = signal<string | null>(null);
 
   // New Conversation Modal
@@ -59,9 +59,9 @@ export class ConversationsComponent implements OnInit {
   showHistoryDrawer = signal<boolean>(false);
   resumeMessage = signal<string | null>(null);
 
-  // Computed Token Counter for current message input
+  // Computed Token Counter for current message input (FE-01: reactively tracks messageInput signal)
   currentInputTokensEstimate = computed(() => {
-    const text = this.messageInput || '';
+    const text = this.messageInput() || '';
     if (!text.trim()) return 0;
     return Math.max(1, Math.ceil(text.length / 3.8));
   });
@@ -185,7 +185,7 @@ export class ConversationsComponent implements OnInit {
   }
 
   sendMessage(): void {
-    const text = this.messageInput.trim();
+    const text = this.messageInput().trim();
     const conv = this.selectedConversation();
     if (!text || !conv || this.sendingMessage()) {
       return;
@@ -196,7 +196,7 @@ export class ConversationsComponent implements OnInit {
 
     this.conversationService.sendMessage(conv.id, text).subscribe({
       next: (res) => {
-        this.messageInput = '';
+        this.messageInput.set('');
         this.sendingMessage.set(false);
 
         if (!res.success) {

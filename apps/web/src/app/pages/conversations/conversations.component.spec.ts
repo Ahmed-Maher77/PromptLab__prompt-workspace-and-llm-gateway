@@ -268,12 +268,22 @@ describe('ConversationsComponent', () => {
 
     mockConversationService.sendMessage.and.returnValue(of(mockSuccessResponse));
 
-    component.messageInput = 'How should we partition topics?';
+    component.messageInput.set('How should we partition topics?');
     component.sendMessage();
 
     expect(mockConversationService.sendMessage).toHaveBeenCalledWith('c-1', 'How should we partition topics?');
-    expect(component.messageInput).toBe('');
+    expect(component.messageInput()).toBe('');
     expect(component.sendingMessage()).toBeFalse();
+  });
+
+  it('updates token estimate reactively when messageInput changes (FE-01)', () => {
+    expect(component.currentInputTokensEstimate()).toBe(0);
+
+    component.messageInput.set('Hello world');
+    expect(component.currentInputTokensEstimate()).toBe(3);
+
+    component.messageInput.set('');
+    expect(component.currentInputTokensEstimate()).toBe(0);
   });
 
   it('should handle provider errors explicitly when message fails without fabricating responses', () => {
@@ -295,7 +305,7 @@ describe('ConversationsComponent', () => {
 
     mockConversationService.sendMessage.and.returnValue(of(mockFailResponse));
 
-    component.messageInput = 'Trigger auth error';
+    component.messageInput.set('Trigger auth error');
     component.sendMessage();
 
     expect(component.chatError()).toContain('provider_auth_error');
