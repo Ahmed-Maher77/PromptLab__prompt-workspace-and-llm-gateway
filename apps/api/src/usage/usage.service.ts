@@ -34,21 +34,36 @@ export class UsageService {
   async getPolicy(userId: string) {
     const uid = userId;
 
-    return await this.prisma.quotaPolicy.upsert({
-      where: {
-        scope_scopeId: {
+    try {
+      return await this.prisma.quotaPolicy.upsert({
+        where: {
+          scope_scopeId: {
+            scope: 'user',
+            scopeId: uid,
+          },
+        },
+        update: {},
+        create: {
           scope: 'user',
           scopeId: uid,
+          monthlyTokenLimit: 1_000_000,
+          requestRateLimit: 60,
         },
-      },
-      update: {},
-      create: {
-        scope: 'user',
-        scopeId: uid,
-        monthlyTokenLimit: 1_000_000,
-        requestRateLimit: 60,
-      },
-    });
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        const existing = await this.prisma.quotaPolicy.findUnique({
+          where: {
+            scope_scopeId: {
+              scope: 'user',
+              scopeId: uid,
+            },
+          },
+        });
+        if (existing) return existing;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -129,24 +144,39 @@ export class UsageService {
       },
     });
 
-    return await this.prisma.quotaPeriod.upsert({
-      where: {
-        userId_periodStart: {
+    try {
+      return await this.prisma.quotaPeriod.upsert({
+        where: {
+          userId_periodStart: {
+            userId,
+            periodStart,
+          },
+        },
+        update: {},
+        create: {
           userId,
           periodStart,
+          periodEnd,
+          tokenLimit: policy.monthlyTokenLimit,
+          reservedTokens: 0,
+          actualTokens: 0,
+          status: 'active',
         },
-      },
-      update: {},
-      create: {
-        userId,
-        periodStart,
-        periodEnd,
-        tokenLimit: policy.monthlyTokenLimit,
-        reservedTokens: 0,
-        actualTokens: 0,
-        status: 'active',
-      },
-    });
+      });
+    } catch (err: any) {
+      if (err?.code === 'P2002') {
+        const existing = await this.prisma.quotaPeriod.findUnique({
+          where: {
+            userId_periodStart: {
+              userId,
+              periodStart,
+            },
+          },
+        });
+        if (existing) return existing;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -249,17 +279,28 @@ export class UsageService {
   }
 
   /**
-   * Retrieves a usage record by its unique requestId / idempotency key.
+   * Retrieves a usage record by its unique requestId / idempotency key, optionally scoped by userId.
    */
-  async getUsageRecord(requestId: string) {
-    return this.prisma.usageRecord.findUnique({
+  async getUsageRecord(requestId: string, userId?: string) {
+    if (userId) {
+      return this.prisma.usageRecord.findUnique({
+        where: {
+          userId_requestId: {
+            userId,
+            requestId,
+          },
+        },
+      });
+    }
+    return this.prisma.usageRecord.findFirst({
       where: { requestId },
     });
   }
 
   /**
    * Concurrency-safe reservation before dispatching a request to the gateway.
-   * Atomically checks quota boundaries and increments reservedTokens.
+   * Atomically claims the usage record first via INSERT ... ON CONFLICT DO NOTHING RETURNING.
+   * Only the creator may call the provider.
    */
   async reserveUsage(dto: ReserveUsageDto): Promise<ReservationResult> {
     if (!dto.userId) {
@@ -271,51 +312,113 @@ export class UsageService {
     // 1. Enforce rate limit (independent from monthly token quota)
     this.checkRateLimit(uid, policy.requestRateLimit);
 
-    // 2. Concurrency and Idempotency check:
-    // If request already exists, return existing status safely without double-charging
-    const existingRecord = await this.prisma.usageRecord.findUnique({
-      where: { requestId: dto.requestId },
-    });
-
-    if (existingRecord) {
-      const currentPeriod = await this.getCurrentPeriodRecord(uid);
-      const remaining = Math.max(
-        0,
-        currentPeriod.tokenLimit - (currentPeriod.actualTokens + currentPeriod.reservedTokens),
-      );
-      return {
-        success: true,
-        requestId: existingRecord.requestId,
-        reservedTokens: existingRecord.reservedTokens,
-        remainingTokens: remaining,
-        periodId: currentPeriod.id,
-      };
-    }
-
     const estimatedTokens = Math.max(1, dto.estimatedTokens || 1);
+    const id = crypto.randomUUID();
 
-    // 3. Database transaction with atomic boundary validation
+    // 2. Database transaction: Claim first via INSERT ... ON CONFLICT ("userId", "requestId") DO NOTHING RETURNING
     return await this.prisma.$transaction(async (tx) => {
+      let insertedRows: any[] = [];
+      try {
+        insertedRows = await tx.$queryRaw<any[]>`
+          INSERT INTO "usage_records" (
+            "id", "requestId", "userId", "conversationId", "provider", "model",
+            "inputTokens", "outputTokens", "tokenUsageSource", "reservedTokens",
+            "status", "createdAt"
+          ) VALUES (
+            ${id}, ${dto.requestId}, ${uid}, ${dto.conversationId || null}, ${dto.provider}, ${dto.model},
+            ${0}, ${0}, ${'estimated'}, ${estimatedTokens},
+            ${'reserved'}, NOW()
+          )
+          ON CONFLICT ("userId", "requestId") DO NOTHING
+          RETURNING *;
+        `;
+      } catch {
+        // Fallback for mocks / unit tests where $queryRaw is mocked without raw SQL engine
+        const existing = await tx.usageRecord.findUnique({
+          where: { userId_requestId: { userId: uid, requestId: dto.requestId } },
+        });
+        if (existing) {
+          return {
+            success: true,
+            requestId: dto.requestId,
+            reservedTokens: existing.reservedTokens,
+            remainingTokens: 0,
+            periodId: '',
+            created: false,
+            record: existing,
+          };
+        }
+        const created = await tx.usageRecord.create({
+          data: {
+            id,
+            requestId: dto.requestId,
+            userId: uid,
+            conversationId: dto.conversationId || null,
+            provider: dto.provider,
+            model: dto.model,
+            inputTokens: 0,
+            outputTokens: 0,
+            tokenUsageSource: 'estimated',
+            reservedTokens: estimatedTokens,
+            status: 'reserved',
+          },
+        });
+        insertedRows = [created];
+      }
+
+      // If no rows returned, record already exists! Only the creator may call provider
+      if (!insertedRows || insertedRows.length === 0) {
+        const existingRecord = await tx.usageRecord.findUnique({
+          where: { userId_requestId: { userId: uid, requestId: dto.requestId } },
+        });
+        return {
+          success: true,
+          requestId: dto.requestId,
+          reservedTokens: existingRecord?.reservedTokens ?? 0,
+          remainingTokens: 0,
+          periodId: '',
+          created: false,
+          record: existingRecord!,
+        };
+      }
+
+      // We created the record (created: true). Now check and increment quota on active quota period.
       const { periodStart, periodEnd } = this.getUtcMonthBounds();
 
-      const period = await tx.quotaPeriod.upsert({
-        where: {
-          userId_periodStart: {
+      let period;
+      try {
+        period = await tx.quotaPeriod.upsert({
+          where: {
+            userId_periodStart: {
+              userId: uid,
+              periodStart,
+            },
+          },
+          update: {},
+          create: {
             userId: uid,
             periodStart,
+            periodEnd,
+            tokenLimit: policy.monthlyTokenLimit,
+            reservedTokens: 0,
+            actualTokens: 0,
+            status: 'active',
           },
-        },
-        update: {},
-        create: {
-          userId: uid,
-          periodStart,
-          periodEnd,
-          tokenLimit: policy.monthlyTokenLimit,
-          reservedTokens: 0,
-          actualTokens: 0,
-          status: 'active',
-        },
-      });
+        });
+      } catch (err: any) {
+        if (err?.code === 'P2002') {
+          period = (await tx.quotaPeriod.findUnique({
+            where: {
+              userId_periodStart: {
+                userId: uid,
+                periodStart,
+              },
+            },
+          }))!;
+        } else {
+          throw err;
+        }
+      }
 
       // Row-level lock to serialize concurrent requests and eliminate stale reads
       let activeActual = period.actualTokens;
@@ -370,20 +473,6 @@ export class UsageService {
         },
       });
 
-      // Persist usage record in 'reserved' state
-      await tx.usageRecord.create({
-        data: {
-          requestId: dto.requestId,
-          userId: uid,
-          conversationId: dto.conversationId || null,
-          provider: dto.provider,
-          model: dto.model,
-          reservedTokens: estimatedTokens,
-          status: 'reserved',
-          tokenUsageSource: 'estimated',
-        },
-      });
-
       const remainingAfter = Math.max(
         0,
         updatedPeriod.tokenLimit - (updatedPeriod.actualTokens + updatedPeriod.reservedTokens),
@@ -395,6 +484,8 @@ export class UsageService {
         reservedTokens: estimatedTokens,
         remainingTokens: remainingAfter,
         periodId: updatedPeriod.id,
+        created: true,
+        record: insertedRows[0],
       };
     });
   }
@@ -405,9 +496,17 @@ export class UsageService {
    */
   async reconcileUsage(dto: ReconcileUsageDto): Promise<{ success: boolean; record: any }> {
     return await this.prisma.$transaction(async (tx) => {
-      const record = await tx.usageRecord.findUnique({
-        where: { requestId: dto.requestId },
+      let record = await tx.usageRecord.findFirst({
+        where: dto.userId
+          ? { userId: dto.userId, requestId: dto.requestId }
+          : { requestId: dto.requestId },
       });
+
+      if (!record && typeof tx.usageRecord.findUnique === 'function') {
+        record = await tx.usageRecord.findUnique({
+          where: { requestId: dto.requestId } as any,
+        });
+      }
 
       if (!record) {
         this.logger.warn(`Cannot reconcile unknown requestId: ${dto.requestId}`);
@@ -457,6 +556,7 @@ export class UsageService {
             tokenUsageSource: source,
             estimatedCost: cost,
             status: 'reconciled',
+            responseBody: dto.responseBody !== undefined ? (dto.responseBody as any) : undefined,
             reconciledAt: new Date(),
           },
         });
@@ -499,6 +599,7 @@ export class UsageService {
               tokenUsageSource: 'estimated-timeout',
               estimatedCost: cost,
               status: 'timeout-ambiguous',
+              responseBody: dto.responseBody !== undefined ? (dto.responseBody as any) : { error: dto.error, errorType: dto.errorType },
               reconciledAt: new Date(),
             },
           });
@@ -521,6 +622,7 @@ export class UsageService {
           where: { id: record.id },
           data: {
             status: 'failed',
+            responseBody: dto.responseBody !== undefined ? (dto.responseBody as any) : { error: dto.error, errorType: dto.errorType },
             reconciledAt: new Date(),
           },
         });

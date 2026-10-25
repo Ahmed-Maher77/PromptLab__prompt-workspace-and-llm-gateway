@@ -43,7 +43,11 @@ describe('LlmExecutionService', () => {
     };
 
     usageServiceMock = {
-      reserveUsage: jest.fn().mockResolvedValue({ success: true }),
+      reserveUsage: jest.fn().mockResolvedValue({
+        success: true,
+        created: true,
+        record: { id: 'rec-1', status: 'reserved' },
+      }),
       reconcileUsage: jest.fn().mockResolvedValue({ success: true }),
       getUsageRecord: jest.fn().mockResolvedValue(null),
     };
@@ -209,44 +213,139 @@ describe('LlmExecutionService', () => {
     );
   });
 
-  it('returns stored result on duplicate idempotencyKey without calling provider or reserving quota', async () => {
-    const paramsWithKey: ExecuteLlmParams = {
-      ...baseParams,
-      idempotencyKey: 'idemp-key-123',
-    };
+  describe('ARCH-01b Claim-First Idempotency', () => {
+    it('returns stored responseBody on replay of a reconciled request without calling provider', async () => {
+      const storedResponseBody = {
+        success: true,
+        model: 'gpt-4o-mini',
+        content: 'Original cached assistant response',
+        latencyMs: 150,
+        usage: {
+          promptTokens: 40,
+          completionTokens: 20,
+          totalTokens: 60,
+          source: 'provider-reported',
+        },
+        cost: 0.001,
+        requestId: 'idemp-key-reconciled',
+      };
 
-    // First call executes normally
-    const firstResult = await service.execute(paramsWithKey);
-    expect(firstResult.success).toBe(true);
-    expect(providersServiceMock.executeChatCompletion).toHaveBeenCalledTimes(1);
-    expect(usageServiceMock.reserveUsage).toHaveBeenCalledTimes(1);
+      usageServiceMock.reserveUsage.mockResolvedValueOnce({
+        success: true,
+        created: false,
+        record: {
+          id: 'rec-1',
+          requestId: 'idemp-key-reconciled',
+          userId: 'user-001',
+          status: 'reconciled',
+          responseBody: storedResponseBody,
+        },
+      });
 
-    // Second call with same idempotencyKey must return stored result with 0 additional provider calls
-    const secondResult = await service.execute(paramsWithKey);
-    expect(secondResult.success).toBe(true);
-    expect(secondResult.requestId).toBe('idemp-key-123');
-    expect(secondResult.content).toBe(firstResult.content);
-    expect(providersServiceMock.executeChatCompletion).toHaveBeenCalledTimes(1); // STILL 1!
-    expect(usageServiceMock.reserveUsage).toHaveBeenCalledTimes(1); // STILL 1!
-  });
+      const params: ExecuteLlmParams = {
+        ...baseParams,
+        idempotencyKey: 'idemp-key-reconciled',
+      };
 
-  it('throws 409 ConflictException when idempotencyKey is currently reserved (REQUEST_IN_PROGRESS)', async () => {
-    usageServiceMock.getUsageRecord.mockResolvedValueOnce({
-      requestId: 'in-flight-key',
-      status: 'reserved',
-      reservedTokens: 500,
-      model: 'gpt-4o-mini',
-      userId: 'user-001',
+      const result = await service.execute(params);
+      expect(result.success).toBe(true);
+      expect(result.content).toBe('Original cached assistant response');
+      expect(providersServiceMock.executeChatCompletion).not.toHaveBeenCalled();
+      expect(usageServiceMock.reconcileUsage).not.toHaveBeenCalled();
     });
 
-    const params: ExecuteLlmParams = {
-      ...baseParams,
-      idempotencyKey: 'in-flight-key',
-    };
+    it('throws 409 ConflictException (REQUEST_IN_PROGRESS) when idempotencyKey is currently reserved', async () => {
+      usageServiceMock.reserveUsage.mockResolvedValueOnce({
+        success: true,
+        created: false,
+        record: {
+          id: 'rec-2',
+          requestId: 'in-flight-key',
+          userId: 'user-001',
+          status: 'reserved',
+        },
+      });
 
-    await expect(service.execute(params)).rejects.toThrow(ConflictException);
-    expect(providersServiceMock.executeChatCompletion).not.toHaveBeenCalled();
-    expect(usageServiceMock.reserveUsage).not.toHaveBeenCalled();
+      const params: ExecuteLlmParams = {
+        ...baseParams,
+        idempotencyKey: 'in-flight-key',
+      };
+
+      await expect(service.execute(params)).rejects.toThrow('REQUEST_IN_PROGRESS');
+      expect(providersServiceMock.executeChatCompletion).not.toHaveBeenCalled();
+    });
+
+    it('throws 409 ConflictException (IDEMPOTENCY_KEY_REUSED) on retry of a failed request and prevents uncharged calls', async () => {
+      usageServiceMock.reserveUsage.mockResolvedValueOnce({
+        success: true,
+        created: false,
+        record: {
+          id: 'rec-3',
+          requestId: 'failed-key',
+          userId: 'user-001',
+          status: 'failed',
+        },
+      });
+
+      const params: ExecuteLlmParams = {
+        ...baseParams,
+        idempotencyKey: 'failed-key',
+      };
+
+      await expect(service.execute(params)).rejects.toThrow('IDEMPOTENCY_KEY_REUSED');
+      expect(providersServiceMock.executeChatCompletion).not.toHaveBeenCalled();
+    });
+
+    it('throws 409 ConflictException (IDEMPOTENCY_KEY_REUSED) on retry of a timeout-ambiguous request', async () => {
+      usageServiceMock.reserveUsage.mockResolvedValueOnce({
+        success: true,
+        created: false,
+        record: {
+          id: 'rec-4',
+          requestId: 'timeout-key',
+          userId: 'user-001',
+          status: 'timeout-ambiguous',
+        },
+      });
+
+      const params: ExecuteLlmParams = {
+        ...baseParams,
+        idempotencyKey: 'timeout-key',
+      };
+
+      await expect(service.execute(params)).rejects.toThrow('IDEMPOTENCY_KEY_REUSED');
+      expect(providersServiceMock.executeChatCompletion).not.toHaveBeenCalled();
+    });
+
+    it('scopes idempotency to the user so user B does not collide with user A', async () => {
+      const sharedKey = 'client-generated-uuid-123';
+
+      await service.execute({
+        ...baseParams,
+        userId: 'user-A',
+        idempotencyKey: sharedKey,
+      });
+
+      expect(usageServiceMock.reserveUsage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          userId: 'user-A',
+          requestId: sharedKey,
+        }),
+      );
+
+      await service.execute({
+        ...baseParams,
+        userId: 'user-B',
+        idempotencyKey: sharedKey,
+      });
+
+      expect(usageServiceMock.reserveUsage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          userId: 'user-B',
+          requestId: sharedKey,
+        }),
+      );
+    });
   });
 });
 

@@ -25,6 +25,7 @@ export class ReserveUsageDto {
 
 export class ReconcileUsageDto {
   requestId!: string;
+  userId?: string;
   success!: boolean;
   usage?: {
     promptTokens: number;
@@ -35,4 +36,5 @@ export class ReconcileUsageDto {
   latencyMs?: number;
   error?: string;
   errorType?: 'TIMEOUT' | 'RATE_LIMITED' | 'AUTH_ERROR' | 'INVALID_REQUEST' | 'PROVIDER_ERROR' | string;
+  responseBody?: any;
 }

@@ -173,7 +173,7 @@ model QuotaPeriod {
 
 model UsageRecord {
   id               String    @id @default(uuid())
-  requestId        String    @unique // idempotency key
+  requestId        String    // idempotency key
   userId           String
   conversationId   String?
   provider         String
@@ -184,11 +184,13 @@ model UsageRecord {
   reservedTokens   Int       @default(0)
   estimatedCost    Float?
   status           String    @default("pending") // reserved, reconciled, failed
+  responseBody     Json?
   createdAt        DateTime  @default(now())
   reconciledAt     DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, requestId])
   @@index([userId, createdAt])
   @@map("usage_records")
 }

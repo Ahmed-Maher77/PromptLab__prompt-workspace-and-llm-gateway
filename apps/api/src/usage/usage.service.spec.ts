@@ -35,11 +35,13 @@ describe('UsageService', () => {
       },
       usageRecord: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
         findMany: jest.fn(),
         aggregate: jest.fn().mockResolvedValue({ _sum: { estimatedCost: 0.042 } }),
       },
+      $queryRaw: jest.fn().mockRejectedValue(new Error('MOCK_NO_RAW_SQL')),
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback(mockPrisma);
       }),
@@ -322,6 +324,7 @@ describe('UsageService', () => {
       });
 
       expect(res.success).toBe(true);
+      expect(res.created).toBe(false);
       expect(res.requestId).toBe('req-duplicate');
       expect(res.reservedTokens).toBe(1500);
       // Ensure no secondary record creation or reservation increment

@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ConflictException } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from './app.module';
 import { validateEnvironment } from './common/config/env.validation';
 import { configureApp } from './configure-app';
 import { PrismaService } from './prisma/prisma.service';
 import { UsageService } from './usage/usage.service';
+import { LlmExecutionService } from './llm/llm-execution.service';
+import { ProvidersService } from './providers/providers.service';
 
 describe('HTTP Routing & App Integration (E2E)', () => {
   let app: INestApplication;
@@ -583,6 +585,91 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         where: { userId: testUserId },
       });
       expect(periods).toHaveLength(1);
+    });
+
+    it('executes 10 concurrent execute() calls with one key → exactly 1 provider call and 1 reservation (ARCH-01b)', async () => {
+      const prisma = app.get(PrismaService);
+      const llmExecutionService = app.get(LlmExecutionService);
+      const providersService = app.get(ProvidersService);
+      const testUserId = `test-user-arch01b-${Date.now()}`;
+      const idempotencyKey = `idemp-arch01b-${Date.now()}`;
+
+      await prisma.user.create({
+        data: {
+          id: testUserId,
+          email: `${testUserId}@example.com`,
+          displayName: 'ARCH01b Test User',
+          role: 'user',
+        },
+      });
+
+      let providerCalls = 0;
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (params) => {
+        providerCalls++;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return {
+          success: true,
+          model: params.model,
+          content: 'Concurrent idempotency completion',
+          latencyMs: 50,
+          usage: {
+            promptTokens: 10,
+            completionTokens: 10,
+            totalTokens: 20,
+            source: 'provider-reported',
+          },
+        };
+      });
+
+      const concurrentCalls = Array.from({ length: 10 }, () =>
+        llmExecutionService.execute({
+          userId: testUserId,
+          operation: 'playground.execute',
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: 'Testing concurrency' }],
+          idempotencyKey,
+        }),
+      );
+
+      const results = await Promise.allSettled(concurrentCalls);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      // Exactly 1 provider call was made across all 10 concurrent requests!
+      expect(providerCalls).toBe(1);
+
+      // Callers that completed while in-flight receive 409 REQUEST_IN_PROGRESS; callers after receive the stored result
+      for (const res of fulfilled) {
+        expect((res as PromiseFulfilledResult<any>).value.content).toBe('Concurrent idempotency completion');
+      }
+      for (const rej of rejected) {
+        expect((rej as PromiseRejectedResult).reason).toBeInstanceOf(ConflictException);
+        expect((rej as PromiseRejectedResult).reason.message).toBe('REQUEST_IN_PROGRESS');
+      }
+
+      // Exactly 1 provider call was made
+      expect(providerCalls).toBe(1);
+
+      // In real Postgres, exactly 1 usage record exists for (userId, requestId)
+      const records = await prisma.usageRecord.findMany({
+        where: { userId: testUserId, requestId: idempotencyKey },
+      });
+      expect(records).toHaveLength(1);
+      expect(records[0].status).toBe('reconciled');
+      expect((records[0].responseBody as any)?.content).toBe('Concurrent idempotency completion');
+
+      // Replay test: subsequent call returns the stored result with 0 additional provider calls
+      const replayResult = await llmExecutionService.execute({
+        userId: testUserId,
+        operation: 'playground.execute',
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'user', content: 'Testing concurrency' }],
+        idempotencyKey,
+      });
+      expect(replayResult.success).toBe(true);
+      expect(replayResult.content).toBe('Concurrent idempotency completion');
+      expect(providerCalls).toBe(1); // Still 1!
     });
   });
 

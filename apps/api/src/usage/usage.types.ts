@@ -43,4 +43,6 @@ export interface ReservationResult {
   reservedTokens: number;
   remainingTokens: number;
   periodId: string;
+  created: boolean;
+  record: any;
 }

@@ -34,7 +34,6 @@ export interface LlmExecutionResult extends CompletionResult {
 @Injectable()
 export class LlmExecutionService {
   private readonly logger = new Logger(LlmExecutionService.name);
-  private readonly completedRequests = new Map<string, LlmExecutionResult>();
 
   constructor(
     private readonly usageService: UsageService,
@@ -46,10 +45,10 @@ export class LlmExecutionService {
    * Centralized execution pipeline for all LLM gateway calls.
    * Executes in strict order:
    * 1. Start distributed trace / spans
-   * 2. Reserve estimated quota
+   * 2. Reserve estimated quota via claim-first (only creator may call provider)
    * 3. Call the provider inside try / finally
-   * 4. In finally: guaranteed usage reconciliation with typed error classification,
-   *    cost calculation, span closure, and trace completion.
+   * 4. In finally: guaranteed usage reconciliation with responseBody, cost calculation,
+   *    span closure, and trace completion.
    */
   async execute(params: ExecuteLlmParams): Promise<LlmExecutionResult> {
     const provider = params.provider || 'gateway';
@@ -57,43 +56,6 @@ export class LlmExecutionService {
       params.idempotencyKey ||
       `req-${params.operation.replace('.', '-')}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const traceName = params.name || `${params.operation} (${params.model})`;
-
-    // Idempotency check: if an idempotency key was supplied, prevent duplicate model invocations
-    if (params.idempotencyKey) {
-      if (this.completedRequests.has(requestId)) {
-        return this.completedRequests.get(requestId)!;
-      }
-
-      const existingRecord = await this.usageService.getUsageRecord(requestId);
-      if (existingRecord) {
-        if (existingRecord.status === 'reserved') {
-          throw new ConflictException('REQUEST_IN_PROGRESS');
-        }
-
-        if (existingRecord.status === 'reconciled') {
-          const cost =
-            existingRecord.estimatedCost ??
-            calculateCost(existingRecord.model, existingRecord.inputTokens, existingRecord.outputTokens);
-
-          const storedResult: LlmExecutionResult = {
-            success: true,
-            model: existingRecord.model,
-            content: '',
-            latencyMs: 0,
-            usage: {
-              promptTokens: existingRecord.inputTokens,
-              completionTokens: existingRecord.outputTokens,
-              totalTokens: existingRecord.inputTokens + existingRecord.outputTokens,
-              source: (existingRecord.tokenUsageSource as any) || 'provider-reported',
-            },
-            cost,
-            requestId,
-          };
-          this.completedRequests.set(requestId, storedResult);
-          return storedResult;
-        }
-      }
-    }
 
     // Calculate prompt input token estimate across all messages
     const inputEstimate = params.messages.reduce((sum, m) => {
@@ -130,8 +92,8 @@ export class LlmExecutionService {
     });
 
     try {
-      // 2. Reserve quota before dispatching
-      await this.usageService.reserveUsage({
+      // 2. Reserve quota before dispatching (claim-first)
+      const reservation = await this.usageService.reserveUsage({
         requestId,
         userId: params.userId,
         model: params.model,
@@ -139,6 +101,43 @@ export class LlmExecutionService {
         estimatedTokens,
         conversationId: params.conversationId,
       });
+
+      // If this call did not create the record, handle replay / in-progress
+      if (reservation.created === false) {
+        const existingRecord = reservation.record;
+        if (!existingRecord || existingRecord.status === 'reserved') {
+          throw new ConflictException('REQUEST_IN_PROGRESS');
+        }
+
+        if (existingRecord.status === 'reconciled') {
+          if (existingRecord.responseBody) {
+            return existingRecord.responseBody as LlmExecutionResult;
+          }
+
+          const cost =
+            existingRecord.estimatedCost ??
+            calculateCost(existingRecord.model, existingRecord.inputTokens, existingRecord.outputTokens);
+
+          return {
+            success: true,
+            model: existingRecord.model,
+            content: '',
+            latencyMs: 0,
+            usage: {
+              promptTokens: existingRecord.inputTokens,
+              completionTokens: existingRecord.outputTokens,
+              totalTokens: existingRecord.inputTokens + existingRecord.outputTokens,
+              source: (existingRecord.tokenUsageSource as any) || 'provider-reported',
+            },
+            cost,
+            requestId,
+          };
+        }
+
+        // status === 'failed' or 'timeout-ambiguous'
+        throw new ConflictException('IDEMPOTENCY_KEY_REUSED');
+      }
+
       reserved = true;
       reserveSpan?.end('ok');
 
@@ -167,21 +166,48 @@ export class LlmExecutionService {
       }
       throw err;
     } finally {
-      // 4. Guaranteed usage reconciliation whenever a quota reservation was established
+      // 4. Compute cost once
+      if (completionResult?.usage) {
+        calculatedCost = calculateCost(
+          params.model,
+          completionResult.usage.promptTokens || 0,
+          completionResult.usage.completionTokens || 0,
+        );
+      }
+
+      // 5. Guaranteed usage reconciliation whenever a quota reservation was established
       if (reserved) {
         const reconcileSpan = trace?.startSpan('quota.reconcile', { requestId });
         try {
           const isSuccess = completionResult ? completionResult.success : false;
-          const errorMsg = completionResult?.errorMessage || executionError?.message || (executionError ? String(executionError) : undefined);
+          const errorMsg =
+            completionResult?.errorMessage ||
+            executionError?.message ||
+            (executionError ? String(executionError) : undefined);
           const typedError = this.mapErrorType(completionResult?.errorType, executionError);
+
+          const responseBody = isSuccess
+            ? {
+                success: true,
+                model: completionResult?.model || params.model,
+                content: completionResult?.content || '',
+                latencyMs: completionResult?.latencyMs || 0,
+                usage: completionResult?.usage,
+                cost: calculatedCost,
+                traceId: trace?.traceId,
+                requestId,
+              }
+            : undefined;
 
           await this.usageService.reconcileUsage({
             requestId,
+            userId: params.userId,
             success: isSuccess,
             usage: completionResult?.usage,
             latencyMs: completionResult?.latencyMs,
             error: errorMsg,
             errorType: typedError,
+            responseBody,
           });
           reconcileSpan?.end('ok');
         } catch (reconcileErr: any) {
@@ -191,15 +217,6 @@ export class LlmExecutionService {
             reconcileErr?.stack,
           );
         }
-      }
-
-      // 5. Compute cost once and complete trace
-      if (completionResult?.usage) {
-        calculatedCost = calculateCost(
-          params.model,
-          completionResult.usage.promptTokens || 0,
-          completionResult.usage.completionTokens || 0,
-        );
       }
 
       let traceStatus: 'success' | 'error' | 'rate_limited' = 'error';
@@ -221,20 +238,19 @@ export class LlmExecutionService {
         usage: completionResult?.usage,
         cost: calculatedCost,
         errorCode,
-        errorMessage: completionResult?.errorMessage || executionError?.message || (executionError ? String(executionError) : undefined),
+        errorMessage:
+          completionResult?.errorMessage ||
+          executionError?.message ||
+          (executionError ? String(executionError) : undefined),
       });
     }
 
     const finalResult: LlmExecutionResult = {
-      ...completionResult,
+      ...completionResult!,
       cost: calculatedCost,
       traceId: trace?.traceId,
       requestId,
     };
-
-    if (params.idempotencyKey && finalResult.success) {
-      this.completedRequests.set(params.idempotencyKey, finalResult);
-    }
 
     return finalResult;
   }
