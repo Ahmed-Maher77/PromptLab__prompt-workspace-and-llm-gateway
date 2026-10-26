@@ -46,7 +46,7 @@ USER node
 EXPOSE 3100
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:3100/api/health || exit 1
+  CMD curl -fsS http://127.0.0.1:3100/api/health/live || exit 1
 
 ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["node", "dist/main.js"]
