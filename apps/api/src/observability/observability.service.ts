@@ -1,16 +1,23 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger, Inject, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { context, Span, SpanStatusCode, trace as otelTrace, Tracer } from '@opentelemetry/api';
+import { BasicTracerProvider, SpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { AUTH_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import {
   TraceRecord,
   TraceSpan,
   ObservabilityStatus,
 } from './observability.types';
+import { sanitizeTelemetry } from './redaction.util';
 import {
-  sanitizeTelemetry,
-  generateTraceId,
-  generateSpanId,
-} from './redaction.util';
+  buildExportProcessors,
+  createTracerProvider,
+  OTEL_SPAN_PROCESSORS,
+  toSafeAttributes,
+  TRACER_NAME,
+} from './otel-tracing';
+
+const DEFAULT_LANGFUSE_BASE_URL = 'http://localhost:3001'; // matches .env.example and the documented local setup
 
 export interface ActiveSpan {
   id: string;
@@ -39,21 +46,67 @@ export interface ActiveTraceContext {
   }) => TraceRecord;
 }
 
+/**
+ * Tracing built on the OpenTelemetry SDK.
+ *
+ * Every LLM operation is a real OTel trace (crypto-random W3C IDs). Finished spans are exported in
+ * batches, off the request path, to an OTLP collector and/or Langfuse (via its OTLP endpoint).
+ * The service also keeps a redacted, in-memory copy of recent traces for the Observability page.
+ */
 @Injectable()
-export class ObservabilityService {
+export class ObservabilityService implements OnApplicationShutdown {
   private readonly logger = new Logger(ObservabilityService.name);
 
   // In-memory ring buffer of recent traces for developer inspection
   private readonly traceBuffer: TraceRecord[] = [];
   private readonly maxBufferSize = 500;
 
+  private readonly tracerProvider: BasicTracerProvider;
+  private readonly tracer: Tracer;
+
   constructor(
     @Inject(AUTH_CONFIG) private readonly authConfig: ValidatedEnvironment,
     private readonly configService: ConfigService,
-  ) {}
+    @Optional() @Inject(OTEL_SPAN_PROCESSORS) extraProcessors?: SpanProcessor[],
+  ) {
+    const langfuse = this.getLangfuseConfig();
+    const exporters = this.isTelemetryEnabled()
+      ? buildExportProcessors({
+          otlpEndpoint: this.getOtelEndpoint(),
+          langfuse:
+            langfuse.publicKey && langfuse.secretKey
+              ? { baseUrl: langfuse.baseUrl, publicKey: langfuse.publicKey, secretKey: langfuse.secretKey }
+              : null,
+        })
+      : [];
+
+    this.tracerProvider = createTracerProvider({
+      serviceVersion: this.authConfig?.APP_VERSION,
+      processors: [...exporters, ...(extraProcessors ?? [])],
+    });
+    this.tracer = this.tracerProvider.getTracer(TRACER_NAME, this.authConfig?.APP_VERSION);
+  }
+
+  /** Flushes queued spans so nothing is lost on a graceful shutdown. */
+  async onApplicationShutdown(): Promise<void> {
+    try {
+      await this.tracerProvider.shutdown();
+    } catch (err) {
+      this.logger.warn(`Telemetry flush on shutdown failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** Exports all queued spans now. Export failures are logged, never thrown. */
+  async flush(): Promise<void> {
+    try {
+      await this.tracerProvider.forceFlush();
+    } catch (err) {
+      this.logger.warn(`Telemetry export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
 
   isTelemetryEnabled(): boolean {
-    return this.authConfig.ENABLE_TELEMETRY;
+    return this.authConfig?.ENABLE_TELEMETRY ?? false;
   }
 
   getOtelEndpoint(): string | null {
@@ -65,15 +118,15 @@ export class ObservabilityService {
       publicKey: this.configService.get<string>('LANGFUSE_PUBLIC_KEY') || null,
       secretKey: this.configService.get<string>('LANGFUSE_SECRET_KEY') || null,
       baseUrl:
-        this.authConfig.LANGFUSE_BASEURL ||
-        this.authConfig.LANGFUSE_HOST ||
-        'http://localhost:3000',
+        this.authConfig?.LANGFUSE_BASEURL ||
+        this.authConfig?.LANGFUSE_HOST ||
+        DEFAULT_LANGFUSE_BASE_URL,
     };
   }
 
   /**
-   * Starts an active trace context for an LLM operation.
-   * Generates W3C TraceContext headers and span collectors.
+   * Starts a trace for an LLM operation. The root span is an OpenTelemetry span; its IDs form the
+   * W3C traceparent that is forwarded to the gateway.
    */
   startTrace(params: {
     name: string;
@@ -83,11 +136,25 @@ export class ObservabilityService {
     userId?: string;
     metadata?: Record<string, unknown>;
   }): ActiveTraceContext {
-    const traceId = generateTraceId();
-    const rootSpanId = generateSpanId();
-    const traceparent = `00-${traceId}-${rootSpanId}-01`;
     const traceStartTime = new Date();
+    const rootAttributes: Record<string, unknown> = {
+      'llm.model': params.model,
+      'llm.provider': params.provider,
+      'operation.name': params.operation,
+      'gen_ai.request.model': params.model,
+      'gen_ai.system': params.provider,
+      ...(params.userId ? { 'user.id': params.userId } : {}),
+      ...(params.metadata || {}),
+    };
+    const rootOtelSpan: Span = this.tracer.startSpan(params.name, {
+      startTime: traceStartTime,
+      attributes: toSafeAttributes(rootAttributes),
+    });
+    const rootContext = otelTrace.setSpan(context.active(), rootOtelSpan);
+    const { traceId, spanId: rootSpanId } = rootOtelSpan.spanContext();
+    const traceparent = `00-${traceId}-${rootSpanId}-01`;
     const spans: TraceSpan[] = [];
+    const otelSpans = new Map<string, Span>();
 
     // Root span created automatically
     const rootSpan: TraceSpan = {
@@ -106,9 +173,26 @@ export class ObservabilityService {
     };
     spans.push(rootSpan);
 
+    const endOtelSpan = (
+      otelSpan: Span,
+      status: 'ok' | 'error',
+      endTime: Date,
+      attributes: Record<string, unknown>,
+    ) => {
+      otelSpan.setAttributes(toSafeAttributes(attributes));
+      otelSpan.setStatus({ code: status === 'ok' ? SpanStatusCode.OK : SpanStatusCode.ERROR });
+      otelSpan.end(endTime);
+    };
+
     const startSpan = (name: string, attributes?: Record<string, unknown>): ActiveSpan => {
-      const spanId = generateSpanId();
       const spanStart = new Date();
+      const otelSpan = this.tracer.startSpan(
+        name,
+        { startTime: spanStart, attributes: toSafeAttributes(attributes) },
+        rootContext,
+      );
+      const spanId = otelSpan.spanContext().spanId;
+      otelSpans.set(spanId, otelSpan);
       const span: TraceSpan = {
         id: spanId,
         parentSpanId: rootSpanId,
@@ -126,7 +210,9 @@ export class ObservabilityService {
         name,
         startTime: spanStart,
         end: (status = 'ok', endAttributes = {}) => {
+          if (span.endTime) return; // ending twice is a no-op, as in OpenTelemetry
           const spanEnd = new Date();
+          endOtelSpan(otelSpan, status, spanEnd, endAttributes);
           span.endTime = spanEnd.toISOString();
           span.durationMs = spanEnd.getTime() - spanStart.getTime();
           span.status = status;
@@ -159,12 +245,25 @@ export class ObservabilityService {
           span.durationMs = traceEndTime.getTime() - new Date(span.startTime).getTime();
           span.status = completeParams.status === 'success' ? 'ok' : 'error';
           span.attributes = { ...span.attributes, 'span.closed_by_trace': true };
+          const otelSpan = otelSpans.get(span.id);
+          if (otelSpan) endOtelSpan(otelSpan, span.status, traceEndTime, { 'span.closed_by_trace': true });
         }
       }
 
       rootSpan.endTime = traceEndTime.toISOString();
       rootSpan.durationMs = durationMs;
       rootSpan.status = completeParams.status === 'success' ? 'ok' : 'error';
+      endOtelSpan(rootOtelSpan, rootSpan.status, traceEndTime, {
+        'trace.status': completeParams.status,
+        'gen_ai.usage.input_tokens': completeParams.usage?.promptTokens,
+        'gen_ai.usage.output_tokens': completeParams.usage?.completionTokens,
+        'llm.usage.total_tokens': completeParams.usage?.totalTokens,
+        'llm.usage.source': completeParams.usage?.source,
+        'llm.cost.estimated': completeParams.cost ?? undefined,
+        'error.type': completeParams.errorCode || undefined,
+        'error.message': completeParams.errorMessage || undefined,
+        ...(completeParams.metadata || {}),
+      });
 
       const record: TraceRecord = {
         id: traceId,
@@ -207,7 +306,7 @@ export class ObservabilityService {
   }
 
   /**
-   * Persists trace into in-memory ring buffer and optionally exports to OTLP & Langfuse.
+   * Stores a redacted copy of a finished trace in the in-memory ring buffer for the UI.
    */
   recordTrace(trace: TraceRecord): void {
     if (!this.isTelemetryEnabled()) {
@@ -223,140 +322,7 @@ export class ObservabilityService {
       this.traceBuffer.pop();
     }
 
-    // Export to external collectors asynchronously (fire-and-forget, never breaks app)
-    this.exportToExternalCollectors(sanitizedTrace).catch((err) => {
-      this.logger.debug(`Background telemetry export note: ${err?.message || err}`);
-    });
-  }
-
-  /**
-   * Dispatches trace to OpenTelemetry Collector and Langfuse if configured.
-   */
-  private async exportToExternalCollectors(trace: TraceRecord): Promise<void> {
-    const otelEndpoint = this.getOtelEndpoint();
-    const langfuse = this.getLangfuseConfig();
-
-    // 1. OpenTelemetry OTLP/HTTP export (if endpoint configured)
-    if (otelEndpoint) {
-      try {
-        const formatOtelAttributeValue = (v: unknown): Record<string, unknown> => {
-          if (typeof v === 'boolean') return { boolValue: v };
-          if (typeof v === 'number') {
-            return Number.isInteger(v) ? { intValue: String(v) } : { doubleValue: v };
-          }
-          return { stringValue: String(v) };
-        };
-
-        const otlpPayload = {
-          resourceSpans: [
-            {
-              resource: {
-                attributes: [
-                  { key: 'service.name', value: { stringValue: 'promptlab-gateway' } },
-                  { key: 'service.version', value: { stringValue: this.authConfig.APP_VERSION } },
-                ],
-              },
-              scopeSpans: [
-                {
-                  scope: { name: 'promptlab.tracer' },
-                  spans: trace.spans.map((s) => {
-                    const spanObj: Record<string, unknown> = {
-                      traceId: trace.id,
-                      spanId: s.id,
-                      name: s.name,
-                      kind: 1, // SPAN_KIND_INTERNAL
-                      startTimeUnixNano: String(new Date(s.startTime).getTime() * 1_000_000),
-                      endTimeUnixNano: String(new Date(s.endTime || s.startTime).getTime() * 1_000_000),
-                      status: { code: s.status === 'ok' ? 1 : 2 },
-                      attributes: Object.entries(s.attributes || {}).map(([k, v]) => ({
-                        key: k,
-                        value: formatOtelAttributeValue(v),
-                      })),
-                    };
-                    if (s.parentSpanId) {
-                      spanObj.parentSpanId = s.parentSpanId;
-                    }
-                    return spanObj;
-                  }),
-                },
-              ],
-            },
-          ],
-        };
-
-        const tracesUrl = otelEndpoint.endsWith('/v1/traces')
-          ? otelEndpoint
-          : `${otelEndpoint.replace(/\/+$/, '')}/v1/traces`;
-
-        await fetch(tracesUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(otlpPayload),
-          signal: AbortSignal.timeout(2000),
-        });
-      } catch (err) {
-        this.logger.warn(`Failed to export to OpenTelemetry collector (${otelEndpoint}): ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-
-    // 2. Langfuse Ingestion API export (if public & secret keys configured)
-    if (langfuse.publicKey && langfuse.secretKey) {
-      try {
-        const authHeader = 'Basic ' + Buffer.from(`${langfuse.publicKey}:${langfuse.secretKey}`).toString('base64');
-        const eventPayload = {
-          batch: [
-            {
-              id: trace.id,
-              type: 'trace-create',
-              timestamp: trace.startTime,
-              body: {
-                id: trace.id,
-                name: trace.name,
-                userId: trace.userId,
-                metadata: trace.metadata,
-                release: this.authConfig.APP_VERSION,
-              },
-            },
-            {
-              id: `${trace.id}-gen`,
-              type: 'generation-create',
-              timestamp: trace.startTime,
-              body: {
-                traceId: trace.id,
-                name: trace.operation,
-                model: trace.model,
-                startTime: trace.startTime,
-                endTime: trace.endTime,
-                usage: {
-                  input: trace.inputTokens,
-                  output: trace.outputTokens,
-                  total: trace.totalTokens,
-                },
-                metadata: {
-                  provider: trace.provider,
-                  estimatedCost: trace.estimatedCost,
-                  status: trace.status,
-                },
-                level: trace.status === 'success' ? 'DEFAULT' : 'ERROR',
-                statusMessage: trace.errorMessage || undefined,
-              },
-            },
-          ],
-        };
-
-        await fetch(`${langfuse.baseUrl}/api/public/ingestion`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: authHeader,
-          },
-          body: JSON.stringify(eventPayload),
-          signal: AbortSignal.timeout(2000),
-        });
-      } catch (err) {
-        this.logger.warn(`Failed to export to Langfuse (${langfuse.baseUrl}): ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
+    // Export to OTLP / Langfuse happens through the OpenTelemetry batch span processors.
   }
 
   /**
@@ -410,6 +376,7 @@ export class ObservabilityService {
         'playground.execute',
         'comparison.slot',
         'conversation.turn',
+        'compaction.preview',
         'gateway.request',
       ],
     };

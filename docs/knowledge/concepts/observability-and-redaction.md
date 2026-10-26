@@ -18,8 +18,8 @@ Every execution traces span relationships using standard W3C headers:
 
 ## Telemetry Exporters
 - **In-Memory Ring Buffer:** Retains up to 100 recent traces with FIFO eviction for live inspection in the `/observability` dashboard.
-- **OpenTelemetry (`OtlpHttpSpanExporter`):** Exports standard OTLP/HTTP JSON payloads to a configurable collector (`OTEL_EXPORTER_OTLP_ENDPOINT`, default `http://localhost:4318`).
-- **Langfuse Exporter (`LangfuseSpanExporter`):** Formats spans for ingestion into Langfuse via its batch ingestion API.
+- **OpenTelemetry collector:** spans are created with the OpenTelemetry SDK and exported in batches by the official OTLP/HTTP exporter to `OTEL_EXPORTER_OTLP_ENDPOINT` (e.g. `http://localhost:4318`).
+- **Langfuse:** the same spans are sent to Langfuse's OTLP endpoint (`/api/public/otel/v1/traces`) when both Langfuse keys are set. See [ADR-017](../decisions/adr-017-opentelemetry-sdk-tracing.md).
 
 ## Privacy Redaction Engine
 Executed in-process prior to serialization:

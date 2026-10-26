@@ -17,7 +17,7 @@ This document provides an honest, rigorous catalog of known technical limitation
 ## 2. Observability & Telemetry Verification Status
 
 - **Unit-Tested vs. Externally Verified:**
-  - The OpenTelemetry (`OtlpHttpSpanExporter`) and Langfuse (`LangfuseSpanExporter`) exporters are fully implemented, unit-tested, and validated against W3C trace context format (`traceparent: 00-{traceId}-{spanId}-{flags}`), span parent-child relationships, and timing metrics.
+  - Export uses the OpenTelemetry SDK's batching OTLP/HTTP exporter for both the collector and Langfuse. Span IDs, parent-child links, attributes, redaction and failure handling are covered by unit tests with an in-memory exporter.
   - **Limitation:** Telemetry export has **not** been pointed to or verified against a live OpenTelemetry Collector instance or live Langfuse SaaS/self-hosted deployment. Live collector ingestion tests remain a post-POC operational validation item.
 - **In-Memory Buffer Retention:**
   - In-memory trace history is capped at 500 traces with FIFO eviction (configurable in `ObservabilityService`).

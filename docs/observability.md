@@ -5,15 +5,18 @@ PromptLab Phase 5 introduces unified, end-to-end distributed tracing across all 
 - **Playground Executions (`playground.execute`)**
 - **Side-by-Side Comparison Runs (`comparison.slot`)**
 - **Conversation Turns (`conversation.turn`)**
+- **Compaction Previews (`compaction.preview`)**
 - **Direct Gateway Requests (`gateway.request`)**
 
 Tracing implements the W3C TraceContext standard (`traceparent` header `00-{traceId}-{spanId}-01`), propagates correlation identifiers to the LiteLLM Gateway (`x-litellm-trace-id`, `x-request-id`), supports optional OpenTelemetry (OTLP/HTTP) collectors, and integrates with Langfuse for generative AI observability.
 
-### Instrumentation Approach: Custom Lightweight vs SDK
-PromptLab uses **native, spec-compliant custom instrumentation and OTLP/HTTP export**:
-- Emits W3C-standard 128-bit (32-character hex) trace IDs and 64-bit (16-character hex) span IDs.
-- Directly serializes traces into standard OpenTelemetry Protocol (OTLP/HTTP v1/traces proto3 JSON) format with stringified 64-bit unix nano timestamps and strongly typed attributes (`intValue`, `doubleValue`, `boolValue`, `stringValue`).
-- Avoids heavy Node.js auto-instrumentation monkey-patching and peer dependency conflicts across the workspace while ensuring 100% wire-compatibility with standard OpenTelemetry collectors, Datadog, Honeycomb, or Grafana Tempo.
+### Instrumentation: OpenTelemetry SDK
+PromptLab builds its traces with the OpenTelemetry SDK (`@opentelemetry/sdk-trace-base`) and exports them with the official OTLP/HTTP exporter (see [ADR-017](knowledge/decisions/adr-017-opentelemetry-sdk-tracing.md)):
+- Every LLM operation is a real OTel trace. Trace and span IDs are W3C-compliant (32 and 16 hex characters), cryptographically random and never all zeros.
+- Finished spans go through a `BatchSpanProcessor` per backend, so export is batched, bounded (queue of 2,048 spans) and off the request path.
+- Langfuse receives the same spans through its OTLP endpoint (`/api/public/otel/v1/traces`). The root span carries `gen_ai.*` attributes (model, provider, input/output tokens), `user.id` and the estimated cost.
+- Queued spans are flushed on graceful shutdown.
+- A redacted copy of the most recent 500 traces is kept in memory for the Observability page.
 
 ---
 
@@ -50,10 +53,10 @@ Telemetry is enabled by default with local in-memory storage (ring buffer of up 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
 | `ENABLE_TELEMETRY` | Master switch to enable (`true`) or disable (`false`) all tracing. | `true` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Standard OpenTelemetry Collector OTLP/HTTP endpoint (e.g. `http://localhost:4318/v1/traces`). | *(Unset / local buffer only)* |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OpenTelemetry Collector OTLP/HTTP endpoint, with or without the `/v1/traces` suffix (e.g. `http://localhost:4318`). | *(Unset / local buffer only)* |
 | `LANGFUSE_PUBLIC_KEY` | Langfuse public API key (e.g. `pk-lf-...`). | *(Unset)* |
 | `LANGFUSE_SECRET_KEY` | Langfuse secret API key (e.g. `sk-lf-...`). | *(Unset)* |
-| `LANGFUSE_BASEURL` | Langfuse host URL (e.g. `https://cloud.langfuse.com` or `http://localhost:3000`). | `http://localhost:3000` |
+| `LANGFUSE_HOST` / `LANGFUSE_BASEURL` | Langfuse base URL (e.g. `https://cloud.langfuse.com` or a self-hosted instance). Export to Langfuse is enabled only when both keys are set. | `http://localhost:3001` |
 
 ---
 
@@ -64,15 +67,14 @@ PromptLab strictly enforces client and server-side secret scrubbing before trace
 2. **Raw Value Pattern Masking:** Strings matching `Bearer <token>`, `sk-...`, or `pk-...` are dynamically scrubbed and replaced with `[REDACTED_BEARER]` or `[REDACTED_API_KEY]`.
 3. **Protection of Numeric Metrics:** Essential token count metrics (`inputTokens`, `outputTokens`, `totalTokens`, `promptTokens`, `completionTokens`, `reservedTokens`, `maxTokens`) and numeric properties are explicitly exempted from broad token-key redaction.
 4. **No Prompt Payload Leaks:** Upstream provider API keys configured in LiteLLM are never forwarded into client-accessible spans. Traces retain operational metadata (IDs, models, latency, status, criteria results) without storing large prompt bodies or raw conversation transcripts in the trace record.
-5. **Access Control Assumptions:**
-   - In this single-tenant POC development setup, `/api/observability/*` and `/api/observability/clear` endpoints are open for local inspection, automated tests, and demo resets.
-   - For multi-tenant production deployments, these endpoints must be guarded by administrative role-based access control (e.g. `@Roles('admin')`) to prevent unauthorized cross-tenant inspection or ring buffer tampering.
+5. **Access control:** `GET /api/observability/traces`, `GET /api/observability/traces/:traceId` and `POST /api/observability/clear` require the `admin` role. `GET /api/observability/status` is available to any authenticated user.
+6. **Redaction before export:** span attributes are passed through the same redaction before they are handed to the OpenTelemetry SDK, so exporters only ever see scrubbed values.
 
 ---
 
 ## 5. Fault Tolerance & Usage Ledger Isolation
 
-- **Non-blocking Telemetry:** All network calls to external collectors (OTel OTLP or Langfuse) are executed asynchronously with a 2,000ms timeout. Collector failures or network timeouts never fail, delay, or block prompt executions, conversations, or quota reservations.
+- **Non-blocking Telemetry:** Spans are queued and exported in batches by the OpenTelemetry SDK (5-second export timeout per batch). A collector that is down or slow never fails, delays or blocks prompt executions, conversations or quota reservations; when the queue is full, the oldest spans are dropped instead of growing memory.
 - **Bounded In-Memory Retention:** Local traces are stored in a ring buffer with a strict cap of 500 items, preventing memory leaks during long-running sessions.
 - **Ledger Isolation (No Duplicate Accounting):** Telemetry export is purely observational and strictly isolated from the quota ledger. Token accounting and budget enforcement are persisted independently in PostgreSQL (`usage_records` and `quota_periods` tables). Telemetry exports never write duplicate ledger entries or mutate financial quotas.
 
@@ -97,27 +99,26 @@ PromptLab strictly enforces client and server-side secret scrubbing before trace
 ### OpenTelemetry Collector (Docker Compose)
 To forward traces to a local OpenTelemetry collector:
 ```yaml
-# docker-compose.otel.yml
-version: '3.8'
+# docker-compose.otel.yml (pin the image version you test with)
 services:
   otel-collector:
     image: otel/opentelemetry-collector:latest
     ports:
       - "4318:4318" # OTLP HTTP receiver
 ```
-Set in `apps/api/.env`:
+Set in the root `.env`:
 ```env
-OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 ```
 
 ### Langfuse (Cloud or Self-Hosted)
 To forward LLM generations and traces to Langfuse:
 1. Create a free account or project at [cloud.langfuse.com](https://cloud.langfuse.com).
 2. Generate API keys in **Project Settings -> API Keys**.
-3. Set in `apps/api/.env`:
+3. Set in the root `.env`:
 ```env
 LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_BASEURL=https://cloud.langfuse.com
 ```
-Restart PromptLab API (`npm run start:dev:api`). Traces and generations will appear in your Langfuse dashboard with full token usage, latency, and model metadata.
+Restart the API (`npm run start:api`). Traces will appear in Langfuse with token usage, latency, cost and model metadata.
