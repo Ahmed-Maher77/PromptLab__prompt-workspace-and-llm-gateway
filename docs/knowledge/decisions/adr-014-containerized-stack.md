@@ -69,7 +69,9 @@ environment:
 }
 ```
 
-**Rationale:** Angular's default font optimization inlines Google Fonts CSS via an outbound HTTP request at build time. In CI, sandboxed build environments, and air-gapped deployments this network call fails and breaks the build. Disabling it means the font link tag is left as-is in `index.html`; fonts load from the CDN at runtime (acceptable for a POC) or can be bundled locally in a future phase.
+**Rationale:** Angular's default font optimization inlines Google Fonts CSS via an outbound HTTP request at build time. In CI, sandboxed build environments, and air-gapped deployments this network call fails and breaks the build. Disabling it keeps the build free of network calls.
+
+**Update (2026-10-27):** the fonts are now self-hosted. Inter and JetBrains Mono come from the `@fontsource` packages (Latin and Latin Extended subsets) and are listed in the build `styles` in `angular.json`, so the build bundles them into `media/`. `index.html` no longer links to Google Fonts, so the app makes no third-party requests at runtime and works fully offline. `optimization.fonts: false` stays in place, since there is nothing left to inline.
 
 ---
 

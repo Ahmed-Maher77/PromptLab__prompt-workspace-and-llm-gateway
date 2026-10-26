@@ -1,4 +1,4 @@
-# Stage 1: Build Angular web app with offline fonts
+# Stage 1: Build the Angular web app (fonts are self-hosted, no network access needed at build time)
 FROM node:22-alpine AS builder
 
 WORKDIR /app
