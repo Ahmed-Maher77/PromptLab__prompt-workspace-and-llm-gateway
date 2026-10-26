@@ -88,7 +88,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
   showHistoryDrawer = signal<boolean>(false);
   resumeMessage = signal<string | null>(null);
 
-  // Model-aware Token Counter for current message input (TOKEN-01)
+  // Model-aware Token Counter for current message input
   private readonly tokenEstimateSubject = new Subject<{ text: string; model: string; provider?: string }>();
   private tokenEstimateSub?: Subscription;
 
@@ -297,7 +297,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
         } else {
           this.chatError.set(err.error?.message || 'Failed to transmit message.');
         }
-        // CONV-02 / QUOTA-05c: keep the idempotency key only for unknown outcomes (network error, 502/503/504, 409 REQUEST_IN_PROGRESS).
+        // Keep the idempotency key only for unknown outcomes (network error, 502/503/504, 409 REQUEST_IN_PROGRESS).
         // Rotate it on every other error (reading `code` from problem-details body).
         if (!isUnknownOutcomeError(err)) {
           this.currentSendMessageKey = null;

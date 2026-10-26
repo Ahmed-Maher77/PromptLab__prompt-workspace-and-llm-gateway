@@ -290,7 +290,7 @@ describe('ConversationsService', () => {
       expect(inspection.assembledMessages[1].content).toContain('PostgreSQL database is used');
     });
 
-    it('should exclude failed messages from assembled context and retained count (CONV-02)', async () => {
+    it('should exclude failed messages from assembled context and retained count', async () => {
       mockPrisma.conversation.findUnique.mockResolvedValueOnce({
         id: 'c-failed-ctx',
         title: 'Failed Context Conv',
@@ -538,7 +538,7 @@ describe('ConversationsService', () => {
       expect(result.latencyMs).toBe(320);
     });
 
-    it('returns stored turn on replay without inserting new messages (QUOTA-05)', async () => {
+    it('returns stored turn on replay without inserting new messages', async () => {
       const storedUserMsg = { id: 'msg-u-1', role: 'user', content: 'Cached input', sequenceNumber: 1 };
       const storedAsstMsg = { id: 'msg-a-1', role: 'assistant', content: 'Cached output', sequenceNumber: 2 };
 
@@ -697,7 +697,7 @@ describe('ConversationsService', () => {
       ).rejects.toThrow('Unique constraint failed on (conversationId, sequenceNumber)');
     });
 
-    it('persists user message with status failed on provider failure (CONV-02)', async () => {
+    it('persists user message with status failed on provider failure', async () => {
       mockPrisma.conversation.findUnique.mockResolvedValue({
         id: 'c-fail',
         ownerId: 'dev-user-001',
@@ -741,7 +741,7 @@ describe('ConversationsService', () => {
       expect(call.data.role).toBe('user');
     });
 
-    it('throws 409 IDEMPOTENCY_RESULT_UNAVAILABLE when replayed request messages are missing and reconciledAt is older than 30s grace period (CONV-02, QUOTA-05c)', async () => {
+    it('throws 409 IDEMPOTENCY_RESULT_UNAVAILABLE when replayed request messages are missing and reconciledAt is older than 30s grace period', async () => {
       mockPrisma.conversation.findUnique.mockResolvedValue({
         id: 'c-stale-replay',
         ownerId: 'dev-user-001',
@@ -814,7 +814,7 @@ describe('ConversationsService', () => {
     });
   });
 
-  describe('contextBudget enforcement and sliding window (CONV-03)', () => {
+  describe('contextBudget enforcement and sliding window', () => {
     it('keeps all messages and reports zero truncation when dialogue is within budget', async () => {
       mockPrisma.conversation.findUnique.mockResolvedValue({
         id: 'c-within-budget',
@@ -845,7 +845,7 @@ describe('ConversationsService', () => {
       ]);
     });
 
-    it('drops oldest retained messages via sliding window when over budget, keeping system, checkpoint, and whole user turns (CONV-03b)', async () => {
+    it('drops oldest retained messages via sliding window when over budget, keeping system, checkpoint, and whole user turns', async () => {
       // System msg: ~8 tokens (32 chars)
       // Checkpoint: ~28 tokens
       // Retained m-3: 120 chars ~ 30 tokens (role: 'user')
@@ -856,7 +856,7 @@ describe('ConversationsService', () => {
       // With contextBudget = 80 tokens:
       // Total without drop = 40 + 30 + 30 + 5 = 105 tokens > 80.
       // Dropping m-3 (30 tokens) leaves 75 tokens <= 80, but leaves m-4 (assistant) as first retained.
-      // CONV-03b drops m-4 too so dialogue starts with m-5 (user) -> 45 tokens <= 80!
+      // Whole-turn pruning drops m-4 too so dialogue starts with m-5 (user) -> 45 tokens <= 80!
       mockPrisma.conversation.findUnique.mockResolvedValue({
         id: 'c-over-budget',
         title: 'Over Budget Conv',
@@ -910,7 +910,7 @@ describe('ConversationsService', () => {
       expect(lastMsg.content).toBe('New turn input');
     });
 
-    it('caps effective contextBudget to model context limit (CONV-03a)', async () => {
+    it('caps effective contextBudget to model context limit', async () => {
       const gptPolicy = {
         contextWindow: 128_000,
         status: 'known' as const,
@@ -952,7 +952,7 @@ describe('ConversationsService', () => {
       expect(resultNull.inputBudget).toBe(8192); // 50% of 128k capped at 8192
     });
 
-    it('clamps stored contextBudget to model maximum on conversation creation (CONV-03a)', async () => {
+    it('clamps stored contextBudget to model maximum on conversation creation', async () => {
       mockPrisma.$transaction.mockImplementationOnce(async (cb: any) => {
         return cb(mockPrisma);
       });
@@ -999,7 +999,7 @@ describe('ConversationsService', () => {
       );
     });
 
-    it('never starts the dialogue with an orphaned assistant reply across all budget ranges (CONV-03b)', () => {
+    it('never starts the dialogue with an orphaned assistant reply across all budget ranges', () => {
       // 6 user/assistant turns = 12 dialogue messages:
       // seq 2 (user), seq 3 (assistant), seq 4 (user), seq 5 (assistant), ... seq 13 (assistant)
       // Each message is 40 chars ~ 10 tokens.
@@ -1101,7 +1101,7 @@ describe('ConversationsService', () => {
     });
   });
 
-  describe('CONV-04: Resumable Checkpoints (resume)', () => {
+  describe('Resumable Checkpoints (resume)', () => {
     const mockCheckpoints = [
       {
         id: 'chk-2',
@@ -1167,7 +1167,7 @@ describe('ConversationsService', () => {
       expect(chkMsg?.content).toContain('Summary through turn 2');
 
       // Note: Sequence 3 is an assistant message whose preceding user message (seq 2) was summarized
-      // into chk-1. Per CONV-03b whole-turn pruning, orphaned assistant messages are dropped so dialogue
+      // Into chk-1. With whole-turn pruning, orphaned assistant messages are dropped so dialogue
       // starts cleanly with user turn 4.
       const retainedSeqs = res.contextInspection.assembledMessages
         .filter((m) => m.source === 'retained-message')
@@ -1212,7 +1212,7 @@ describe('ConversationsService', () => {
     });
   });
 
-  describe('CONV-05: Compaction Range Validation and Concurrency Serialization (applyCompaction)', () => {
+  describe('Compaction Range Validation and Concurrency Serialization (applyCompaction)', () => {
     const mockMessages = [
       { id: 'm-1', role: 'system', content: 'System instruction', sequenceNumber: 1, status: 'complete' },
       { id: 'm-2', role: 'user', content: 'Turn 2', sequenceNumber: 2, status: 'complete' },

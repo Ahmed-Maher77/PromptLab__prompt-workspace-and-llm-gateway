@@ -4,7 +4,7 @@ import { HealthService, HealthCheckResult } from './health.service';
 import { Public } from '../common/decorators/public.decorator';
 
 /**
- * HEALTH-01: three endpoints with distinct contracts.
+ * Health endpoints, each with a distinct contract.
  *
  * - GET /api/health        Diagnostic status for the UI. Always 200 while the process can answer;
  *                          the body carries `status: 'ok' | 'degraded'` plus per-dependency detail.

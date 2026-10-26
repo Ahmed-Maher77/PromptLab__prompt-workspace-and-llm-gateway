@@ -238,7 +238,7 @@ export class ExperimentsService {
     }
 
     // 1. Prepare templates and resolve prompt text for Slot A and Slot B
-    // EXP-01b: validate both slots and scope prompt-version lookup to caller
+    // Validate both slots and scope prompt-version lookup to caller
     const resolvedSlotA = await this.prepareSlot(dto.slotA, dto.commonInput, 'slotA', userId);
     const resolvedSlotB = await this.prepareSlot(dto.slotB, dto.commonInput, 'slotB', userId);
 
@@ -297,7 +297,7 @@ export class ExperimentsService {
             criteriaResults: [],
           };
 
-    // 3. Persist experiment, runs, and initial evaluations in PostgreSQL unless saveExperiment is false (EXP-02)
+    // 3. Persist experiment, runs, and initial evaluations in PostgreSQL unless saveExperiment is false
     if (dto.saveExperiment === false) {
       return {
         experimentId: null,
@@ -393,7 +393,7 @@ export class ExperimentsService {
 
   /**
    * Resolves template text and metadata for a slot configuration.
-   * EXP-01b: Validates slot configuration before executing LLM completions:
+   * Validates slot configuration before executing LLM completions:
    * - Unknown promptVersionId or version owned by another user throws NotFoundException (404)
    * - Missing or empty templateBody when promptVersionId is omitted throws BadRequestException (400)
    */
@@ -616,7 +616,7 @@ export class ExperimentsService {
   /**
    * Updates manual evaluation rating and notes for an experiment slot.
    * Scoped to the authenticated owner.
-   * Single-statement atomic upsert into ExperimentEvaluation table (EXP-02).
+   * Single-statement atomic upsert into ExperimentEvaluation table.
    */
   async updateRating(id: string, dto: RateExperimentDto, ownerId: string) {
     const exp = await this.prisma.experiment.findFirst({

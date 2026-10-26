@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { TokensController } from './tokens.controller';
 import { TokenCounterService } from './token-counter.service';
 
-describe('TokensController (TOKEN-01)', () => {
+describe('TokensController', () => {
   let controller: TokensController;
   let service: TokenCounterService;
 
@@ -53,7 +53,7 @@ describe('TokensController (TOKEN-01)', () => {
     expect(res.method).toBe('approximate:o200k_base');
   });
 
-  describe('DTO validation (TOKEN-01c)', () => {
+  describe('DTO validation', () => {
     it('rejects roles outside system, user, assistant', async () => {
       const { validate } = await import('class-validator');
       const { plainToInstance } = await import('class-transformer');

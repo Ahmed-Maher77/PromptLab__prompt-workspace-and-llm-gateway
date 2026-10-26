@@ -227,7 +227,7 @@ describe('LlmExecutionService', () => {
     );
   });
 
-  describe('OBS-03 trace status and span closure', () => {
+  describe('trace status and span closure', () => {
     it.each([
       ['provider_rate_limited', 429],
       ['provider_quota_error', 429],
@@ -288,7 +288,7 @@ describe('LlmExecutionService', () => {
     });
   });
 
-  describe('ARCH-01b Claim-First Idempotency', () => {
+  describe('Claim-First Idempotency', () => {
     it('returns stored responseBody on replay of a reconciled request without calling provider', async () => {
       const storedResponseBody = {
         success: true,

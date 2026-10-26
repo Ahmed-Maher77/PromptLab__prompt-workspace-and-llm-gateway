@@ -5,7 +5,7 @@ import {
   KNOWN_EXAMPLE_SECRETS,
 } from './env.validation';
 
-describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
+describe('validateEnvironment (secure by default)', () => {
   const origEnv = process.env;
 
   beforeEach(() => {
@@ -94,7 +94,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     );
   });
 
-  describe('SEC-01a-2: Fail-closed when NODE_ENV is unset or not in allow-list', () => {
+  describe('Fail-closed when NODE_ENV is unset or not in allow-list', () => {
     it('treats unset NODE_ENV as production and refuses startup without real auth', () => {
       expect(() =>
         validateEnvironment({
@@ -119,7 +119,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('SEC-01a-2: Known example secrets rejection in production-like environments', () => {
+  describe('Known example secrets rejection in production-like environments', () => {
     const baseProdEnv = {
       DATABASE_URL: 'postgresql://localhost:5432/promptlab',
       NODE_ENV: 'production',
@@ -158,7 +158,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('SEC-01a-2: Production key strength, malformed entries, and duplicates', () => {
+  describe('Production key strength, malformed entries, and duplicates', () => {
     const baseProdEnv = {
       DATABASE_URL: 'postgresql://localhost:5432/promptlab',
       NODE_ENV: 'production',
@@ -236,7 +236,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('SEC-01a-2: Dev tokens configuration', () => {
+  describe('Dev tokens configuration', () => {
     it('disables dev tokens when AUTH_DEV_TOKENS_ENABLED is false in development', () => {
       const config = validateEnvironment({
         NODE_ENV: 'development',
@@ -275,7 +275,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('TRUST_PROXY validation (SEC-04b)', () => {
+  describe('TRUST_PROXY validation', () => {
     it('defaults TRUST_PROXY to false when unset or empty', () => {
       const config = validateEnvironment({
         NODE_ENV: 'development',
@@ -350,7 +350,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('ENABLE_TELEMETRY validation (OBS-01)', () => {
+  describe('ENABLE_TELEMETRY validation', () => {
     it('defaults ENABLE_TELEMETRY to true when unset', () => {
       const config = validateEnvironment({
         NODE_ENV: 'development',
@@ -387,7 +387,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('QUOTA_TIMEOUT_CHARGE_RATIO validation (QUOTA-06)', () => {
+  describe('QUOTA_TIMEOUT_CHARGE_RATIO validation', () => {
     it('defaults QUOTA_TIMEOUT_CHARGE_RATIO to 0.5 when unset', () => {
       const config = validateEnvironment({
         NODE_ENV: 'development',
@@ -445,7 +445,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
       ).toThrow(/Invalid QUOTA_TIMEOUT_CHARGE_RATIO/);
     });
 
-    describe('COST-01: MODEL_CATALOG_TTL_MS & LITELLM_BASE_URL', () => {
+    describe('MODEL_CATALOG_TTL_MS & LITELLM_BASE_URL', () => {
       it('parses custom positive integer MODEL_CATALOG_TTL_MS', () => {
         const config = validateEnvironment({
           NODE_ENV: 'development',

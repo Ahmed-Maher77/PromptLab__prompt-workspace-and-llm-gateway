@@ -2,7 +2,7 @@ import { ArgumentsHost, HttpException, HttpStatus, ConflictException } from '@ne
 import { AllExceptionsFilter } from './http-exception.filter';
 import { Prisma } from '@prisma/client';
 
-describe('AllExceptionsFilter (ERR-01)', () => {
+describe('AllExceptionsFilter', () => {
   let filter: AllExceptionsFilter;
   let mockResponse: {
     status: jest.Mock;
@@ -223,7 +223,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
       expect(loggerErrorSpy).toHaveBeenCalled();
     });
 
-    it('maps PrismaClientValidationError to 400 Bad Request (ERR-01a)', () => {
+    it('maps PrismaClientValidationError to 400 Bad Request', () => {
       const validationError = new Prisma.PrismaClientValidationError(
         'Invalid `prisma.user.create()` invocation: missing required argument email.',
         { clientVersion: '6.4.1' },
@@ -240,7 +240,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
     });
   });
 
-  describe('RFC 9457 Content-Type and Throttler Retry-After preservation (ERR-01a)', () => {
+  describe('RFC 9457 Content-Type and Throttler Retry-After preservation', () => {
     it('sets Content-Type to application/problem+json on every error response', () => {
       const exception = new HttpException('Bad Request', HttpStatus.BAD_REQUEST);
       filter.catch(exception, mockHost);
@@ -265,7 +265,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
   });
 
   describe('Request ID handling', () => {
-    it('reuses req.id set by RequestIdMiddleware (ERR-01a)', () => {
+    it('reuses req.id set by RequestIdMiddleware', () => {
       (mockRequest as any).id = 'req-from-middleware-123';
 
       const exception = new HttpException('Bad Request', HttpStatus.BAD_REQUEST);
@@ -299,7 +299,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
     });
   });
 
-  describe('Machine-readable error codes (QUOTA-05d)', () => {
+  describe('Machine-readable error codes', () => {
     it('uses UPPER_SNAKE message as code when Nest standard object has error: "Conflict" but message: "REQUEST_IN_PROGRESS"', () => {
       const exception = new ConflictException('REQUEST_IN_PROGRESS');
       filter.catch(exception, mockHost);
@@ -347,7 +347,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
     });
   });
 
-  describe('RFC 9457 reserved members (HEALTH-01)', () => {
+  describe('RFC 9457 reserved members', () => {
     it('keeps numeric status and core members when the exception body carries its own status/type/title', () => {
       // Shape thrown by @nestjs/terminus when a readiness check fails.
       const exception = new HttpException(

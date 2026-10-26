@@ -74,7 +74,7 @@ export class UsageService {
   }
 
   /**
-   * USAGE-01: Admin updates quota policy for a target user, validating target user exists.
+   * Admin updates quota policy for a target user, validating target user exists.
    */
   async updatePolicyForTargetUser(dto: UpdateQuotaPolicyDto, targetUserId: string) {
     const user = await this.prisma.user.findUnique({
@@ -490,7 +490,7 @@ export class UsageService {
         return { success: true, record: updatedRecord };
       } else {
         // Check for ambiguous timeout where upstream provider may have generated tokens
-        // QUOTA-06: Typed timeout detection. Do NOT parse dto.error strings!
+        // Typed timeout detection. Do NOT parse dto.error strings!
         const isTimeout = dto.errorType === 'TIMEOUT';
 
         if (isTimeout) {
@@ -660,7 +660,7 @@ export class UsageService {
 
     return await this.prisma.$transaction(async (tx) => {
       // 1. Concurrency-safe selection using row-level FOR UPDATE SKIP LOCKED
-      // TIME-01: compare against UTC timestamp without session timezone distortion
+      // Compare against UTC timestamp without session timezone distortion
       const staleRecords = await tx.$queryRaw<Array<{
         id: string;
         userId: string;

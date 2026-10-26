@@ -1,7 +1,6 @@
 ---
-okf_version: "0.2"
 title: "PromptLab Knowledge Base"
-description: "Open Knowledge Format (OKF) repository index for PromptLab — Prompt Engineering Workspace and LLM Gateway"
+description: "Documentation index for PromptLab — Prompt Engineering Workspace and LLM Gateway"
 status: active
 maintainer: "PromptLab Core Team"
 last_updated: "2026-10-20"
@@ -9,17 +8,17 @@ last_updated: "2026-10-20"
 
 # PromptLab Knowledge Base
 
-Welcome to the PromptLab Knowledge Base, structured in accordance with the **Open Knowledge Format (OKF v0.2)**. This repository provides structured, traversable documentation, architectural decision records, domain concept definitions, and operational runbooks for software engineers, automated tooling, and RAG architectures.
+This is the entry point to PromptLab's documentation: architecture, architecture decision records (ADRs), domain concepts, and operational runbooks. Every document has YAML front matter (type, title, status, date), so the set can also be indexed by tools.
 
 ---
 
-## Knowledge Bundle Navigation
+## Navigation
 
-This knowledge bundle uses **progressive disclosure**. Start with the curated section indices below to navigate directly to relevant domain knowledge:
+Start with the section indices below to go directly to relevant domain knowledge:
 
 ```
 docs/knowledge/
-├── index.md                 # Root OKF index (this file)
+├── index.md                 # Documentation index (this file)
 ├── log.md                   # Chronological evolution log
 ├── architecture/            # System topology, data models, and component boundaries
 │   ├── index.md

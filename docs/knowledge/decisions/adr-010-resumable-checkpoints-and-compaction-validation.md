@@ -10,7 +10,7 @@ decision_makers: ["PromptLab Core Team"]
 # ADR-010: Resumable Conversation Checkpoints and Compaction Validation
 
 ## Context
-In PromptLab Phase 3, conversations can generate compaction checkpoints to synthesize previous dialogue into a concise summary with retained key facts. However, prior to CONV-04 and CONV-05:
+In PromptLab Phase 3, conversations can generate compaction checkpoints to synthesize previous dialogue into a concise summary with retained key facts. However, before resumable checkpoints and compaction validation were added:
 1. `resume(checkpointId)` returned an inspection object but did not persist an active checkpoint pointer on the conversation. Consequently, subsequent context inspections and message dispatches reverted to the latest checkpoint or uncompacted history.
 2. The semantic impact of resuming an older checkpoint on messages created after that checkpoint was ambiguous.
 3. `applyCompaction()` lacked range validation matching `previewCompaction()`, allowing invalid checkpoint sequences (such as compacting beyond or through the latest message, or compacting backwards relative to the active checkpoint).
@@ -30,27 +30,27 @@ In PromptLab Phase 3, conversations can generate compaction checkpoints to synth
    - Serialize concurrent compactions using PostgreSQL pessimistic row locking (`SELECT "id" FROM "conversations" WHERE "id" = $id FOR UPDATE`) inside an atomic database transaction.
 
 ## Decision
-We chose **Alternative 3: Persisted Active Checkpoint Pointer with Retained Message Slicing & Pessimistic Row Locking (CONV-04 & CONV-05)**.
+We chose **Alternative 3: Persisted Active Checkpoint Pointer with Retained Message Slicing & Pessimistic Row Locking**.
 
 ### Architectural Rules
 
-1. **Active Checkpoint Persistence (CONV-04):**
+1. **Active Checkpoint Persistence:**
    - The `Conversation` table contains `activeCheckpointId` referencing `ConversationCheckpoint(id)` with `ON DELETE SET NULL`.
    - `resume(checkpointId)` validates that the checkpoint exists, belongs to the targeted conversation, and is owned by the authenticated caller. If valid, it updates `Conversation.activeCheckpointId` and returns the refreshed context inspection. If not found or belongs to another conversation/user, it throws HTTP 404 `NotFoundException`.
    - If `activeCheckpointId` is null (default), context assembly and `findOne()` fall back to the latest checkpoint if one exists, preserving backwards compatibility.
 
-2. **Older Checkpoint Resumption Semantics (CONV-04):**
+2. **Older Checkpoint Resumption Semantics:**
    - All conversation messages in PostgreSQL remain permanently preserved regardless of which checkpoint is active.
    - When an older checkpoint is active (e.g., compacted through sequence 4 in an 8-turn conversation), turns 1 through 4 are replaced by the checkpoint summary and retained facts. Turns 5 through 8 remain active uncompacted messages and participate in sliding-window truncation.
    - Both `inspectContext` preview and `sendMessage` payload dispatch evaluate the currently active checkpoint.
 
-3. **Compaction Range Validation (CONV-05):**
+3. **Compaction Range Validation:**
    - `applyCompaction()` mirrors `previewCompaction()` validation:
      - `compactedThroughSequence` must be strictly greater than `activeCheckpoint.compactedThroughSequence` (or `0` if no active checkpoint).
      - `compactedThroughSequence` must be strictly less than the latest non-system message sequence (`maxSeq`), ensuring recent turns remain uncompacted for conversational continuity.
    - If either condition is violated, the API rejects the request with HTTP 400 and `{ message: string, code: 'INVALID_COMPACTION_RANGE' }`.
 
-4. **Concurrency & Atomic State Transitions (CONV-05):**
+4. **Concurrency & Atomic State Transitions:**
    - In `applyCompaction()`, the conversation row is locked via `SELECT "id" FROM "conversations" WHERE "id" = ${id} AND "ownerId" = ${userId} FOR UPDATE;`.
    - Creating the `ConversationCheckpoint` record, updating `Conversation.activeCheckpointId`, and updating `Conversation.updatedAt` are executed in a single atomic database transaction. Concurrent compaction requests serialize cleanly on the row lock, preventing race conditions.
 
@@ -62,7 +62,7 @@ sequenceDiagram
     participant DB as PostgreSQL (Prisma tx)
     participant Context as assembleConversationContext()
 
-    Note over Client, DB: CONV-05: applyCompaction with Concurrency Lock
+    Note over Client, DB: applyCompaction with Concurrency Lock
     Client->>Service: POST /conversations/:id/compaction/apply
     Service->>DB: BEGIN TX
     Service->>DB: SELECT id FROM conversations WHERE id = :id FOR UPDATE
@@ -79,7 +79,7 @@ sequenceDiagram
         Service-->>Client: 201 Created (Checkpoint + Inspection)
     end
 
-    Note over Client, DB: CONV-04: Resuming an Older Checkpoint
+    Note over Client, DB: Resuming an Older Checkpoint
     Client->>Service: POST /conversations/:id/resume { checkpointId: :olderChkId }
     Service->>DB: SELECT conversation + checkpoints WHERE id = :id AND ownerId = :userId
     alt Checkpoint not found or mismatched conversation

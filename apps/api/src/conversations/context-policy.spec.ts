@@ -6,7 +6,7 @@ import {
   estimateTokens,
 } from './context-policy';
 
-describe('Context Policy (COST-01)', () => {
+describe('Context Policy', () => {
   describe('getModelContextPolicy', () => {
     it('returns known policy with window and budget when given a catalog entry', () => {
       const gptPolicy = getModelContextPolicy({

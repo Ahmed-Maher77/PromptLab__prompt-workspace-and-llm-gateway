@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * PERF-06 / ADR-015: guards the timing contract between the LiteLLM gateway config and the API.
+ * Guards the timing contract between the LiteLLM gateway config and the API (see ADR-015).
  * The API aborts a provider call after LLM_REQUEST_TIMEOUT_MS (default 30 000 ms). If the gateway's
  * per-attempt timeout were longer, or if it retried timeouts, the API would abort while LiteLLM is
  * still working and the call would be recorded as an ambiguous, partially charged timeout.

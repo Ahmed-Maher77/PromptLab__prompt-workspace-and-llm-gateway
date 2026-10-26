@@ -12,7 +12,7 @@ decision_makers: ["PromptLab Core Team"]
 ## Context
 In PromptLab Phase 3 and earlier, several core architectural concerns relied on heuristic approximations, static configurations, or API-process assumptions:
 
-1. **Static Pricing and Context Limits (COST-01):**
+1. **Static Pricing and Context Limits:**
    - Context limits were hardcoded in `apps/api/src/conversations/context-policy.ts` (`KNOWN_MODEL_CONTEXT_LIMITS`).
    - Token pricing rates were hardcoded in `apps/api/src/experiments/cost-calculator.ts` (`KNOWN_MODEL_PRICING`).
    - Whenever upstream providers updated model context windows, input/output token pricing, or added new models, PromptLab code required manual edits and redeployment.
@@ -26,7 +26,7 @@ In PromptLab Phase 3 and earlier, several core architectural concerns relied on 
 4. **Ignored Upstream Reported Costs:**
    - LiteLLM returns exact token execution costs computed upstream via the `x-litellm-response-cost` response header. PromptLab discarded this telemetry and computed costs using static offline rate multiplication.
 
-5. **Heuristic Error Substring Matching (ERRCLS-01):**
+5. **Heuristic Error Substring Matching:**
    - `providers.service.ts` `parseGatewayError()` classified errors by searching substrings in the message body (`message.includes('quota')`, `message.includes('api_key')`, `message.includes('authentication')`).
    - Consequently, an internal server error (HTTP 500) from an upstream database or reverse proxy that mentioned the word "quota" in its diagnostic message was falsely classified as an account quota exhaustion (HTTP 429), misleading users and triggering incorrect retry/recovery behaviors.
 
@@ -83,7 +83,7 @@ We chose **Alternative 3: Injectable ModelCatalogService with TTL Single-Flight 
    - `HealthService` queries `await this.modelCatalog.getConfiguredProviders()` instead of inspecting API-process `*_API_KEY` environment variables.
    - Gateway configuration in `infra/litellm/config.yaml` explicitly includes all supported models (`gpt-4o-mini`, `gpt-4o`, `claude-3-5-sonnet`).
 
-5. **Structural Error Classification (ERRCLS-01):**
+5. **Structural Error Classification:**
    - `parseGatewayError()` inspects HTTP status codes first:
      - `401` or `403` -> `authentication_error`
      - `429` -> `quota_exceeded`

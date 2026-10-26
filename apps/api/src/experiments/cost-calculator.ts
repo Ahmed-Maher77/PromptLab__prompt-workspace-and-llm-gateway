@@ -1,7 +1,7 @@
 /**
  * Pure token cost calculation utilities.
  * All model pricing is dynamically fetched and cached from LiteLLM GET /model/info
- * via ModelCatalogService. Static pricing tables are eliminated (COST-01).
+ * Via ModelCatalogService. Static pricing tables are eliminated.
  */
 
 export interface TokenPricingRates {

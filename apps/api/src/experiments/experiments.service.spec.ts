@@ -289,7 +289,7 @@ describe('ExperimentsService', () => {
       expect(result.slotB.tokenUsageSource).toBe('provider-reported');
     });
 
-    it('should pass caller userId to reserveUsage for both comparison slots (SEC-01d)', async () => {
+    it('should pass caller userId to reserveUsage for both comparison slots', async () => {
       mockPrisma.promptVersion.findUnique.mockResolvedValue({
         id: 'pv-1',
         versionNumber: 1,
@@ -338,7 +338,7 @@ describe('ExperimentsService', () => {
       );
     });
 
-    it('should throw NotFoundException (404) if promptVersionId does not exist and NOT call LLM or reserveUsage (EXP-01)', async () => {
+    it('should throw NotFoundException (404) if promptVersionId does not exist and NOT call LLM or reserveUsage', async () => {
       mockPrisma.promptVersion.findUnique.mockResolvedValueOnce(null);
 
       await expect(
@@ -363,7 +363,7 @@ describe('ExperimentsService', () => {
       expect(mockUsage.reserveUsage).not.toHaveBeenCalled();
     });
 
-    it("should throw NotFoundException (404) if user B uses user A's promptVersionId, with zero LLM and quota calls (EXP-01b)", async () => {
+    it("should throw NotFoundException (404) if user B uses user A's promptVersionId, with zero LLM and quota calls", async () => {
       mockPrisma.promptVersion.findFirst.mockResolvedValueOnce(null);
 
       await expect(
@@ -394,7 +394,7 @@ describe('ExperimentsService', () => {
       expect(mockUsage.reserveUsage).not.toHaveBeenCalled();
     });
 
-    it('should throw BadRequestException (400) if slot provides neither promptVersionId nor non-empty templateBody (EXP-01)', async () => {
+    it('should throw BadRequestException (400) if slot provides neither promptVersionId nor non-empty templateBody', async () => {
       await expect(
         service.runComparison({
           name: 'Missing template test',
@@ -476,7 +476,7 @@ describe('ExperimentsService', () => {
       expect(invalidOutput[0].notes).toBe('Invalid regular expression');
     });
 
-    it('SEC-02: should evaluate ReDoS patterns safely in linear time without event loop freeze', () => {
+    it('should evaluate ReDoS patterns safely in linear time without event loop freeze', () => {
       // Warm up module/JIT
       service.evaluateCriteria('warmup', [{ id: 'w', name: 'w', type: 'regex' as const, expectedValue: 'warmup' }]);
 
@@ -496,7 +496,7 @@ describe('ExperimentsService', () => {
       expect(elapsed).toBeLessThan(1000);
     });
 
-    it('SEC-02: should handle empty, broken, and unsupported patterns gracefully per-criterion without throwing', () => {
+    it('should handle empty, broken, and unsupported patterns gracefully per-criterion without throwing', () => {
       const criteria = [
         { id: 'c-empty', name: 'Empty', type: 'regex' as const, expectedValue: '' },
         { id: 'c-broken', name: 'Broken', type: 'regex' as const, expectedValue: '[a-z' },
@@ -513,7 +513,7 @@ describe('ExperimentsService', () => {
       expect(results[2].notes).toBe('Regex pattern exceeds maximum allowed length of 256 characters');
     });
 
-    it('SEC-02: should pre-compile criteria once when preparing comparison', () => {
+    it('should pre-compile criteria once when preparing comparison', () => {
       const criteria = [
         { id: 'c-1', name: 'Regex', type: 'regex' as const, expectedValue: 'hello' },
         { id: 'c-2', name: 'Text', type: 'contains_text' as const, expectedValue: 'world' },
@@ -690,7 +690,7 @@ describe('ExperimentsService', () => {
       });
     });
 
-    it('should preserve automated criteriaResults after a manual rating with criteriaScores (EXP-02a)', async () => {
+    it('should preserve automated criteriaResults after a manual rating with criteriaScores', async () => {
       const initialAutomatedResults = [
         { criterionId: 'crit-auto-1', name: 'Contains PromptLab', type: 'contains_text', passed: true, notes: 'Contains "PromptLab"' },
       ];

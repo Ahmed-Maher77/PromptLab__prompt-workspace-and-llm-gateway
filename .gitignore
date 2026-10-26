@@ -50,3 +50,7 @@ playwright-report/
 # Nested external repositories
 sme_agent/
 
+
+# Generated end-to-end test output
+e2e/artifacts/
+e2e/e2e/

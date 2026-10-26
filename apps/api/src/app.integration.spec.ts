@@ -67,7 +67,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
 
     app = moduleFixture.createNestApplication({ bodyParser: false });
 
-    // SEC-04: use the shared configureApp() so the test exercises the real production pipeline
+    // Use the shared configureApp() so the test exercises the real production pipeline
     configureApp(app, envConfig);
 
     await app.init();
@@ -81,7 +81,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     }
   });
 
-  describe('Authentication & Authorization Guards (SEC-01)', () => {
+  describe('Authentication & Authorization Guards', () => {
     it('allows public route /api/health without credentials', async () => {
       await request(app.getHttpServer()).get('/api/health').expect(200);
     });
@@ -100,7 +100,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         .expect(403);
     });
 
-    it('allows a non-admin user to create a conversation after automatic User upsert (SEC-01e)', async () => {
+    it('allows a non-admin user to create a conversation after automatic User upsert', async () => {
       const res = await request(app.getHttpServer())
         .post('/api/conversations')
         .set('Authorization', 'Bearer dev-user-token')
@@ -139,7 +139,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(res.body.services).toBeDefined();
     });
 
-    describe('HEALTH-01 liveness and readiness probes', () => {
+    describe('liveness and readiness probes', () => {
       const realFetch = global.fetch;
 
       afterEach(() => {
@@ -488,7 +488,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(res.headers['access-control-allow-origin']).toBe('http://localhost:4200');
     });
 
-    it('SEC-04: response contains helmet security headers', async () => {
+    it('response contains helmet security headers', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/health')
         .expect(200);
@@ -595,7 +595,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
-  describe('Payload Limit Enforcement (SEC-04a)', () => {
+  describe('Payload Limit Enforcement', () => {
     it('rejects a 300 KB body with 413 Payload Too Large', async () => {
       const largePayload = {
         title: 'Large Payload Test',
@@ -612,7 +612,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
-  describe('Proxy Trust & Rate Limiting (SEC-04b)', () => {
+  describe('Proxy Trust & Rate Limiting', () => {
     it('with TRUST_PROXY unset, 25 requests within 1 s using different X-Forwarded-For values must receive 429', async () => {
       const requests = Array.from({ length: 25 }, (_, i) =>
         request(app.getHttpServer())
@@ -630,7 +630,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
   });
 
   describe('Concurrency & Quota Management (Phase 3)', () => {
-    it('handles concurrent first-of-month quota period and policy creation without P2002 conflict (QUOTA-01)', async () => {
+    it('handles concurrent first-of-month quota period and policy creation without P2002 conflict', async () => {
       const prisma = app.get(PrismaService);
       const usageService = app.get(UsageService);
       const testUserId = `test-user-quota01-${Date.now()}`;
@@ -670,7 +670,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(periods).toHaveLength(1);
     });
 
-    it('executes 10 concurrent execute() calls with one key → exactly 1 provider call and 1 reservation (ARCH-01b)', async () => {
+    it('executes 10 concurrent execute() calls with one key → exactly 1 provider call and 1 reservation', async () => {
       const prisma = app.get(PrismaService);
       const llmExecutionService = app.get(LlmExecutionService);
       const providersService = app.get(ProvidersService);
@@ -755,7 +755,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(providerCalls).toBe(1); // Still 1!
     });
 
-    it('executes 50 concurrent reserveUsage calls against a limit allowing 10 → exactly 10 succeed (QUOTA-02)', async () => {
+    it('executes 50 concurrent reserveUsage calls against a limit allowing 10 → exactly 10 succeed', async () => {
       const prisma = app.get(PrismaService);
       const usageService = app.get(UsageService);
       const testUserId = `test-user-quota02-${Date.now()}`;
@@ -845,7 +845,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       }
     });
 
-    it('executes 10 concurrent reconcileUsage calls for the same request → applies exactly once (QUOTA-03)', async () => {
+    it('executes 10 concurrent reconcileUsage calls for the same request → applies exactly once', async () => {
       const prisma = app.get(PrismaService);
       const usageService = app.get(UsageService);
       const testUserId = `user-quota03-${Date.now()}`;
@@ -953,7 +953,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(record?.reconciledAt).not.toBeNull();
     });
 
-    it('releases a stale reservation exactly once across concurrent sweepers (QUOTA-04)', async () => {
+    it('releases a stale reservation exactly once across concurrent sweepers', async () => {
       const prisma = app.get(PrismaService);
       const usageService = app.get(UsageService);
       const testUserId = `user-quota04-${Date.now()}`;
@@ -1062,7 +1062,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(sweepAgain.sweptCount).toBe(0);
     });
 
-    it('stores UTC createdAt immune to session TimeZone and sweeps correctly under Asia/Baghdad (TIME-01/TIME-01a)', async () => {
+    it('stores UTC createdAt immune to session TimeZone and sweeps correctly under Asia/Baghdad', async () => {
       const appConfig = app.get(APP_CONFIG);
       const url = new URL(process.env.DATABASE_URL!);
       url.searchParams.set('options', '-c TimeZone=Asia/Baghdad');
@@ -1153,7 +1153,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
-  describe('Client Idempotency Keys and Deduping (QUOTA-05)', () => {
+  describe('Client Idempotency Keys and Deduping', () => {
     it('validates Idempotency-Key header against ^[A-Za-z0-9._:-]{8,128}$ (otherwise 400)', async () => {
       // 1. POST /api/prompts/run with invalid header
       await request(app.getHttpServer())
@@ -1250,7 +1250,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(recordB?.status).toBe('reconciled');
     });
 
-    it('same key sent twice → 1 provider call, 1 reservation, identical response, and no duplicate messages (QUOTA-05)', async () => {
+    it('same key sent twice → 1 provider call, 1 reservation, identical response, and no duplicate messages', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
       const idempKey = `conv-replay-${Date.now()}`;
@@ -1324,7 +1324,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
     });
 
-    it('same key while first is in flight → 409 REQUEST_IN_PROGRESS and no duplicate messages (QUOTA-05)', async () => {
+    it('same key while first is in flight → 409 REQUEST_IN_PROGRESS and no duplicate messages', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
       const idempKey = `conv-inflight-${Date.now()}`;
@@ -1404,7 +1404,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(messages.filter((m) => m.role === 'assistant')).toHaveLength(1);
     });
 
-    it('fires the same key while persistence is paused after the provider call → 409 or correct turn, with exactly 2 messages in the end (QUOTA-05a)', async () => {
+    it('fires the same key while persistence is paused after the provider call → 409 or correct turn, with exactly 2 messages in the end', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
       const idempKey = `conv-pause-${Date.now()}`;
@@ -1509,7 +1509,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       }
     });
 
-    it('allocates sequence numbers atomically under parallel sends with different keys (CONV-01)', async () => {
+    it('allocates sequence numbers atomically under parallel sends with different keys', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
 
@@ -1585,7 +1585,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       }
     });
 
-    it('de-duplicates existing duplicate sequence rows during migration CONV-01a', async () => {
+    it('de-duplicates existing duplicate sequence rows during the sequence-uniqueness migration', async () => {
       const prisma = app.get(PrismaService);
 
       // Create a test conversation directly in DB
@@ -1683,7 +1683,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       }
     });
 
-    it('persists a failed turn with status failed and excludes it from context on subsequent turns (CONV-02)', async () => {
+    it('persists a failed turn with status failed and excludes it from context on subsequent turns', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
 
@@ -1771,7 +1771,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       }
     });
 
-    it('returns 409 IDEMPOTENCY_RESULT_UNAVAILABLE when replayed key is reconciled but turn messages are missing past grace period (CONV-02, QUOTA-05c)', async () => {
+    it('returns 409 IDEMPOTENCY_RESULT_UNAVAILABLE when replayed key is reconciled but turn messages are missing past grace period', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
 
@@ -1846,7 +1846,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       }
     });
 
-    it('emits explicit code in 409 responses for in-flight, unavailable, and reused keys across endpoints (QUOTA-05d)', async () => {
+    it('emits explicit code in 409 responses for in-flight, unavailable, and reused keys across endpoints', async () => {
       const prisma = app.get(PrismaService);
       const userId = 'dev-user-001';
 
@@ -1977,7 +1977,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       await prisma.conversation.deleteMany({ where: { id: convId } });
     });
 
-    it('truncates older messages via sliding window and inspectContext matches dispatched payload (CONV-03)', async () => {
+    it('truncates older messages via sliding window and inspectContext matches dispatched payload', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
 
@@ -2091,7 +2091,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       }
     });
 
-    it('compacts twice, resumes first checkpoint, and asserts inspectContext and provider payload use it (CONV-04)', async () => {
+    it('compacts twice, resumes first checkpoint, and asserts inspectContext and provider payload use it', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
 
@@ -2226,7 +2226,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       }
     });
 
-    it('serializes concurrent applyCompaction calls cleanly using row-level locking (CONV-05)', async () => {
+    it('serializes concurrent applyCompaction calls cleanly using row-level locking', async () => {
       const providersService = app.get(ProvidersService);
       const prisma = app.get(PrismaService);
 
@@ -2307,7 +2307,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
-  describe('Per-User Rate Limiting & Idempotency Replay (QUOTA-06)', () => {
+  describe('Per-User Rate Limiting & Idempotency Replay', () => {
     let convIdUser1: string;
     let convIdUser2: string;
     const user1Auth = { Authorization: 'Bearer dev-admin-token' }; // dev-user-001
@@ -2492,7 +2492,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
-  describe('Experiment Evaluations & Concurrent Ratings (EXP-02)', () => {
+  describe('Experiment Evaluations & Concurrent Ratings', () => {
     it('two concurrent rating updates for slots A and B of the same experiment both persist (no lost update)', async () => {
       const prisma = app.get(PrismaService);
       const exp = await prisma.experiment.create({
@@ -2574,7 +2574,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect([3, 5]).toContain(evals[0].rating);
     });
 
-    it('migration moves existing settings-JSON ratings into the new table (EXP-02a & EXP-02b)', async () => {
+    it('migration moves existing settings-JSON ratings into the new table', async () => {
       const prisma = app.get(PrismaService);
 
       // Seed legacy experiment with out-of-range ratings (0 and 7) and automated criteriaResults
@@ -2718,7 +2718,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
-  describe('Model Catalog & Gateway Error Classification (COST-01 & ERRCLS-01)', () => {
+  describe('Model Catalog & Gateway Error Classification', () => {
     const origFetch = global.fetch;
     let modelCatalog: ModelCatalogService;
 
@@ -2933,7 +2933,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
-  describe('Model-Aware Token Counter (TOKEN-01)', () => {
+  describe('Model-Aware Token Counter', () => {
     it('POST /api/tokens/estimate returns model-aware token count and method behind auth', async () => {
       // 1. Unauthenticated request is rejected
       await request(app.getHttpServer())

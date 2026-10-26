@@ -6,7 +6,7 @@ import { AuthService } from '../services/auth.service';
 import { environment } from '../../environments/environment';
 
 /**
- * SEC-01b: HTTP interceptor for client authentication.
+ * HTTP interceptor for client authentication.
  *
  * Rules:
  *  - No hardcoded token fallback.

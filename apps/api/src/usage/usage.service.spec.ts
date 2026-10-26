@@ -162,7 +162,7 @@ describe('UsageService', () => {
       expect(updateCall.data.tokenLimit).toBe(500_000);
     });
 
-    it('should throw NotFoundException if target user does not exist (USAGE-01)', async () => {
+    it('should throw NotFoundException if target user does not exist', async () => {
       mockPrisma.user.findUnique.mockResolvedValueOnce(null);
 
       await expect(
@@ -176,7 +176,7 @@ describe('UsageService', () => {
       });
     });
 
-    it('should update quota policy for existing target user (USAGE-01)', async () => {
+    it('should update quota policy for existing target user', async () => {
       mockPrisma.user.findUnique.mockResolvedValueOnce({
         id: 'target-user-002',
         email: 'user2@promptlab.local',
@@ -603,7 +603,7 @@ describe('UsageService', () => {
       expect(recordUpdate.data.status).toBe('failed');
     });
 
-    it('should charge configured ratio on typed errorType="TIMEOUT" with no string parsing (QUOTA-06)', async () => {
+    it('should charge configured ratio on typed errorType="TIMEOUT" with no string parsing', async () => {
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
         id: 'rec-timeout',
         requestId: 'req-timeout-1',
@@ -644,7 +644,7 @@ describe('UsageService', () => {
       expect(recordUpdate.data.estimatedCost).toBeGreaterThan(0);
     });
 
-    it('should NOT treat an error containing "timed out" as a timeout when errorType is non-timeout (QUOTA-06)', async () => {
+    it('should NOT treat an error containing "timed out" as a timeout when errorType is non-timeout', async () => {
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
         id: 'rec-nontimeout',
         requestId: 'req-nontimeout-1',
@@ -682,7 +682,7 @@ describe('UsageService', () => {
       expect(recordUpdate.data.status).toBe('failed');
     });
 
-    it('should charge ratio configured in QUOTA_TIMEOUT_CHARGE_RATIO (QUOTA-06)', async () => {
+    it('should charge ratio configured in QUOTA_TIMEOUT_CHARGE_RATIO', async () => {
       (service as any).appConfig.QUOTA_TIMEOUT_CHARGE_RATIO = 0.25;
 
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
@@ -720,7 +720,7 @@ describe('UsageService', () => {
       (service as any).appConfig.QUOTA_TIMEOUT_CHARGE_RATIO = 0.5;
     });
 
-    it('should charge 0 tokens when QUOTA_TIMEOUT_CHARGE_RATIO is 0 (QUOTA-06)', async () => {
+    it('should charge 0 tokens when QUOTA_TIMEOUT_CHARGE_RATIO is 0', async () => {
       (service as any).appConfig.QUOTA_TIMEOUT_CHARGE_RATIO = 0;
 
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
@@ -908,7 +908,7 @@ describe('UsageService', () => {
     });
   });
 
-  describe('getStatus (QUOTA-06 read-only)', () => {
+  describe('getStatus (read-only)', () => {
     it('should return active status and perform zero database writes (no update, updateMany, upsert, or create)', async () => {
       mockPrisma.quotaPeriod.update.mockClear();
       mockPrisma.quotaPeriod.updateMany.mockClear();

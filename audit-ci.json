@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/IBM/audit-ci/main/docs/schema.json",
   "high": true,
   "skip-dev": true,
-  "_comment": "Allowlist for known Angular 19 production dependencies awaiting upstream framework major upgrade to Angular 21 (SEC-08). Expiry: 2026-12-31. Any NEW high/critical vulnerability will fail CI.",
+  "_comment": "Allowlist for known Angular 19 production dependencies awaiting upstream framework major upgrade to Angular 21. Expiry: 2026-12-31. Any NEW high/critical vulnerability will fail CI.",
   "allowlist": [
     "GHSA-48r7-hpm6-gfxm",
     "GHSA-39pv-4j6c-2g6v",

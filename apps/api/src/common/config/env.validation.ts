@@ -138,7 +138,7 @@ export function parseApiKeys(
 
 /**
  * Validates required and optional runtime environment variables at application startup.
- * SEC-01a-2: Treats any environment other than 'development' or 'test' (including unset)
+ * Treats any environment other than 'development' or 'test' (including unset)
  * as production-like for all security guarantees (fail-safe default).
  */
 export function validateEnvironment(
@@ -158,7 +158,7 @@ export function validateEnvironment(
     );
   }
 
-  // SEC-01a-2: Allow-list for development and test. Everything else is treated as production.
+  // Allow-list for development and test. Everything else is treated as production.
   const rawNodeEnv = env.NODE_ENV?.trim();
   const isDevOrTest = rawNodeEnv === 'development' || rawNodeEnv === 'test';
   const isProductionLike = !isDevOrTest;
@@ -177,7 +177,7 @@ export function validateEnvironment(
     }
   }
 
-  // SEC-01a-2: Production startup validation for authentication
+  // Production startup validation for authentication
   const parsedApiKeys = parseApiKeys(env.AUTH_API_KEYS, isProductionLike);
   const jwtSecret = env.AUTH_JWT_SECRET?.trim();
   const hasApiKeys = parsedApiKeys.length > 0;
@@ -213,7 +213,7 @@ export function validateEnvironment(
         .filter(Boolean)
     : rawCors.trim();
 
-  // SEC-01a-2: Dev tokens work ONLY when isDevOrTest AND AUTH_DEV_TOKENS_ENABLED is strictly 'true'
+  // Dev tokens work ONLY when isDevOrTest AND AUTH_DEV_TOKENS_ENABLED is strictly 'true'
   const authDevTokensEnabled =
     isDevOrTest && env.AUTH_DEV_TOKENS_ENABLED === 'true';
 

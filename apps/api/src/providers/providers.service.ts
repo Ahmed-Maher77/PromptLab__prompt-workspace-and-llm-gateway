@@ -239,7 +239,7 @@ export class ProvidersService {
   }
 
   /**
-   * Parses gateway error responses structurally into clean messages without leaking secret keys (ERRCLS-01).
+   * Parses gateway error responses structurally into clean messages without leaking secret keys.
    * 1. Classifies by HTTP status first (401/403 -> auth, 429 -> quota, 408/504 -> timeout, 400/422 -> invalid request, 5xx -> provider error).
    * 2. Then checks structured LiteLLM error.type / error.code for non-standard responses.
    * 3. Substring matching on message text is completely eliminated.
@@ -400,7 +400,7 @@ export class ProvidersService {
   }
 
   /**
-   * Model-aware token estimation delegating to TokenCounterService (TOKEN-01),
+   * Model-aware token estimation delegating to TokenCounterService,
    * with fallback to chars/4 if unavailable.
    */
   estimateTokens(text: string, model?: string, provider?: string): number {

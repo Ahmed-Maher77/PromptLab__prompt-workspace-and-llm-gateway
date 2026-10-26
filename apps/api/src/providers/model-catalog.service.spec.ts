@@ -5,7 +5,7 @@ import {
 } from './model-catalog.service';
 import { APP_CONFIG } from '../common/config/env.validation';
 
-describe('ModelCatalogService (COST-01)', () => {
+describe('ModelCatalogService', () => {
   let service: ModelCatalogService;
 
   const mockAppConfig = {
@@ -156,7 +156,7 @@ describe('ModelCatalogService (COST-01)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('resolves all concurrent calls cleanly when fetch rejects, calling fetch once (COST-01a)', async () => {
+  it('resolves all concurrent calls cleanly when fetch rejects, calling fetch once', async () => {
     let rejectResponse: (err: any) => void;
     const delayedPromise = new Promise((_, reject) => {
       rejectResponse = reject;
@@ -187,7 +187,7 @@ describe('ModelCatalogService (COST-01)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('does not retry fetch within failure backoff window, but retries after backoff expires (COST-01a)', async () => {
+  it('does not retry fetch within failure backoff window, but retries after backoff expires', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async () => {
       throw new Error('ECONNREFUSED 127.0.0.1:4000');
     });

@@ -13,9 +13,9 @@ deciders: ["PromptLab Core Team"]
 
 Three related problems in health reporting, tracing and gateway timeouts:
 
-- **HEALTH-01.** `/api/health` was the only health endpoint. It always returned 200, so the Docker HEALTHCHECK could not tell a healthy API from one whose database was down. Its gateway probe also reused one `AbortController` for the fallback request, so once the first probe timed out the fallback started out already aborted and could never succeed.
-- **OBS-03.** Traces could finish with child spans still open: the `quota.reserve` span was never ended on the idempotent-replay path. An upstream 429 from the provider was recorded as a generic `error` rather than `rate_limited`.
-- **PERF-06.** The LiteLLM gateway had `request_timeout: 60` while the API aborts provider calls after `LLM_REQUEST_TIMEOUT_MS` (30 s by default). The API therefore gave up while LiteLLM was still working, and each such call ended as an ambiguous, partially charged timeout. The gateway also had no retry policy.
+- **Health checks.** `/api/health` was the only health endpoint. It always returned 200, so the Docker HEALTHCHECK could not tell a healthy API from one whose database was down. Its gateway probe also reused one `AbortController` for the fallback request, so once the first probe timed out the fallback started out already aborted and could never succeed.
+- **Tracing.** Traces could finish with child spans still open: the `quota.reserve` span was never ended on the idempotent-replay path. An upstream 429 from the provider was recorded as a generic `error` rather than `rate_limited`.
+- **Gateway timeouts.** The LiteLLM gateway had `request_timeout: 60` while the API aborts provider calls after `LLM_REQUEST_TIMEOUT_MS` (30 s by default). The API therefore gave up while LiteLLM was still working, and each such call ended as an ambiguous, partially charged timeout. The gateway also had no retry policy.
 
 ---
 
@@ -85,5 +85,5 @@ Timeout retries                                 0     (a second 25 s attempt wou
   - Retrying 429s adds latency, bounded by the backoff, before the user sees the error.
 - **Verification:**
   - Unit tests: health controller and service, the exception filter, observability, LLM execution, gateway config.
-  - The integration suite has `HEALTH-01 liveness and readiness probes`.
+  - The integration suite has `liveness and readiness probes`.
   - The Docker HEALTHCHECK change is exercised by the CI `docker-images` job.

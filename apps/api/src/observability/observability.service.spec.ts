@@ -116,7 +116,7 @@ describe('ObservabilityService', () => {
     });
   });
 
-  describe('OBS-03 span closure on completion', () => {
+  describe('span closure on completion', () => {
     it('closes and flags child spans left open when the trace completes', () => {
       const trace = service.startTrace({
         name: 'early-exit',
@@ -173,7 +173,7 @@ describe('ObservabilityService', () => {
       expect(traces.length).toBe(0);
     });
 
-    it('respects validated authConfig.ENABLE_TELEMETRY (OBS-01)', () => {
+    it('respects validated authConfig.ENABLE_TELEMETRY', () => {
       const serviceWithConfig = new ObservabilityService(
         { ENABLE_TELEMETRY: false } as any,
         configServiceMock as any,

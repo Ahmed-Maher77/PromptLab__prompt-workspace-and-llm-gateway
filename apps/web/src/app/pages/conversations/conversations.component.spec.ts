@@ -287,7 +287,7 @@ describe('ConversationsComponent', () => {
     expect(component.currentSendMessageKey).toBeNull();
   });
 
-  it('preserves idempotency key across retries on error until input changes (QUOTA-05b)', () => {
+  it('preserves idempotency key across retries on error until input changes', () => {
     component.selectedConversation.set({
       id: 'c-1',
       title: 'Active Conv',
@@ -326,7 +326,7 @@ describe('ConversationsComponent', () => {
     expect(component.currentSendMessageKey).toBeNull();
   });
 
-  it('preserves key on 409 REQUEST_IN_PROGRESS but rotates key on 409 IDEMPOTENCY_RESULT_UNAVAILABLE (CONV-02, QUOTA-05c)', () => {
+  it('preserves key on 409 REQUEST_IN_PROGRESS but rotates key on 409 IDEMPOTENCY_RESULT_UNAVAILABLE', () => {
     component.selectedConversation.set({
       id: 'c-1',
       title: 'Active Conv',
@@ -394,7 +394,7 @@ describe('ConversationsComponent', () => {
     expect(component.currentSendMessageKey).toBeNull();
   });
 
-  it('calls debounced estimate endpoint and updates token estimate and method (TOKEN-01)', fakeAsync(() => {
+  it('calls debounced estimate endpoint and updates token estimate and method', fakeAsync(() => {
     expect(component.currentInputTokensEstimate()).toBe(0);
     expect(component.isEstimateApproximate()).toBeFalse();
 

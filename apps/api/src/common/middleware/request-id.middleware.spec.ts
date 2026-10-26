@@ -1,7 +1,7 @@
 import { requestIdHandler } from './request-id.middleware';
 import { Request, Response, NextFunction } from 'express';
 
-describe('requestIdHandler (Housekeeping / ERR-01a)', () => {
+describe('requestIdHandler', () => {
   let mockReq: Partial<Request>;
   let mockRes: Partial<Response>;
   let nextFn: NextFunction;

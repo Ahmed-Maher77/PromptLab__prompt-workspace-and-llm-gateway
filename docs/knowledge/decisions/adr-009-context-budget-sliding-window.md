@@ -23,11 +23,11 @@ Multi-turn conversations accumulate tokens across turns, eventually approaching 
    Pin essential elements (system prompt, active checkpoint summary, and proposed user input) so they are never dropped. Dynamically drop oldest uncompacted dialogue turns until within budget, ensuring the dialogue never starts with an orphaned assistant reply (whole turns). If the essential pinned messages alone exceed the budget, fail fast with HTTP 409 `CONTEXT_BUDGET_EXCEEDED` before quota reservation or provider dispatch.
 
 ## Decision
-We chose **Alternative 3: Sliding Window over Dialogue Turns with Definitive 409 Fallback (CONV-03, CONV-03a, CONV-03b)**.
+We chose **Alternative 3: Sliding Window over Dialogue Turns with Definitive 409 Fallback**.
 
 ### Architectural Rules
 1. **Shared Assembly Implementation:** Context assembly and token calculation are unified in a single shared function (`assembleConversationContext`), ensuring `inspectContext()` and `sendMessage()` execute identical truncation logic.
-2. **Model Context Capping (CONV-03a):**
+2. **Model Context Capping:**
    - The effective budget is computed as:
      `effectiveBudget = min(requestedBudget, maxInputBudget)`
      where `maxInputBudget = contextWindow - reservedOutputTokens` when known, or `defaultInputBudget` when unknown.
@@ -37,7 +37,7 @@ We chose **Alternative 3: Sliding Window over Dialogue Turns with Definitive 409
    - **System Instruction (Sequence 1):** Never dropped.
    - **Active Checkpoint Summary & Facts:** Never dropped.
    - **New User Message (Current Turn):** Never dropped.
-4. **Sliding Window & Whole-Turn Pruning (CONV-03b):**
+4. **Sliding Window & Whole-Turn Pruning:**
    - If total estimated tokens exceed the effective budget, oldest retained non-failed dialogue turns are dropped until within budget.
    - Dialogue must never start with an orphaned `assistant` message. If token-based pruning drops a user turn, subsequent pruning also drops the orphaned assistant reply so retained history always begins with a `user` turn.
 5. **Definitive 409 Fallback:** If essential pinned tokens alone exceed `effectiveBudget`, the request is rejected with HTTP 409 `conflict('CONTEXT_BUDGET_EXCEEDED')` *before* quota reservation or provider dispatch, ensuring zero quota is billed.
@@ -56,7 +56,7 @@ graph TD
     CheckTotal -- No --> Complete["Dispatch Full Assembled Payload<br/>(truncatedMessagesCount = 0)"]
     CheckTotal -- Yes --> Slide["Token Pruning:<br/>Drop oldest dialogue messages until <= budget"]
     Slide --> OrphanCheck{"First surviving dialogue message is 'assistant'?"}
-    OrphanCheck -- Yes --> DropOrphan["Whole Turn Rule (CONV-03b):<br/>Drop orphaned assistant message until first is 'user'"]
+    OrphanCheck -- Yes --> DropOrphan["Whole Turn Rule:<br/>Drop orphaned assistant message until first is 'user'"]
     OrphanCheck -- No --> Report["Dispatch Truncated Payload<br/>(Report truncatedMessagesCount & suggest compaction)"]
     DropOrphan --> Report
 ```

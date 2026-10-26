@@ -11,7 +11,7 @@ deciders: ["PromptLab Core Team"]
 
 ## Context
 
-INFRA-01 introduced a `docker-compose.yml` that runs the full PromptLab stack (PostgreSQL, LiteLLM proxy, NestJS API, and Angular/Nginx web) in Docker. Several non-obvious decisions were made that are documented here.
+The project introduced a `docker-compose.yml` that runs the full PromptLab stack (PostgreSQL, LiteLLM proxy, NestJS API, and Angular/Nginx web) in Docker. Several non-obvious decisions were made that are documented here.
 
 ---
 

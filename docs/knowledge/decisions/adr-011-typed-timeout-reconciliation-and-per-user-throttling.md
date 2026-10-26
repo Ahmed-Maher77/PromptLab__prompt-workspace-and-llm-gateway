@@ -10,10 +10,10 @@ decision_makers: ["PromptLab Core Team"]
 # ADR-011: Typed Timeout Reconciliation, Configurable Ambiguous Charge Policy, and Per-User Throttling
 
 ## Context
-In PromptLab Phase 3 and Phase 4, token quota accounting and rate limiting protect upstream provider budgets and gateway capacity. However, the code review identified several heuristic shortcomings in accounting and rate limiting (QUOTA-06):
+In PromptLab Phase 3 and Phase 4, token quota accounting and rate limiting protect upstream provider budgets and gateway capacity. However, the code review identified several heuristic shortcomings in accounting and rate limiting:
 1. **Naive String Matching for Timeout Detection:** `reconcileUsage()` inspected `dto.error` using substring matches (`'timeout'`, `'timed out'`, `'ambiguous'`). An unrelated error message that incidentally contained the words "timed out" was erroneously classified as an upstream timeout, charging tokens for non-timeout failures.
 2. **Hard-Coded Ambiguous Timeout Charge Ratio:** When an upstream timeout occurred, `reconcileUsage()` hard-coded a 50% charge of the reserved tokens, with no configuration mechanism or documented rationale.
-3. **Accounting Policy Disparity (Expired vs Ambiguous):** The background sweeper (QUOTA-04) reclaims leaked reservations older than `2 × timeout + margin` and charges 0 tokens, whereas live timeout reconciliations charged 50%. The reasoning for this distinction needed clear documentation.
+3. **Accounting Policy Disparity (Expired vs Ambiguous):** The background sweeper reclaims leaked reservations older than `2 × timeout + margin` and charges 0 tokens, whereas live timeout reconciliations charged 50%. The reasoning for this distinction needed clear documentation.
 4. **Unbounded In-Memory Rate Limiting:** `UsageService.rateLimitTracker` maintained an unbounded, per-process `Map<string, number[]>` of request timestamps that was never evicted, reset on server restart, and counted requests *before* resolving idempotency keys. Replaying an idempotent request consumed an additional rate-limit unit and could trigger false 429 errors.
 5. **Database Writes in Read-Only Status Endpoint:** `GET /usage/status` called `getCurrentPeriodRecord()`, which executed an `updateMany` query on every call to close expired quota periods, violating the read-only contract of GET operations.
 
@@ -37,7 +37,7 @@ In PromptLab Phase 3 and Phase 4, token quota accounting and rate limiting prote
 
 ## Decision
 
-We chose **Alternative 3: Check Idempotency Before Incrementing Counter with Named Throttler, Typed Timeout Detection, Configurable Charge Ratio, and Read-Only Status (QUOTA-06)**.
+We chose **Alternative 3: Check Idempotency Before Incrementing Counter with Named Throttler, Typed Timeout Detection, Configurable Charge Ratio, and Read-Only Status**.
 
 ### Architectural Rules
 

@@ -1,6 +1,6 @@
 import { calculateCost, calculateCostFromRates } from './cost-calculator';
 
-describe('Cost Calculator (COST-01)', () => {
+describe('Cost Calculator', () => {
   it('calculates cost accurately given per-token rates', () => {
     // e.g. gpt-4o-mini rates: $0.00000015 input, $0.00000060 output
     const cost = calculateCost(1000, 500, 0.00000015, 0.0000006);

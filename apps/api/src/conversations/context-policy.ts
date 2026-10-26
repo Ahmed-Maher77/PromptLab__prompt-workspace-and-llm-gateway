@@ -138,17 +138,17 @@ export interface AssembleContextConversationInput {
 }
 
 /**
- * Shared context assembly and sliding window truncation algorithm (CONV-03).
+ * Shared context assembly and sliding window truncation algorithm.
  *
  * Rules:
  * 1. Pinned System Instruction (seq 1, status != 'failed') is NEVER dropped.
  * 2. Pinned Active Checkpoint summary & facts are NEVER dropped.
  * 3. Pinned Proposed / New user message is NEVER dropped.
- * 4. CONV-03a: effectiveBudget = min(requested, maxInputBudget), where maxInputBudget =
+ * 4. effectiveBudget = min(requested, maxInputBudget), where maxInputBudget =
  *    contextWindow - reservedOutputTokens for known models, or defaultInputBudget for unknown models.
  * 5. If total tokens exceed effectiveBudget, a sliding window drops the oldest
  *    retained non-failed messages until within budget.
- * 6. CONV-03b: Dialogue must never begin with an orphaned assistant reply. If pruning
+ * 6. Dialogue must never begin with an orphaned assistant reply. If pruning
  *    drops a user turn, continued pruning drops the orphaned assistant reply (whole turns).
  * 7. If essential pinned tokens alone exceed budget, essentialTokensExceeded = true
  *    and withinBudget = false.
@@ -302,7 +302,7 @@ export function assembleConversationContext(
       dropIndex++;
     }
 
-    // CONV-03b: never start dialogue with an orphaned assistant reply.
+    // Never start dialogue with an orphaned assistant reply.
     // If messages were dropped and the first surviving retained message is an assistant message,
     // continue dropping while the first surviving retained message is not role 'user' (whole turns only).
     while (

@@ -128,7 +128,7 @@ describe('HealthService', () => {
     expect(health.services.gateway.url).toBe('http://127.0.0.1:4000');
   });
 
-  describe('checkGatewayLiveness (HEALTH-01)', () => {
+  describe('checkGatewayLiveness', () => {
     it('gives each probe its own fresh timeout signal', async () => {
       const signals: AbortSignal[] = [];
       global.fetch = jest.fn().mockImplementation((_url: string, init?: RequestInit) => {

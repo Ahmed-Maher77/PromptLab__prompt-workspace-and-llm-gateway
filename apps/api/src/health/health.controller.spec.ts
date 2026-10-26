@@ -98,7 +98,7 @@ describe('HealthController', () => {
     expect(result.services.gateway.serviceAvailability).toBe('unreachable');
   });
 
-  describe('HEALTH-01 probes', () => {
+  describe('liveness and readiness probes', () => {
     it('live returns ok without checking any dependency', async () => {
       const result = await controller.live();
       expect(result.status).toBe('ok');

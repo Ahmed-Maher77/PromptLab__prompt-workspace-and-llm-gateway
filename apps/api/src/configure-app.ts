@@ -6,7 +6,7 @@ import { ValidatedEnvironment } from './common/config/env.validation';
 import { requestIdHandler } from './common/middleware/request-id.middleware';
 
 /**
- * SEC-04: Apply the full HTTP hardening pipeline to a NestJS application instance.
+ * Apply the full HTTP hardening pipeline to a NestJS application instance.
  * Extracted from main.ts so it can be reused identically in integration tests,
  * guaranteeing that the test exercises the real production pipeline.
  *
@@ -22,7 +22,7 @@ import { requestIdHandler } from './common/middleware/request-id.middleware';
  * ThrottlerGuard and AuthGuard/RolesGuard are applied globally via APP_GUARD in AppModule.
  */
 export function configureApp(app: INestApplication, envConfig: ValidatedEnvironment): void {
-  // SEC-04b: trust proxy configuration. Defaults to false (unset -> false).
+  // Trust proxy configuration. Defaults to false (unset -> false).
   // Only trusts proxies when configured with a hop count or IP/CIDR string.
   const httpAdapter = app.getHttpAdapter();
   if (httpAdapter && typeof httpAdapter.getInstance === 'function') {
@@ -32,7 +32,7 @@ export function configureApp(app: INestApplication, envConfig: ValidatedEnvironm
     }
   }
 
-  // ERR-01a: Request ID middleware so every incoming request and log line has req.id and x-request-id
+  // Request ID middleware so every incoming request and log line has req.id and x-request-id
   app.use(requestIdHandler);
 
   // Security headers (X-Content-Type-Options, X-Frame-Options, HSTS, CSP, etc.)

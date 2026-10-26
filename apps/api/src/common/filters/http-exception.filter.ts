@@ -17,7 +17,7 @@ function getStatusTitle(status: number): string {
 }
 
 /**
- * ERR-01: Centralized exception filter standardized on RFC 9457 Problem Details.
+ * Centralized exception filter standardized on RFC 9457 Problem Details.
  *
  * Guarantees:
  *  - Preserves structured exception data (code, retryAfterSeconds, resetDate, remainingTokens, etc.)

@@ -2,7 +2,7 @@
  * Internal fallback token estimator for PromptLab.
  * Explicitly labeled as 'heuristic:chars/4'.
  *
- * NOTE: Application code and API responses must use TokenCounterService (TOKEN-01)
+ * NOTE: Application code and API responses must use TokenCounterService
  * with model-aware tiktoken encodings. This heuristic remains strictly as the
  * last-resort internal fallback if a tokenizer cannot be loaded.
  */

@@ -19,7 +19,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
- * SEC-01a-2: Production-grade, secure-by-default authentication guard.
+ * Production-grade, secure-by-default authentication guard.
  *
  * Guarantees:
  *  - Single source of truth: reads pre-validated config via AUTH_CONFIG.
@@ -30,12 +30,12 @@ import { PrismaService } from '../../prisma/prisma.service';
  *  - JWTs verified cryptographically with pinned HS256 algorithm.
  *  - JWTs require 'exp' claim and enforce maximum lifetime (exp - iat <= maxLifetime).
  *  - Checks issuer and audience when configured.
- *  - SEC-01e / SEC-01f: Upserts authenticated user into DB with bounded TTL cache; rejects email conflicts with 409.
+ *  - Upserts authenticated user into DB with bounded TTL cache; rejects email conflicts with 409.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
-  // SEC-01f: Bounded TTL cache (up to 10k users, 5 min TTL) to allow role re-syncing without unbounded memory growth
+  // Bounded TTL cache (up to 10k users, 5 min TTL) to allow role re-syncing without unbounded memory growth
   private readonly ensuredUsers = new Map<string, number>();
   private static readonly ENSURED_USER_TTL_MS = 5 * 60 * 1000;
   private static readonly MAX_ENSURED_USERS = 10_000;
@@ -136,7 +136,7 @@ export class AuthGuard implements CanActivate {
         },
       });
 
-      // SEC-01f: Maintain bounded cache size (LRU eviction of oldest key if limit reached)
+      // Maintain bounded cache size (LRU eviction of oldest key if limit reached)
       if (this.ensuredUsers.size >= AuthGuard.MAX_ENSURED_USERS) {
         const oldestKey = this.ensuredUsers.keys().next().value;
         if (oldestKey) {
@@ -221,7 +221,7 @@ export class AuthGuard implements CanActivate {
           Record<string, unknown>
         >(token, verifyOptions);
 
-        // SEC-01a-3: Require both exp and iat claims
+        // Require both exp and iat claims
         if (
           !payload ||
           typeof payload.exp !== 'number' ||
@@ -240,7 +240,7 @@ export class AuthGuard implements CanActivate {
           return null;
         }
 
-        // SEC-01a-3: Enforce max token lifetime (exp - iat)
+        // Enforce max token lifetime (exp - iat)
         const lifetime = payload.exp - payload.iat;
         if (
           lifetime > this.authConfig.AUTH_JWT_MAX_LIFETIME_SECONDS ||

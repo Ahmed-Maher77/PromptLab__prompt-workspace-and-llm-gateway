@@ -692,7 +692,7 @@ export class ConversationsService {
         0,
       );
 
-      // CONV-05 Validation:
+      // Validate the requested compaction range:
       // compactedThroughSequence must be > activeCheckpoint.compactedThroughSequence and < latest message sequence.
       // Return 400 with { message, code: 'INVALID_COMPACTION_RANGE' } otherwise.
       if (dto.compactedThroughSequence <= currentCompactedThrough) {

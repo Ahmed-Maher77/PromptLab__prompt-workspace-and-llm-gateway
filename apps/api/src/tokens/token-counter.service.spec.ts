@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TokenCounterService } from './token-counter.service';
 
-describe('TokenCounterService (TOKEN-01)', () => {
+describe('TokenCounterService', () => {
   let service: TokenCounterService;
 
   beforeEach(async () => {
@@ -17,7 +17,7 @@ describe('TokenCounterService (TOKEN-01)', () => {
     expect(service).toBeDefined();
   });
 
-  describe('resolveEncoding (TOKEN-01a)', () => {
+  describe('resolveEncoding', () => {
     it('resolves OpenAI and modern reasoning models to o200k_base with exact method', () => {
       const cases = [
         { model: 'gpt-4o-mini', provider: 'openai' },
@@ -115,7 +115,7 @@ describe('TokenCounterService (TOKEN-01)', () => {
     });
   });
 
-  describe('chunking guard (TOKEN-01b)', () => {
+  describe('chunking guard', () => {
     it('asserts guarded count is >= exact count and within 10% for a long CJK sample', () => {
       const cjkSample = '人工智能是一种模拟人类智能的技术，它能够执行学习、推理、自我纠错等复杂任务。'.repeat(18);
       expect(cjkSample.length).toBeGreaterThan(600);

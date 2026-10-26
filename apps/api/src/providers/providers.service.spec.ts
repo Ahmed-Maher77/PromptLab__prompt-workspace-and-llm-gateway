@@ -109,7 +109,7 @@ describe('ProvidersService', () => {
     expect(service).toBeDefined();
   });
 
-  it('should return master key from config without hardcoded dev fallback (SEC-03b)', () => {
+  it('should return master key from config without hardcoded dev fallback', () => {
     expect(service.getMasterKey()).toBe('sk-promptlab-dev-key');
 
     mockAppConfig.LITELLM_MASTER_KEY = '';
@@ -207,7 +207,7 @@ describe('ProvidersService', () => {
     expect(result.configurationHint).toContain('OPENAI_API_KEY');
   });
 
-  it('should return gateway models resolving provider from catalog (COST-01)', async () => {
+  it('should return gateway models resolving provider from catalog', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValueOnce({
       ok: true,
       json: jest.fn().mockResolvedValueOnce({
@@ -222,7 +222,7 @@ describe('ProvidersService', () => {
     expect(result.models[1].provider).toBe('anthropic');
   });
 
-  describe('ERRCLS-01: Structural Gateway Error Classification', () => {
+  describe('Structural Gateway Error Classification', () => {
     const testCases: Array<{
       status: number;
       body: string;

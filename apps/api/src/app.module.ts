@@ -42,7 +42,7 @@ import { RolesGuard } from './common/guards/roles.guard';
       global: true,
     }),
     AuthConfigModule,
-    // SEC-04a & QUOTA-06: per-IP rate limiting (default 60/min, burst 20/s) and named per-user rate limiting (user 60/min)
+    // Per-IP rate limiting (default 60/min, burst 20/s) and named per-user rate limiting (user 60/min)
     ThrottlerModule.forRoot([
       {
         name: 'default',
@@ -74,7 +74,7 @@ import { RolesGuard } from './common/guards/roles.guard';
   ],
   providers: [
     {
-      // SEC-04a: global per-IP rate limiting via IpThrottlerGuard registered BEFORE AuthGuard
+      // Global per-IP rate limiting via IpThrottlerGuard registered BEFORE AuthGuard
       provide: APP_GUARD,
       useClass: IpThrottlerGuard,
     },
@@ -87,7 +87,7 @@ import { RolesGuard } from './common/guards/roles.guard';
       useClass: RolesGuard,
     },
     {
-      // QUOTA-06: per-user rate limiting applied to LLM-executing routes registered AFTER AuthGuard
+      // Per-user rate limiting applied to LLM-executing routes registered AFTER AuthGuard
       provide: APP_GUARD,
       useClass: UserThrottlerGuard,
     },

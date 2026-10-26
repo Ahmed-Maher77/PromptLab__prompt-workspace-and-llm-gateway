@@ -64,7 +64,7 @@ export class LlmExecutionService {
       `req-${params.operation.replace('.', '-')}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const traceName = params.name || `${params.operation} (${params.model})`;
 
-    // Calculate prompt input token estimate across all messages using model-aware TokenCounterService (TOKEN-01)
+    // Calculate prompt input token estimate across all messages using model-aware TokenCounterService
     const inputEstimate = this.tokenCounter
       ? this.tokenCounter.countMessages(params.messages, params.model, provider).tokens
       : params.messages.reduce((sum, m) => {
@@ -278,7 +278,7 @@ export class LlmExecutionService {
         traceStatus = 'rate_limited';
         errorCode = 'RATE_LIMIT_EXCEEDED';
       } else if (this.mapErrorType(completionResult?.errorType) === 'RATE_LIMITED') {
-        // OBS-03: the upstream provider rate-limited or quota-limited the call.
+        // The upstream provider rate-limited or quota-limited the call.
         traceStatus = 'rate_limited';
       }
 

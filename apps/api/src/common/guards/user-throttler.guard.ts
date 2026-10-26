@@ -28,7 +28,7 @@ export const ThrottleUser = (): CustomDecorator<string> =>
   SetMetadata(LLM_USER_THROTTLE_KEY, true);
 
 /**
- * QUOTA-06: Per-user rate limiter backed by @nestjs/throttler.
+ * Per-user rate limiter backed by @nestjs/throttler.
  * Keyed by authenticated user ID via custom getTracker.
  * Applies only to LLM-executing endpoints marked with @ThrottleUser().
  * Idempotent replays (requests with an Idempotency-Key matching an existing reconciled record)
