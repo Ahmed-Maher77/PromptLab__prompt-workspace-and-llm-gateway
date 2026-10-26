@@ -64,7 +64,13 @@ export function getMaxInputBudget(
 
 
 import { estimateTokens } from '../common/utils/token-estimator';
+import { TokenEstimationMethod } from '../tokens/tokens.types';
 export { estimateTokens };
+export type { TokenEstimationMethod };
+
+export type ContextTokenCounter = (
+  text: string,
+) => { tokens: number; method?: TokenEstimationMethod } | number;
 
 export interface AssembledContextMessage {
   role: 'system' | 'user' | 'assistant';
@@ -84,6 +90,7 @@ export interface ContextInspectionResult {
   reservedOutputTokens: number;
   totalEstimatedInputTokens: number;
   tokenUsageSource: 'estimated';
+  tokenEstimationMethod?: TokenEstimationMethod;
   isCompacted: boolean;
   activeCheckpoint: {
     id: string;
@@ -150,9 +157,26 @@ export function assembleConversationContext(
   conv: AssembleContextConversationInput,
   proposedInput?: string,
   policy?: ModelContextPolicy,
+  tokenCounter?: ContextTokenCounter,
 ): ContextInspectionResult {
   const effectivePolicy = policy ?? getModelContextPolicy();
   const maxInputBudget = getMaxInputBudget(effectivePolicy);
+
+  let estimationMethod: TokenEstimationMethod | undefined;
+  const count = (text: string | null | undefined): number => {
+    if (!text) return 0;
+    if (!tokenCounter) {
+      return estimateTokens(text);
+    }
+    const res = tokenCounter(text);
+    if (typeof res === 'number') {
+      return res;
+    }
+    if (res.method && !estimationMethod) {
+      estimationMethod = res.method;
+    }
+    return res.tokens;
+  };
 
   const requestedBudget =
     typeof conv.contextBudget === 'number' && conv.contextBudget > 0
@@ -192,7 +216,7 @@ export function assembleConversationContext(
       content: systemMsg.content,
       source: 'system-instruction',
       sequenceNumber: 1,
-      estimatedTokens: estimateTokens(systemMsg.content),
+      estimatedTokens: count(systemMsg.content),
     };
   }
 
@@ -214,7 +238,7 @@ export function assembleConversationContext(
       content: checkpointContent,
       source: 'checkpoint-summary',
       sequenceNumber: activeCheckpoint.compactedThroughSequence,
-      estimatedTokens: estimateTokens(checkpointContent),
+      estimatedTokens: count(checkpointContent),
     };
   }
 
@@ -225,7 +249,7 @@ export function assembleConversationContext(
       role: 'user',
       content: proposedInput.trim(),
       source: 'current-input',
-      estimatedTokens: estimateTokens(proposedInput),
+      estimatedTokens: count(proposedInput),
     };
   }
 
@@ -250,7 +274,7 @@ export function assembleConversationContext(
       content: msg.content,
       source: 'retained-message' as const,
       sequenceNumber: msg.sequenceNumber,
-      estimatedTokens: estimateTokens(msg.content),
+      estimatedTokens: count(msg.content),
     }),
   );
 
@@ -325,6 +349,7 @@ export function assembleConversationContext(
     reservedOutputTokens: effectivePolicy.reservedOutputTokens,
     totalEstimatedInputTokens,
     tokenUsageSource: 'estimated',
+    tokenEstimationMethod: estimationMethod ?? 'heuristic:chars/4',
     isCompacted,
     activeCheckpoint: activeCheckpoint
       ? {

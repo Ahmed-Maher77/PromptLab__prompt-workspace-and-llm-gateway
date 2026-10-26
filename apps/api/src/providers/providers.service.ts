@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import { estimateTokens as estimateTokensUtil } from '../common/utils/token-estimator';
 import { ModelCatalogService } from './model-catalog.service';
+import { TokenCounterService } from '../tokens/token-counter.service';
 
 export interface ModelMetadata {
   id: string;
@@ -48,6 +49,7 @@ export class ProvidersService {
     @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
     private readonly configService: ConfigService,
     private readonly modelCatalog: ModelCatalogService,
+    private readonly tokenCounter: TokenCounterService,
   ) {}
 
   getGatewayUrl(): string {
@@ -170,8 +172,12 @@ export class ProvidersService {
       };
 
       const content = data.choices?.[0]?.message?.content || '';
-      const promptTokens = data.usage?.prompt_tokens ?? this.estimateTokens(JSON.stringify(params.messages));
-      const completionTokens = data.usage?.completion_tokens ?? this.estimateTokens(content);
+      const promptTokens =
+        data.usage?.prompt_tokens ??
+        this.tokenCounter.countMessages(params.messages, params.model).tokens;
+      const completionTokens =
+        data.usage?.completion_tokens ??
+        this.tokenCounter.countText(content, params.model).tokens;
       const totalTokens = data.usage?.total_tokens ?? (promptTokens + completionTokens);
 
       const costHeader = response.headers.get('x-litellm-response-cost');
@@ -394,9 +400,13 @@ export class ProvidersService {
   }
 
   /**
-   * Fallback character-based token estimation (~4 characters per token).
+   * Model-aware token estimation delegating to TokenCounterService (TOKEN-01),
+   * with fallback to chars/4 if unavailable.
    */
-  estimateTokens(text: string): number {
+  estimateTokens(text: string, model?: string, provider?: string): number {
+    if (this.tokenCounter) {
+      return this.tokenCounter.countText(text, model, provider).tokens;
+    }
     return estimateTokensUtil(text);
   }
 }

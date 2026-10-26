@@ -6,6 +6,7 @@ import { ModelCatalogService } from '../providers/model-catalog.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
+import { TokenCounterService } from '../tokens/token-counter.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { assembleConversationContext } from './context-policy';
 
@@ -131,6 +132,7 @@ describe('ConversationsService', () => {
       providers: [
         ConversationsService,
         LlmExecutionService,
+        TokenCounterService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ProvidersService, useValue: mockProviders },
         { provide: ModelCatalogService, useValue: mockModelCatalog },

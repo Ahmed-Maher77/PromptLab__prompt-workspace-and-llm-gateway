@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
 import { ModelCatalogService } from '../providers/model-catalog.service';
+import { TokenCounterService } from '../tokens/token-counter.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -18,7 +19,6 @@ import {
 import {
   getModelContextPolicy,
   getMaxInputBudget,
-  estimateTokens,
   AssembledContextMessage,
   ContextInspectionResult,
   assembleConversationContext,
@@ -35,6 +35,7 @@ export class ConversationsService {
     private readonly providersService: ProvidersService,
     private readonly llmExecutionService: LlmExecutionService,
     private readonly modelCatalog: ModelCatalogService,
+    private readonly tokenCounter: TokenCounterService,
   ) {}
 
   /**
@@ -79,7 +80,7 @@ export class ConversationsService {
             content: systemPromptContent!,
             sequenceNumber: 1,
             status: 'complete',
-            inputTokens: estimateTokens(systemPromptContent!),
+            inputTokens: this.tokenCounter.countText(systemPromptContent!, dto.model).tokens,
             tokenUsageSource: 'estimated',
           },
         });
@@ -229,7 +230,8 @@ export class ConversationsService {
   ): Promise<ContextInspectionResult> {
     const conv = await this.findOne(id, userId);
     const policy = await this.modelCatalog.getModelContextPolicy(conv.model);
-    return assembleConversationContext(conv, proposedInput, policy);
+    const counter = this.tokenCounter.createCounter(conv.model, conv.provider);
+    return assembleConversationContext(conv, proposedInput, policy, counter);
   }
 
   /**
@@ -250,7 +252,8 @@ export class ConversationsService {
 
     // 1. Build assembled context payload including proposed current input via shared assembly
     const policy = await this.modelCatalog.getModelContextPolicy(conv.model);
-    const inspection = assembleConversationContext(conv, dto.content.trim(), policy);
+    const counter = this.tokenCounter.createCounter(conv.model, conv.provider);
+    const inspection = assembleConversationContext(conv, dto.content.trim(), policy, counter);
 
     // After sliding window truncation of dialogue messages, total estimated tokens
     // are <= effectiveBudget unless the pinned essential tokens alone (system prompt,
@@ -350,7 +353,7 @@ export class ConversationsService {
               content: dto.content.trim(),
               sequenceNumber: updatedConv.lastSequence,
               status: 'failed',
-              inputTokens: estimateTokens(dto.content),
+              inputTokens: this.tokenCounter.countText(dto.content, conv.model, conv.provider).tokens,
               tokenUsageSource: 'estimated',
             },
           });
@@ -411,7 +414,7 @@ export class ConversationsService {
             content: dto.content.trim(),
             sequenceNumber: userSeq,
             status: 'complete',
-            inputTokens: estimateTokens(dto.content),
+            inputTokens: this.tokenCounter.countText(dto.content, conv.model, conv.provider).tokens,
             tokenUsageSource: 'estimated',
           },
         });
@@ -424,8 +427,8 @@ export class ConversationsService {
             content: execution.content || '',
             sequenceNumber: assistantSeq,
             status: 'complete',
-            inputTokens: execution.usage?.promptTokens || estimateTokens(dto.content),
-            outputTokens: execution.usage?.completionTokens || estimateTokens(execution.content || ''),
+            inputTokens: execution.usage?.promptTokens || this.tokenCounter.countText(dto.content, conv.model, conv.provider).tokens,
+            outputTokens: execution.usage?.completionTokens || this.tokenCounter.countText(execution.content || '', conv.model, conv.provider).tokens,
             tokenUsageSource: execution.usage?.source || 'provider-reported',
           },
         });
@@ -553,7 +556,7 @@ export class ConversationsService {
       .join('\n\n');
 
     const estimatedTokensBefore = messagesToCompact.reduce(
-      (sum, m) => sum + estimateTokens(m.content),
+      (sum, m) => sum + this.tokenCounter.countText(m.content, conv.model, conv.provider).tokens,
       0,
     );
 
@@ -617,8 +620,11 @@ export class ConversationsService {
     }
 
     const estimatedTokensAfter =
-      estimateTokens(summaryText) +
-      retainedFacts.reduce((sum, f) => sum + estimateTokens(f), 0);
+      this.tokenCounter.countText(summaryText, conv.model, conv.provider).tokens +
+      retainedFacts.reduce(
+        (sum, f) => sum + this.tokenCounter.countText(f, conv.model, conv.provider).tokens,
+        0,
+      );
 
     return {
       conversationId: conv.id,
@@ -726,12 +732,13 @@ export class ConversationsService {
     });
 
     const policy = await this.modelCatalog.getModelContextPolicy(checkpointData.conv.model);
+    const counter = this.tokenCounter.createCounter(checkpointData.conv.model, checkpointData.conv.provider);
     const inspection = assembleConversationContext({
       ...checkpointData.conv,
       activeCheckpointId: checkpointData.checkpoint.id,
       activeCheckpoint: checkpointData.checkpoint,
       checkpoints: [checkpointData.checkpoint, ...checkpointData.conv.checkpoints],
-    }, undefined, policy);
+    }, undefined, policy, counter);
 
     return {
       success: true,
@@ -783,7 +790,8 @@ export class ConversationsService {
       activeCheckpoint: targetCheckpoint,
     };
     const policy = await this.modelCatalog.getModelContextPolicy(updatedConv.model);
-    const inspection = assembleConversationContext(updatedConv, undefined, policy);
+    const counter = this.tokenCounter.createCounter(updatedConv.model, updatedConv.provider);
+    const inspection = assembleConversationContext(updatedConv, undefined, policy, counter);
 
     return {
       success: true,

@@ -1,8 +1,9 @@
-import { Injectable, Logger, ConflictException, HttpException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, HttpException, Optional } from '@nestjs/common';
 import { ProvidersService, CompletionResult } from '../providers/providers.service';
 import { ModelCatalogService } from '../providers/model-catalog.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService, ActiveTraceContext } from '../observability/observability.service';
+import { TokenCounterService } from '../tokens/token-counter.service';
 import { StoredLlmResponse } from '../usage/usage.types';
 import { conflict } from '../common/utils/conflict.util';
 
@@ -44,6 +45,7 @@ export class LlmExecutionService {
     private readonly observabilityService: ObservabilityService,
     private readonly providersService: ProvidersService,
     private readonly modelCatalog: ModelCatalogService,
+    @Optional() private readonly tokenCounter?: TokenCounterService,
   ) {}
 
   /**
@@ -62,12 +64,14 @@ export class LlmExecutionService {
       `req-${params.operation.replace('.', '-')}-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
     const traceName = params.name || `${params.operation} (${params.model})`;
 
-    // Calculate prompt input token estimate across all messages
-    const inputEstimate = params.messages.reduce((sum, m) => {
-      const content = m.content || '';
-      const tokens = this.providersService.estimateTokens(content);
-      return sum + (tokens || 1);
-    }, 0);
+    // Calculate prompt input token estimate across all messages using model-aware TokenCounterService (TOKEN-01)
+    const inputEstimate = this.tokenCounter
+      ? this.tokenCounter.countMessages(params.messages, params.model, provider).tokens
+      : params.messages.reduce((sum, m) => {
+          const content = m.content || '';
+          const tokens = this.providersService.estimateTokens(content, params.model, provider);
+          return sum + (tokens || 1);
+        }, 0);
     const estimatedTokens = Math.max(1, inputEstimate + (params.maxTokens || 1024));
 
     // 1. Initialize observability trace

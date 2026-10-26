@@ -2031,7 +2031,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         const impossibleRes = await request(app.getHttpServer())
           .post(`/api/conversations/${convId}/messages`)
           .set(authHeader)
-          .send({ content: 'X'.repeat(3000) }) // 3000 chars ~ 750 tokens > 600 budget
+          .send({ content: 'word '.repeat(700) }) // 701 tokens > 600 budget
           .expect(409);
 
         expect(impossibleRes.body.status).toBe(409);
@@ -2881,6 +2881,136 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       });
       expect(errRecord).toBeDefined();
       expect((errRecord?.responseBody as any)?.upstreamStatus).toBe(500);
+    });
+  });
+
+  describe('Model-Aware Token Counter (TOKEN-01)', () => {
+    it('POST /api/tokens/estimate returns model-aware token count and method behind auth', async () => {
+      // 1. Unauthenticated request is rejected
+      await request(app.getHttpServer())
+        .post('/api/tokens/estimate')
+        .send({ model: 'gpt-4o', text: 'Hello world' })
+        .expect(401);
+
+      // 2. Exact token count for gpt-4o (o200k_base)
+      const exactRes = await request(app.getHttpServer())
+        .post('/api/tokens/estimate')
+        .set(authHeader)
+        .send({ model: 'gpt-4o', text: 'Hello world' })
+        .expect(200);
+
+      expect(exactRes.body).toEqual({
+        tokens: 2,
+        method: 'tiktoken:o200k_base',
+      });
+
+      // 3. Approximate token count for Claude (Anthropic)
+      const approxRes = await request(app.getHttpServer())
+        .post('/api/tokens/estimate')
+        .set(authHeader)
+        .send({ model: 'claude-3-5-sonnet', provider: 'anthropic', text: 'Hello world' })
+        .expect(200);
+
+      expect(approxRes.body).toEqual({
+        tokens: 2,
+        method: 'approximate:o200k_base',
+      });
+
+      // 4. Chat messages format with message framing overhead
+      const chatRes = await request(app.getHttpServer())
+        .post('/api/tokens/estimate')
+        .set(authHeader)
+        .send({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'user', content: 'Hello world' },
+          ],
+        })
+        .expect(200);
+
+      // 2 content tokens ('Hello world') + 1 role token ('user') + 3 message framing tokens + 3 assistant priming = 9
+      expect(chatRes.body.tokens).toBe(9);
+      expect(chatRes.body.method).toBe('tiktoken:o200k_base');
+    });
+
+    it("a conversation's inspectContext tokens and its reservation estimate both come from the tokenizer, with the method reported", async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Token Counter Integration Conversation',
+          provider: 'openai',
+          model: 'gpt-4o',
+          systemPrompt: 'You are a helpful assistant.',
+        })
+        .expect(201);
+
+      const convId = createRes.body.id;
+
+      // 1. inspectContext tokens come from tokenizer and report method
+      const inspectRes = await request(app.getHttpServer())
+        .get(`/api/conversations/${convId}/context?proposedInput=Hello%20world`)
+        .set(authHeader)
+        .expect(200);
+
+      expect(inspectRes.body.tokenEstimationMethod).toBe('tiktoken:o200k_base');
+      expect(inspectRes.body.totalEstimatedInputTokens).toBeGreaterThan(0);
+
+      // 2. Reservation estimate in usageRecord comes from tokenizer messages count
+      const origFetch = global.fetch;
+      try {
+        global.fetch = jest.fn().mockImplementation((url: string) => {
+          if (url.includes('/chat/completions')) {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              headers: new Headers({
+                'content-type': 'application/json',
+                'x-litellm-response-cost': '0.00010',
+              }),
+              text: async () =>
+                JSON.stringify({
+                  id: 'chatcmpl-token-01',
+                  object: 'chat.completion',
+                  model: 'gpt-4o',
+                  choices: [{ message: { role: 'assistant', content: 'Greetings!' } }],
+                  usage: { prompt_tokens: 15, completion_tokens: 3, total_tokens: 18 },
+                }),
+              json: async () => ({
+                id: 'chatcmpl-token-01',
+                choices: [{ message: { role: 'assistant', content: 'Greetings!' } }],
+                usage: { prompt_tokens: 15, completion_tokens: 3, total_tokens: 18 },
+              }),
+            } as Response);
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ ok: true }),
+            json: async () => ({ ok: true }),
+          } as Response);
+        });
+
+        const sendRes = await request(app.getHttpServer())
+          .post(`/api/conversations/${convId}/messages`)
+          .set(authHeader)
+          .send({ content: 'Hello world' })
+          .expect(201);
+
+        expect(sendRes.body.success).toBe(true);
+
+        const prismaService = app.get(PrismaService);
+        const record = await prismaService.usageRecord.findFirst({
+          where: { conversationId: convId },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        expect(record).toBeDefined();
+        // Reservation tokens: inputEstimate (via tokenizer messages framing) + maxTokens (1024)
+        expect(record?.reservedTokens).toBeGreaterThan(1024);
+      } finally {
+        global.fetch = origFetch;
+      }
     });
   });
 

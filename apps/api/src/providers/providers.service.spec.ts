@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ProvidersService } from './providers.service';
 import { ModelCatalogService } from './model-catalog.service';
+import { TokenCounterService } from '../tokens/token-counter.service';
 import { APP_CONFIG } from '../common/config/env.validation';
 
 describe('ProvidersService', () => {
@@ -90,6 +91,7 @@ describe('ProvidersService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProvidersService,
+        TokenCounterService,
         { provide: ConfigService, useValue: mockConfigService },
         { provide: APP_CONFIG, useValue: mockAppConfig },
         { provide: ModelCatalogService, useValue: mockModelCatalog },
@@ -116,7 +118,8 @@ describe('ProvidersService', () => {
 
   it('should estimate token count appropriately based on length', () => {
     expect(service.estimateTokens('')).toBe(0);
-    expect(service.estimateTokens('Hello world')).toBe(3); // 11 / 4 ceil = 3
+    expect(service.estimateTokens('Hello world')).toBe(2);
+    expect(service.estimateTokens('Hello world', 'gpt-4o')).toBe(2);
   });
 
   it('should successfully parse a valid completion response from LiteLLM with provider-reported cost header', async () => {
