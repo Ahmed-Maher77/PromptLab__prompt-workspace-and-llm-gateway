@@ -13,8 +13,6 @@ export interface QuotaPeriodStatus {
   status: string;
   rateLimit: {
     limitPerMinute: number;
-    currentMinuteRequests: number;
-    remainingRequests: number;
   };
   estimatedTotalCost: number;
 }

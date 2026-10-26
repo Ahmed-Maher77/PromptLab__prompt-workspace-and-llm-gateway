@@ -28,8 +28,6 @@ describe('UsageComponent', () => {
     status: 'active',
     rateLimit: {
       limitPerMinute: 60,
-      currentMinuteRequests: 5,
-      remainingRequests: 55,
     },
     estimatedTotalCost: 0.1584,
   };
