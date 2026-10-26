@@ -346,4 +346,34 @@ describe('AllExceptionsFilter (ERR-01)', () => {
       expect(body.message).toBe('A duplicate resource already exists in database');
     });
   });
+
+  describe('RFC 9457 reserved members (HEALTH-01)', () => {
+    it('keeps numeric status and core members when the exception body carries its own status/type/title', () => {
+      // Shape thrown by @nestjs/terminus when a readiness check fails.
+      const exception = new HttpException(
+        {
+          status: 'error',
+          type: 'not-a-uri',
+          title: 'overridden',
+          info: { database: { status: 'up' } },
+          error: { gateway: { status: 'down' } },
+          details: { database: { status: 'up' }, gateway: { status: 'down' } },
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+
+      filter.catch(exception, mockHost);
+
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.SERVICE_UNAVAILABLE);
+      expect(body.status).toBe(HttpStatus.SERVICE_UNAVAILABLE);
+      expect(body.type).toBe('not-a-uri'); // `type` is deliberately honoured when it is a string (existing contract)
+      expect(body.title).toBe('Service Unavailable');
+      expect(body.instance).toBe('/api/conversations');
+      // Extension members survive.
+      expect(body.info).toEqual({ database: { status: 'up' } });
+      expect(body.error).toEqual({ gateway: { status: 'down' } });
+      expect(body.details.gateway.status).toBe('down');
+    });
+  });
 });
