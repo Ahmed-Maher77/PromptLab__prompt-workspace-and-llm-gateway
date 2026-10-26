@@ -43,6 +43,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     expect(config.AUTH_DEV_TOKENS_ENABLED).toBe(false);
     expect(config.LLM_REQUEST_TIMEOUT_MS).toBe(30000);
     expect(config.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0.5);
+    expect(config.MODEL_CATALOG_TTL_MS).toBe(300000);
   });
 
   it('parses custom PORT, CORS origins, and custom LLM_REQUEST_TIMEOUT_MS', () => {
@@ -442,6 +443,93 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
           QUOTA_TIMEOUT_CHARGE_RATIO: 'invalid-ratio',
         }),
       ).toThrow(/Invalid QUOTA_TIMEOUT_CHARGE_RATIO/);
+    });
+
+    describe('COST-01: MODEL_CATALOG_TTL_MS & LITELLM_BASE_URL', () => {
+      it('parses custom positive integer MODEL_CATALOG_TTL_MS', () => {
+        const config = validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          MODEL_CATALOG_TTL_MS: '60000',
+        });
+        expect(config.MODEL_CATALOG_TTL_MS).toBe(60000);
+      });
+
+      it('throws on negative, zero, or non-numeric MODEL_CATALOG_TTL_MS', () => {
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_TTL_MS: '-5000',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_TTL_MS/);
+
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_TTL_MS: '0',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_TTL_MS/);
+
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_TTL_MS: 'not-a-number',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_TTL_MS/);
+      });
+
+      it('defaults MODEL_CATALOG_FAILURE_BACKOFF_MS to 30000 and parses valid positive integers', () => {
+        const configDefault = validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        });
+        expect(configDefault.MODEL_CATALOG_FAILURE_BACKOFF_MS).toBe(30000);
+
+        const configCustom = validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          MODEL_CATALOG_FAILURE_BACKOFF_MS: '15000',
+        });
+        expect(configCustom.MODEL_CATALOG_FAILURE_BACKOFF_MS).toBe(15000);
+      });
+
+      it('rejects invalid MODEL_CATALOG_FAILURE_BACKOFF_MS values', () => {
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_FAILURE_BACKOFF_MS: '-5000',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_FAILURE_BACKOFF_MS/);
+
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_FAILURE_BACKOFF_MS: '0',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_FAILURE_BACKOFF_MS/);
+
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_FAILURE_BACKOFF_MS: 'not-a-number',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_FAILURE_BACKOFF_MS/);
+      });
+
+      it('supports LITELLM_BASE_URL as fallback for LITELLM_GATEWAY_URL', () => {
+        const config = validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          LITELLM_BASE_URL: 'http://base-gateway.internal:4000',
+        });
+        expect(config.LITELLM_GATEWAY_URL).toBe('http://base-gateway.internal:4000');
+      });
     });
   });
 });

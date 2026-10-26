@@ -65,6 +65,8 @@ export interface ValidatedEnvironment {
   TRUST_PROXY: string | number | false;
   LLM_REQUEST_TIMEOUT_MS: number;
   QUOTA_TIMEOUT_CHARGE_RATIO: number;
+  MODEL_CATALOG_TTL_MS: number;
+  MODEL_CATALOG_FAILURE_BACKOFF_MS: number;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   LANGFUSE_HOST?: string;
   LANGFUSE_BASEURL?: string;
@@ -253,6 +255,30 @@ export function validateEnvironment(
     quotaTimeoutChargeRatio = parsedRatio;
   }
 
+  const rawCatalogTtl = env.MODEL_CATALOG_TTL_MS;
+  let modelCatalogTtlMs = 300000;
+  if (rawCatalogTtl !== undefined && rawCatalogTtl !== null && String(rawCatalogTtl).trim() !== '') {
+    const parsedTtl = parseInt(String(rawCatalogTtl), 10);
+    if (isNaN(parsedTtl) || parsedTtl <= 0) {
+      throw new Error(
+        `[Startup Error] Invalid MODEL_CATALOG_TTL_MS: "${rawCatalogTtl}". Must be a positive integer.`,
+      );
+    }
+    modelCatalogTtlMs = parsedTtl;
+  }
+
+  const rawCatalogBackoff = env.MODEL_CATALOG_FAILURE_BACKOFF_MS;
+  let modelCatalogFailureBackoffMs = 30000;
+  if (rawCatalogBackoff !== undefined && rawCatalogBackoff !== null && String(rawCatalogBackoff).trim() !== '') {
+    const parsedBackoff = parseInt(String(rawCatalogBackoff), 10);
+    if (isNaN(parsedBackoff) || parsedBackoff <= 0) {
+      throw new Error(
+        `[Startup Error] Invalid MODEL_CATALOG_FAILURE_BACKOFF_MS: "${rawCatalogBackoff}". Must be a positive integer.`,
+      );
+    }
+    modelCatalogFailureBackoffMs = parsedBackoff;
+  }
+
   return {
     APP_VERSION: packageVersion,
     DATABASE_URL: env.DATABASE_URL!,
@@ -260,6 +286,7 @@ export function validateEnvironment(
     CORS_ORIGIN: corsOrigins,
     LITELLM_GATEWAY_URL:
       env.LITELLM_GATEWAY_URL ||
+      env.LITELLM_BASE_URL ||
       env.LITELLM_PROXY_URL ||
       DEFAULT_LITELLM_GATEWAY_URL,
     LITELLM_MASTER_KEY: masterKey ?? DEV_MASTER_KEY,
@@ -292,6 +319,8 @@ export function validateEnvironment(
     })(),
     LLM_REQUEST_TIMEOUT_MS: llmRequestTimeoutMs,
     QUOTA_TIMEOUT_CHARGE_RATIO: quotaTimeoutChargeRatio,
+    MODEL_CATALOG_TTL_MS: modelCatalogTtlMs,
+    MODEL_CATALOG_FAILURE_BACKOFF_MS: modelCatalogFailureBackoffMs,
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
     LANGFUSE_HOST: env.LANGFUSE_HOST || env.LANGFUSE_BASEURL,
     LANGFUSE_BASEURL: env.LANGFUSE_BASEURL || env.LANGFUSE_HOST,
