@@ -420,4 +420,37 @@ describe('CompareComponent', () => {
     expect(component.slotARating).toBe(4);
     expect(component.slotBRating).toBe(5);
   });
+
+  it('should send no rating (undefined) on notes-only save without fabricating rating 3', () => {
+    component.comparisonResult.set(mockSuccessComparisonResult);
+    component.slotARating = 0;
+    component.slotANotes = 'Notes without rating';
+
+    component.saveSlotNotes('A');
+
+    expect(mockExperimentService.rateSlot).toHaveBeenCalledWith(
+      'exp-123',
+      'A',
+      undefined,
+      'Notes without rating',
+    );
+  });
+
+  it('should display "not rated" when rating is 0 or null', () => {
+    component.comparisonResult.set(mockSuccessComparisonResult);
+    component.slotARating = 0;
+    component.slotBRating = 0;
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const notRatedSpans = compiled.querySelectorAll('.rating-status-text');
+    expect(notRatedSpans.length).toBe(2);
+    expect(notRatedSpans[0].textContent).toContain('not rated');
+    expect(notRatedSpans[1].textContent).toContain('not rated');
+
+    component.slotARating = 4;
+    fixture.detectChanges();
+    const updatedSpans = compiled.querySelectorAll('.rating-status-text');
+    expect(updatedSpans.length).toBe(1);
+  });
 });

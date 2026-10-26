@@ -467,6 +467,13 @@
   color: var(--color-warning);
 }
 
+.rating-status-text {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-style: italic;
+  margin-left: var(--space-2);
+}
+
 /* Footer Disclaimer */
 .compare-footer-disclaimer {
   display: flex;

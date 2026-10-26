@@ -56,7 +56,7 @@ export interface SlotRunResult {
 }
 
 export interface ComparisonResult {
-  experimentId: string;
+  experimentId: string | null;
   name: string;
   createdAt: string;
   commonInput: Record<string, string>;
@@ -140,13 +140,16 @@ export class ExperimentService {
   rateSlot(
     experimentId: string,
     slot: 'A' | 'B',
-    rating: number,
+    rating?: number | null,
     notes?: string,
   ): Observable<any> {
-    return this.http.post(`${this.baseUrl}/${experimentId}/rate`, {
-      slot,
-      rating,
-      notes,
-    });
+    const body: Record<string, any> = { slot };
+    if (rating !== undefined && rating !== null) {
+      body['rating'] = rating;
+    }
+    if (notes !== undefined) {
+      body['notes'] = notes;
+    }
+    return this.http.post(`${this.baseUrl}/${experimentId}/rate`, body);
   }
 }

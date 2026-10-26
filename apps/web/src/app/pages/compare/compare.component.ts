@@ -366,22 +366,26 @@ export class CompareComponent implements OnInit {
       this.slotBRating = rating;
     }
 
+    if (!res.experimentId) return;
+
     const notes = slot === 'A' ? this.slotANotes : this.slotBNotes;
 
     this.experimentService.rateSlot(res.experimentId, slot, rating, notes).subscribe({
       next: () => {
-        // Updated rating recorded in experiment settings
+        // Updated rating recorded in experiment evaluations
       },
     });
   }
 
   saveSlotNotes(slot: 'A' | 'B'): void {
     const res = this.comparisonResult();
-    if (!res) return;
+    if (!res || !res.experimentId) return;
     const rating = slot === 'A' ? this.slotARating : this.slotBRating;
     const notes = slot === 'A' ? this.slotANotes : this.slotBNotes;
 
-    this.experimentService.rateSlot(res.experimentId, slot, rating || 3, notes).subscribe();
+    this.experimentService
+      .rateSlot(res.experimentId, slot, rating > 0 ? rating : undefined, notes)
+      .subscribe();
   }
 
   loadSavedExperiment(expId: string): void {
