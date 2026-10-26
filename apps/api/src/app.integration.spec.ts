@@ -2253,5 +2253,191 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
+  describe('Per-User Rate Limiting & Idempotency Replay (QUOTA-06)', () => {
+    let convIdUser1: string;
+    let convIdUser2: string;
+    const user1Auth = { Authorization: 'Bearer dev-admin-token' }; // dev-user-001
+    const user2Auth = { Authorization: 'Bearer dev-user-token' };  // user-002
+
+    beforeEach(async () => {
+      throttlerStorage.reset();
+      const providersService = app.get(ProvidersService);
+      jest.spyOn(providersService, 'executeChatCompletion').mockResolvedValue({
+        success: true,
+        content: 'Assistant turn reply.',
+        latencyMs: 15,
+        model: 'gpt-4o-mini',
+        usage: {
+          promptTokens: 25,
+          completionTokens: 15,
+          totalTokens: 40,
+          source: 'provider-reported',
+        },
+      });
+
+      const prisma = app.get(PrismaService);
+      // Ensure users exist
+      await prisma.user.upsert({
+        where: { id: 'dev-user-001' },
+        create: { id: 'dev-user-001', email: 'admin@dev.local', displayName: 'Admin User', role: 'admin' },
+        update: {},
+      });
+      await prisma.user.upsert({
+        where: { id: 'user-002' },
+        create: { id: 'user-002', email: 'user@dev.local', displayName: 'Dev User', role: 'user' },
+        update: {},
+      });
+
+      // Set a restrictive per-user limit for dev-user-001 (limit: 2 req/min)
+      await prisma.quotaPolicy.upsert({
+        where: { scope_scopeId: { scope: 'user', scopeId: 'dev-user-001' } },
+        create: { scope: 'user', scopeId: 'dev-user-001', requestRateLimit: 2 },
+        update: { requestRateLimit: 2 },
+      });
+
+      // Create conversation for dev-user-001
+      const res1 = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(user1Auth)
+        .send({
+          title: 'User 1 Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          systemPrompt: 'System instruction.',
+        })
+        .expect(201);
+      convIdUser1 = res1.body.id;
+
+      // Create conversation for user-002
+      const res2 = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(user2Auth)
+        .send({
+          title: 'User 2 Conv',
+          provider: 'gateway',
+          model: 'gpt-4o-mini',
+          systemPrompt: 'System instruction.',
+        })
+        .expect(201);
+      convIdUser2 = res2.body.id;
+    });
+
+    afterEach(async () => {
+      const prisma = app.get(PrismaService);
+      await prisma.conversation.deleteMany({
+        where: { id: { in: [convIdUser1, convIdUser2].filter(Boolean) } },
+      });
+      await prisma.quotaPolicy.deleteMany({
+        where: { scope: 'user', scopeId: 'dev-user-001' },
+      });
+      await prisma.usageRecord.deleteMany({
+        where: { userId: { in: ['dev-user-001', 'user-002'] } },
+      });
+      jest.restoreAllMocks();
+      throttlerStorage.reset();
+    });
+
+    it('enforces per-user limit with 429 RATE_LIMIT_EXCEEDED when exceeded', async () => {
+      // User-001 limit is 2 req/min
+      // Request 1: succeeds
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .send({ content: 'Message 1' })
+        .expect(201);
+
+      // Request 2: succeeds
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .send({ content: 'Message 2' })
+        .expect(201);
+
+      // Request 3: exceeds rate limit -> 429 RATE_LIMIT_EXCEEDED
+      const blockedRes = await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .send({ content: 'Message 3' });
+
+      expect(blockedRes.status).toBe(429);
+      expect(blockedRes.body.code).toBe('RATE_LIMIT_EXCEEDED');
+      expect(blockedRes.body.error).toBe('RATE_LIMIT_EXCEEDED');
+    });
+
+    it('does not consume an extra rate-limit unit on an idempotent replay', async () => {
+      const replayKey = 'quota-06-idemp-replay-key';
+
+      // Request 1 with Idempotency-Key (consumes 1 unit, counter = 1)
+      const res1 = await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .set('Idempotency-Key', replayKey)
+        .send({ content: 'Idempotent Turn' })
+        .expect(201);
+
+      expect(res1.body.success).toBe(true);
+
+      // Request 2 with fresh key (consumes 2nd unit, counter = 2 = limit)
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .set('Idempotency-Key', 'quota-06-fresh-key-2')
+        .send({ content: 'Second Turn' })
+        .expect(201);
+
+      // A fresh 3rd request would exceed the limit (429)
+      const blockedRes = await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .set('Idempotency-Key', 'quota-06-fresh-key-3')
+        .send({ content: 'Third Turn' });
+      expect(blockedRes.status).toBe(429);
+
+      // BUT replaying Request 1 with the same Idempotency-Key is recognized as a replay,
+      // bypasses the counter, and returns the replayed response without 429
+      const replayRes = await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .set('Idempotency-Key', replayKey)
+        .send({ content: 'Idempotent Turn' });
+
+      expect(replayRes.status).toBe(201);
+      expect(replayRes.body.success).toBe(true);
+      expect(replayRes.body.userMessage.content).toBe('Idempotent Turn');
+    });
+
+    it('limits two different users independently', async () => {
+      // User 1 uses up their limit of 2 requests
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .send({ content: 'User 1 message 1' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .send({ content: 'User 1 message 2' })
+        .expect(201);
+
+      // User 1 is now rate limited
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser1}/messages`)
+        .set(user1Auth)
+        .send({ content: 'User 1 message 3' })
+        .expect(429);
+
+      // User 2 (different user) is NOT blocked and can send messages successfully
+      const user2Res = await request(app.getHttpServer())
+        .post(`/api/conversations/${convIdUser2}/messages`)
+        .set(user2Auth)
+        .send({ content: 'User 2 message 1' });
+
+      expect(user2Res.status).toBe(201);
+      expect(user2Res.body.success).toBe(true);
+    });
+  });
+
 });
+
 

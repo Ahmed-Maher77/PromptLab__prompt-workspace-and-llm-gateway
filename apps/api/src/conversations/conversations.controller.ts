@@ -19,6 +19,7 @@ import {
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { IdempotencyKey } from '../common/decorators/idempotency-key.decorator';
+import { ThrottleUser } from '../common/guards/user-throttler.guard';
 
 @Controller('conversations')
 export class ConversationsController {
@@ -66,6 +67,7 @@ export class ConversationsController {
   }
 
   @Post(':id/messages')
+  @ThrottleUser()
   async sendMessage(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
@@ -76,6 +78,7 @@ export class ConversationsController {
   }
 
   @Post(':id/compact/preview')
+  @ThrottleUser()
   async previewCompaction(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,

@@ -6,6 +6,7 @@ import { PreviewPromptDto, RunPlaygroundDto } from './dto/run-prompt.dto';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { IdempotencyKey } from '../common/decorators/idempotency-key.decorator';
+import { ThrottleUser } from '../common/guards/user-throttler.guard';
 
 @Controller('prompts')
 export class PromptsController {
@@ -57,6 +58,7 @@ export class PromptsController {
   }
 
   @Post('run')
+  @ThrottleUser()
   async runPlayground(
     @Body() dto: RunPlaygroundDto,
     @CurrentUser('id') userId: string,
