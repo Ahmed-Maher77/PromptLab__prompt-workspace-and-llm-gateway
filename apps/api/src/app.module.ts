@@ -14,6 +14,7 @@ import { UsageModule } from './usage/usage.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { LlmModule } from './llm/llm.module';
 import { SettingsModule } from './settings/settings.module';
+import { TokensModule } from './tokens/tokens.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthConfigModule } from './common/config/auth-config.module';
@@ -69,6 +70,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     ObservabilityModule,
     LlmModule,
     SettingsModule,
+    TokensModule,
   ],
   providers: [
     {
