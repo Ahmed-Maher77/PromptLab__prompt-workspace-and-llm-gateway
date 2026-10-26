@@ -66,10 +66,27 @@ model Experiment {
   settings    Json     @default("{}")
   createdAt   DateTime @default(now())
 
-  owner User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  runs  ExperimentRun[]
+  owner       User                   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  runs        ExperimentRun[]
+  evaluations ExperimentEvaluation[]
 
   @@map("experiments")
+}
+
+model ExperimentEvaluation {
+  id             String   @id @default(uuid())
+  experimentId   String
+  slot           String // "A" or "B"
+  rating         Int? // 1..5
+  notes          String?
+  criteriaScores Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  experiment Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@unique([experimentId, slot])
+  @@map("experiment_evaluations")
 }
 
 model ExperimentRun {
