@@ -43,7 +43,8 @@ docs/knowledge/
 │   ├── adr-007-read-only-system-settings.md
 │   ├── adr-008-backward-compatible-pagination.md
 │   ├── adr-009-context-budget-sliding-window.md
-│   └── adr-010-resumable-checkpoints-and-compaction-validation.md
+│   ├── adr-010-resumable-checkpoints-and-compaction-validation.md
+│   └── adr-011-typed-timeout-reconciliation-and-per-user-throttling.md
 └── operations/              # Operational runbooks, verification, and setup
     ├── index.md
     ├── local-development.md
