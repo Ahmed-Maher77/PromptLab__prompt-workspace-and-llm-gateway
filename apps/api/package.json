@@ -20,7 +20,8 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma migrate deploy",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "seed": "ts-node src/database/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -45,6 +46,9 @@
     "re2": "^1.27.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
+  },
+  "prisma": {
+    "seed": "ts-node src/database/seed.ts"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.2",

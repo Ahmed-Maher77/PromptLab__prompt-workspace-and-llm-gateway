@@ -453,7 +453,7 @@ Services start in dependency order, and each one waits for the previous one to r
 flowchart LR
     pg[("postgres<br/>pg_isready")] -->|healthy| api
     litellm["litellm<br/>/health/liveliness"] -->|healthy| api
-    api["api<br/>migrate deploy → start<br/>/api/health/live"] -->|healthy| web["web (nginx)<br/>:4200 → :8080"]
+    api["api<br/>migrate deploy → seed (optional) → start<br/>/api/health/live"] -->|healthy| web["web (nginx)<br/>:4200 → :8080"]
 
     classDef svc fill:#ecfeff,stroke:#0e7490,color:#083344
     classDef store fill:#fefce8,stroke:#a16207,color:#422006
@@ -481,6 +481,7 @@ cp .env.example .env                              # point DATABASE_URL at your l
 npm install
 npm run prisma:generate
 npm run prisma:deploy                             # apply migrations
+npm run seed                                      # optional: default user + reference prompts
 
 pip install -r infra/litellm/requirements.txt
 npm run start:gateway                             # LiteLLM on :4000
@@ -508,6 +509,7 @@ All configuration is validated once at startup (`apps/api/src/common/config/env.
 | `AUTH_JWT_SECRET` | — | HS256 secret for bearer tokens (at least 32 characters in production). Optional `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`, `AUTH_JWT_MAX_LIFETIME_SECONDS`. |
 | `TRUST_PROXY` | `false` | Hop count or CIDR of a trusted reverse proxy. `true` is rejected. |
 | `LLM_REQUEST_TIMEOUT_MS` | `30000` | API-side timeout for a provider call. Must stay above the gateway's `request_timeout`. |
+| `SEED_DEMO_DATA` | `false` | Container start loads the reference prompts (idempotent). `.env.example` sets `true` for the demo stack. |
 | `QUOTA_TIMEOUT_CHARGE_RATIO` | `0.5` | Share of reserved tokens charged when a call times out ambiguously. |
 | `MODEL_CATALOG_TTL_MS` | `300000` | Cache lifetime of the gateway model catalog. |
 | `ENABLE_TELEMETRY` | `true` | Enables tracing and export. |
@@ -631,7 +633,7 @@ See [`docs/observability.md`](docs/observability.md) for details.
 - Production startup fails on missing, short or default secrets. Development tokens work only when `NODE_ENV` is explicitly `development` or `test`.
 - Rate limiting is applied per IP (before authentication) and per user (on routes that call a model). Behind a reverse proxy, `TRUST_PROXY` is set to an explicit hop count or CIDR, never to `true`.
 - Every request body is validated with class-validator. Responses use RFC 9457 problem details and never include stack traces.
-- Nginx sends `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`. The containers run as non-root, and all published ports are bound to localhost.
+- Nginx sends `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`. Fonts are self-hosted, so the web app makes no third-party requests. The containers run as non-root, and all published ports are bound to localhost.
 
 ---
 
