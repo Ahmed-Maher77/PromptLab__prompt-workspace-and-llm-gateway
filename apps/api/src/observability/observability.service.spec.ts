@@ -116,6 +116,47 @@ describe('ObservabilityService', () => {
     });
   });
 
+  describe('OBS-03 span closure on completion', () => {
+    it('closes and flags child spans left open when the trace completes', () => {
+      const trace = service.startTrace({
+        name: 'early-exit',
+        operation: 'playground.execute',
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        userId: 'user-1',
+      });
+      const closed = trace.startSpan('quota.reserve');
+      closed.end('ok');
+      trace.startSpan('litellm.chat_completion'); // never ended by the caller
+
+      const record = trace.complete({ status: 'error', errorCode: 'EXECUTION_EXCEPTION' });
+
+      for (const span of record.spans) {
+        expect(span.endTime).not.toBe('');
+        expect(span.durationMs).toBeGreaterThanOrEqual(0);
+      }
+      const open = record.spans.find((s) => s.name === 'litellm.chat_completion')!;
+      expect(open.status).toBe('error');
+      expect(open.attributes['span.closed_by_trace']).toBe(true);
+      const reserve = record.spans.find((s) => s.name === 'quota.reserve')!;
+      expect(reserve.status).toBe('ok');
+      expect(reserve.attributes['span.closed_by_trace']).toBeUndefined();
+    });
+
+    it('records rate_limited as the trace status', () => {
+      const trace = service.startTrace({
+        name: 'limited',
+        operation: 'playground.execute',
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        userId: 'user-1',
+      });
+      const record = trace.complete({ status: 'rate_limited', errorCode: 'RATE_LIMIT_EXCEEDED' });
+      expect(record.status).toBe('rate_limited');
+      expect(service.getTraces({ status: 'rate_limited' } as any).map((t: any) => t.id)).toContain(record.id);
+    });
+  });
+
   describe('disabled telemetry', () => {
     it('does not record traces when ENABLE_TELEMETRY is false', () => {
       authConfigMock.ENABLE_TELEMETRY = false;

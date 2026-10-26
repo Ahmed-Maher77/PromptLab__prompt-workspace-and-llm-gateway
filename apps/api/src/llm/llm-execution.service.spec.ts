@@ -227,6 +227,67 @@ describe('LlmExecutionService', () => {
     );
   });
 
+  describe('OBS-03 trace status and span closure', () => {
+    it.each([
+      ['provider_rate_limited', 429],
+      ['provider_quota_error', 429],
+    ])('marks the trace rate_limited when the provider returns %s', async (errorType, upstreamStatus) => {
+      providersServiceMock.executeChatCompletion.mockResolvedValueOnce({
+        success: false,
+        model: 'gpt-4o-mini',
+        latencyMs: 30,
+        errorType,
+        upstreamStatus,
+        errorMessage: 'Upstream provider rate limit or quota exceeded',
+      });
+
+      const result = await service.execute(baseParams);
+
+      expect(result.success).toBe(false);
+      expect(usageServiceMock.reconcileUsage).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, errorType: 'RATE_LIMITED' }),
+      );
+      expect(mockTrace.complete).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'rate_limited', errorCode: errorType }),
+      );
+    });
+
+    it('keeps other provider failures as error, not rate_limited', async () => {
+      providersServiceMock.executeChatCompletion.mockResolvedValueOnce({
+        success: false,
+        model: 'gpt-4o-mini',
+        latencyMs: 30,
+        errorType: 'provider_error',
+        upstreamStatus: 500,
+        errorMessage: 'Upstream provider error (HTTP 500): quota service unavailable',
+      });
+
+      await service.execute(baseParams);
+
+      expect(mockTrace.complete).toHaveBeenCalledWith(expect.objectContaining({ status: 'error' }));
+    });
+
+    it('ends the quota.reserve span on an idempotent replay', async () => {
+      usageServiceMock.reserveUsage.mockResolvedValueOnce({
+        success: true,
+        created: false,
+        record: {
+          id: 'rec-r',
+          requestId: 'replay-key-0001',
+          userId: 'user-001',
+          status: 'reconciled',
+          responseBody: { success: true, model: 'gpt-4o-mini', content: 'cached', latencyMs: 5 },
+        },
+      });
+
+      await service.execute({ ...baseParams, idempotencyKey: 'replay-key-0001' });
+
+      expect(mockTrace.startSpan).toHaveBeenCalledWith('quota.reserve', expect.anything());
+      expect(mockSpan.end).toHaveBeenCalledWith('ok', { replayed: true });
+      expect(mockTrace.complete).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('ARCH-01b Claim-First Idempotency', () => {
     it('returns stored responseBody on replay of a reconciled request without calling provider', async () => {
       const storedResponseBody = {

@@ -151,6 +151,17 @@ export class ObservabilityService {
       const traceEndTime = new Date();
       const durationMs = traceEndTime.getTime() - traceStartTime.getTime();
 
+      // OBS-03: never export a span without an end time. Any child span a code path forgot to
+      // close (early return, unexpected throw) is closed here and flagged so the gap is visible.
+      for (const span of spans) {
+        if (span !== rootSpan && !span.endTime) {
+          span.endTime = traceEndTime.toISOString();
+          span.durationMs = traceEndTime.getTime() - new Date(span.startTime).getTime();
+          span.status = completeParams.status === 'success' ? 'ok' : 'error';
+          span.attributes = { ...span.attributes, 'span.closed_by_trace': true };
+        }
+      }
+
       rootSpan.endTime = traceEndTime.toISOString();
       rootSpan.durationMs = durationMs;
       rootSpan.status = completeParams.status === 'success' ? 'ok' : 'error';

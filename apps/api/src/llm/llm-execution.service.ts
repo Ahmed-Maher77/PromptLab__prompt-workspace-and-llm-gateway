@@ -126,6 +126,7 @@ export class LlmExecutionService {
           }
 
           isReplay = true;
+          reserveSpan?.end('ok', { replayed: true });
           const stored = existingRecord.responseBody as unknown as StoredLlmResponse;
           completionResult = {
             success: stored.success,
@@ -273,8 +274,12 @@ export class LlmExecutionService {
         executionError instanceof HttpException &&
         executionError.getStatus() === 429
       ) {
+        // Our own quota / rate limit rejected the request before any provider call.
         traceStatus = 'rate_limited';
         errorCode = 'RATE_LIMIT_EXCEEDED';
+      } else if (this.mapErrorType(completionResult?.errorType) === 'RATE_LIMITED') {
+        // OBS-03: the upstream provider rate-limited or quota-limited the call.
+        traceStatus = 'rate_limited';
       }
 
       trace?.complete({
