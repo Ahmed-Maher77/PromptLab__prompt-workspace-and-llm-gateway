@@ -123,6 +123,9 @@ export interface CompactionPreviewResult {
   proposedRetainedFacts: string[];
   providerReported: boolean;
   providerError: string | null;
+  /** 'fallback' when the model failed or its reply was unusable and a deterministic summary was built instead. */
+  summarySource?: 'model' | 'fallback';
+  fallbackReason?: 'provider_error' | 'invalid_model_output' | null;
 }
 
 export interface ApplyCompactionPayload {

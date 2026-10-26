@@ -156,6 +156,27 @@ describe('ProvidersService', () => {
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
   });
 
+  it('sends response_format only when a JSON response is requested', async () => {
+    const ok = () =>
+      ({
+        ok: true,
+        headers: { get: () => null },
+        json: jest.fn().mockResolvedValueOnce({ choices: [{ message: { content: '{}' } }], model: 'gpt-4o-mini' }),
+      }) as unknown as Response;
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce(ok()).mockResolvedValueOnce(ok());
+
+    await service.executeChatCompletion({
+      model: 'gpt-4o-mini',
+      messages: [{ role: 'user', content: 'x' }],
+      responseFormat: { type: 'json_object' },
+    });
+    await service.executeChatCompletion({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'x' }] });
+
+    const bodies = fetchSpy.mock.calls.map((call) => JSON.parse((call[1] as RequestInit).body as string));
+    expect(bodies[0].response_format).toEqual({ type: 'json_object' });
+    expect(bodies[1]).not.toHaveProperty('response_format');
+  });
+
   it('should fall back to catalog-estimate cost when x-litellm-response-cost header is missing', async () => {
     const mockResponse = {
       choices: [{ message: { content: 'Classification: Positive' } }],

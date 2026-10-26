@@ -119,6 +119,8 @@ export class ProvidersService {
     messages: Array<{ role: string; content: string }>;
     temperature?: number;
     maxTokens?: number;
+    /** Ask the model for a JSON object (OpenAI `response_format`; dropped by LiteLLM where unsupported). */
+    responseFormat?: { type: 'json_object' };
     timeoutMs?: number;
     traceId?: string;
     spanId?: string;
@@ -134,6 +136,7 @@ export class ProvidersService {
       messages: params.messages,
       temperature: params.temperature ?? 0.7,
       max_tokens: params.maxTokens ?? 1024,
+      ...(params.responseFormat ? { response_format: params.responseFormat } : {}),
     };
 
     const headers: Record<string, string> = {

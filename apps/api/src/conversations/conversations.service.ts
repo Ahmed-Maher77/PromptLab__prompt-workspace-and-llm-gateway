@@ -26,6 +26,13 @@ import {
 import { Prisma, ConversationMessage } from '@prisma/client';
 import { conflict } from '../common/utils/conflict.util';
 
+import {
+  buildCompactionMessages,
+  buildFallbackSummary,
+  CompactionFallbackReason,
+  parseCompactionOutput,
+} from './compaction-summary';
+
 @Injectable()
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name);
@@ -550,30 +557,12 @@ export class ConversationsService {
       throw new BadRequestException('No uncompacted messages found in the specified range.');
     }
 
-    // Build transcript for summarization
-    const transcript = messagesToCompact
-      .map((m) => `[${m.role.toUpperCase()} (Seq ${m.sequenceNumber})]: ${m.content}`)
-      .join('\n\n');
-
     const estimatedTokensBefore = messagesToCompact.reduce(
       (sum, m) => sum + this.tokenCounter.countText(m.content, conv.model, conv.provider).tokens,
       0,
     );
 
-    // Call LLM for summarization
-    const summarizationPrompt =
-      `You are a specialized conversation summarizer performing context compaction.\n` +
-      `Synthesize the following conversation transcript into:\n` +
-      `1. A concise, comprehensive summary preserving key context, user requests, and assistant responses.\n` +
-      `2. A list of important retained facts, decisions, constraints, or user preferences.\n\n` +
-      `Format your output EXACTLY as:\n` +
-      `SUMMARY:\n<summary paragraph>\n\n` +
-      `FACTS:\n- <fact 1>\n- <fact 2>\n\n` +
-      `TRANSCRIPT TO COMPACT:\n${transcript}`;
-
-    let summaryText = '';
-    let retainedFacts: string[] = [];
-
+    // Instructions and transcript travel in separate messages; the model must answer with JSON.
     const llmResult = await this.llmExecutionService.execute({
       userId: conv.ownerId,
       operation: 'compaction.preview',
@@ -581,43 +570,30 @@ export class ConversationsService {
       provider: conv.provider,
       name: `Compaction Summarization (${conv.model})`,
       conversationId: conv.id,
-      messages: [{ role: 'user', content: summarizationPrompt }],
-      temperature: 0.3,
+      messages: buildCompactionMessages(messagesToCompact),
+      temperature: 0.2,
       maxTokens: 1024,
+      responseFormat: { type: 'json_object' },
       metadata: { targetSeq },
       idempotencyKey,
     });
 
-    if (llmResult.success && llmResult.content) {
-      const content = llmResult.content;
-      const summaryMatch = content.match(/SUMMARY:\s*([\s\S]*?)(?=FACTS:|$)/i);
-      const factsMatch = content.match(/FACTS:\s*([\s\S]*)$/i);
+    let compaction = llmResult.success ? parseCompactionOutput(llmResult.content) : null;
+    let summarySource: 'model' | 'fallback' = 'model';
+    let fallbackReason: CompactionFallbackReason | null = null;
 
-      summaryText = summaryMatch ? summaryMatch[1].trim() : content.trim();
-      if (factsMatch) {
-        retainedFacts = factsMatch[1]
-          .split('\n')
-          .map((line) => line.replace(/^[-*•\d.]\s*/, '').trim())
-          .filter((line) => line.length > 0);
-      }
-    } else {
-      // Deterministic fallback if provider is unreachable/unauthenticated
-      this.logger.warn(`Provider summarization failed (${llmResult.errorMessage}). Generating deterministic structural summary.`);
-      
-      const userQuestions = messagesToCompact
-        .filter((m) => m.role === 'user')
-        .map((m) => m.content.slice(0, 80));
-
-      summaryText =
-        `Discussion between user and assistant across messages ${messagesToCompact[0].sequenceNumber} through ${targetSeq}. ` +
-        `Topics covered: ${userQuestions.join('; ')}.`;
-
-      retainedFacts = userQuestions.map((q) => `User inquired about: "${q}"`);
+    if (!compaction) {
+      fallbackReason = llmResult.success ? 'invalid_model_output' : 'provider_error';
+      this.logger.warn(
+        `Compaction for conversation ${conv.id} fell back to a deterministic summary (${fallbackReason}` +
+          `${llmResult.success ? '' : `: ${llmResult.errorMessage}`}).`,
+      );
+      compaction = buildFallbackSummary(messagesToCompact);
+      summarySource = 'fallback';
     }
 
-    if (retainedFacts.length === 0) {
-      retainedFacts = [`Conversation context maintained through sequence ${targetSeq}.`];
-    }
+    const summaryText = compaction.summary;
+    const retainedFacts = compaction.retainedFacts;
 
     const estimatedTokensAfter =
       this.tokenCounter.countText(summaryText, conv.model, conv.provider).tokens +
@@ -637,6 +613,8 @@ export class ConversationsService {
       proposedRetainedFacts: retainedFacts,
       providerReported: llmResult.success,
       providerError: !llmResult.success ? llmResult.errorMessage : null,
+      summarySource,
+      fallbackReason,
     };
   }
 

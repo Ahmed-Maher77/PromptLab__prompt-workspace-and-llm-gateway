@@ -461,6 +461,28 @@ describe('ConversationsComponent', () => {
     expect(component.editableFactsText).toContain('Selected Kafka');
   });
 
+  it('shows a notice when the preview summary was built by the fallback', () => {
+    mockConversationService.previewCompaction.and.returnValue(
+      of({ ...mockCompactionPreview, summarySource: 'fallback', fallbackReason: 'invalid_model_output' }),
+    );
+    component.openCompactModal();
+    fixture.detectChanges();
+
+    const notice: HTMLElement | null = fixture.nativeElement.querySelector('[role="status"].alert-warning');
+    expect(notice?.textContent).toContain('The model reply could not be used');
+  });
+
+  it('shows no fallback notice for a model-generated summary', () => {
+    mockConversationService.previewCompaction.and.returnValue(
+      of({ ...mockCompactionPreview, summarySource: 'model', fallbackReason: null }),
+    );
+    component.openCompactModal();
+    fixture.detectChanges();
+
+    const text: string = fixture.nativeElement.textContent;
+    expect(text).not.toContain('summary was built automatically');
+  });
+
   it('should apply compaction and update checkpoint while preserving all original messages', () => {
     mockConversationService.applyCompaction.and.returnValue(of({ success: true }));
 

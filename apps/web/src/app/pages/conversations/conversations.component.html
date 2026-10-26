@@ -526,6 +526,15 @@
               </div>
             </div>
 
+            @if (compactPreview()?.summarySource === 'fallback') {
+              <div class="alert alert-warning" role="status">
+                {{ compactPreview()?.fallbackReason === 'provider_error'
+                  ? 'The model could not be reached, so this summary was built automatically from the messages.'
+                  : 'The model reply could not be used, so this summary was built automatically from the messages.' }}
+                Review and edit it before applying.
+              </div>
+            }
+
             <!-- Proposed Summary Review/Edit -->
             <div class="form-group">
               <label for="summaryInput">Proposed Compaction Summary (Editable):</label>

@@ -42,7 +42,7 @@
 | **Prompt Studio** | Templates built on prompting techniques (zero-shot, few-shot, role/task/format, structured output). `{{variable}}` placeholders are detected automatically and the resolved prompt is previewed live. Versions are immutable (`v1`, `v2`, …), so every run can be traced back to the exact template it used. |
 | **Model comparison** | Runs the same input against two prompt/model slots at once. Shows latency, token usage and cost for each slot, and records a 1–5 rating, notes and per-criterion scores. |
 | **Conversations** | Multi-turn chat with a visible context budget. The prompt sent to the model is assembled with a sliding window, and a request is rejected with `409 CONTEXT_BUDGET_EXCEEDED` *before* any tokens are spent. |
-| **Context compaction** | Summarises older turns into a checkpoint that you can preview before applying. The checkpoint replaces those turns in future prompts, and the original messages are kept. You can resume from any earlier checkpoint. |
+| **Context compaction** | Summarises older turns into a checkpoint that you can preview before applying. The model must return validated JSON, and the transcript is kept separate from its instructions. The checkpoint replaces those turns in future prompts, and the original messages are kept. You can resume from any earlier checkpoint. |
 | **Quota governance** | Each user has a monthly token allowance and request rate limits. Tokens are reserved before a call and reconciled after it, so concurrent requests cannot overspend. Every call is recorded in a usage ledger. |
 | **Idempotent execution** | Clients send an `Idempotency-Key` header. A retried request replays the stored result instead of calling the model, and therefore paying, a second time. |
 | **Model catalog** | Context limits and pricing are read from the gateway's `/model/info` and cached. Token counts come from a local, model-aware tokenizer (`js-tiktoken`). |
@@ -392,7 +392,7 @@ The schema is managed with versioned Prisma migrations in [`apps/api/prisma/migr
 | Data | PostgreSQL 16, Prisma 6 |
 | LLM gateway | LiteLLM proxy 1.106 (pinned by digest) |
 | Tokenisation | `js-tiktoken` with model-aware encoding selection |
-| Observability | W3C trace context, OTLP/HTTP exporter, Langfuse exporter, in-memory trace buffer |
+| Observability | OpenTelemetry SDK (batched OTLP/HTTP export), Langfuse via OTLP, in-memory trace buffer |
 | End-to-end tests | Playwright |
 | Delivery | Docker multi-stage images, Docker Compose, Nginx, GitHub Actions |
 
@@ -618,7 +618,7 @@ flowchart LR
 - Each request gets a trace. Spans cover quota reservation, the gateway call and reconciliation. A trace always closes all of its spans, including on errors.
 - The trace context is passed to the gateway in a W3C `traceparent` header.
 - Trace statuses are `success`, `error` and `rate_limited`. Rate limiting by the provider and by PromptLab's own quota is reported as `rate_limited`, not as an error.
-- The newest 500 traces are kept in memory for the Observability page. When configured, traces are also exported to an OTLP collector and/or Langfuse.
+- Spans are created with the OpenTelemetry SDK, using crypto-random IDs. When configured, they are exported in batches to an OTLP collector and/or Langfuse (through its OTLP endpoint) and flushed on shutdown. The newest 500 traces are also kept in memory for the Observability page.
 - API keys, bearer tokens, passwords and similar fields are redacted before anything is exported or logged. Token counts are explicitly kept.
 
 See [`docs/observability.md`](docs/observability.md) for details.
@@ -640,7 +640,7 @@ See [`docs/observability.md`](docs/observability.md) for details.
 | Topic | Location |
 | :--- | :--- |
 | Knowledge base index | [`docs/knowledge/index.md`](docs/knowledge/index.md) |
-| Architecture decisions (ADR-001 – ADR-015) | [`docs/knowledge/decisions`](docs/knowledge/decisions/index.md) |
+| Architecture decisions (ADR-001 – ADR-017) | [`docs/knowledge/decisions`](docs/knowledge/decisions/index.md) |
 | Domain concepts | [`docs/knowledge/concepts`](docs/knowledge/concepts/index.md) |
 | System topology and data model | [`docs/knowledge/architecture`](docs/knowledge/architecture/index.md) |
 | Runbooks and troubleshooting | [`docs/knowledge/operations`](docs/knowledge/operations/index.md) |

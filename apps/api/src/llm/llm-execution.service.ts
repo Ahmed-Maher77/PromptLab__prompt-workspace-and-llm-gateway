@@ -22,6 +22,7 @@ export interface ExecuteLlmParams {
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   temperature?: number;
   maxTokens?: number;
+  responseFormat?: { type: 'json_object' };
   idempotencyKey?: string;
   conversationId?: string;
   metadata?: Record<string, unknown>;
@@ -172,6 +173,7 @@ export class LlmExecutionService {
         messages: params.messages,
         temperature: params.temperature,
         maxTokens: params.maxTokens,
+        ...(params.responseFormat ? { responseFormat: params.responseFormat } : {}),
         traceId: trace?.traceId,
         spanId: llmSpan?.id,
         requestId,
