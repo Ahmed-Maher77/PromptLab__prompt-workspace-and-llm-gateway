@@ -36,6 +36,7 @@ model Prompt {
   owner    User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   versions PromptVersion[]
 
+  @@index([ownerId, updatedAt])
   @@map("prompts")
 }
 
@@ -70,6 +71,7 @@ model Experiment {
   runs        ExperimentRun[]
   evaluations ExperimentEvaluation[]
 
+  @@index([ownerId, createdAt])
   @@map("experiments")
 }
 
@@ -109,6 +111,8 @@ model ExperimentRun {
   experiment    Experiment     @relation(fields: [experimentId], references: [id], onDelete: Cascade)
   promptVersion PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
 
+  @@index([experimentId])
+  @@index([promptVersionId])
   @@map("experiment_runs")
 }
 
@@ -130,6 +134,8 @@ model Conversation {
   checkpoints      ConversationCheckpoint[] @relation("ConversationCheckpoints")
   activeCheckpoint ConversationCheckpoint?  @relation("ActiveConversationCheckpoint", fields: [activeCheckpointId], references: [id], onDelete: SetNull)
 
+  @@index([ownerId, updatedAt])
+  @@index([activeCheckpointId])
   @@map("conversations")
 }
 
@@ -165,6 +171,7 @@ model ConversationCheckpoint {
   conversation           Conversation   @relation("ConversationCheckpoints", fields: [conversationId], references: [id], onDelete: Cascade)
   activeForConversations Conversation[] @relation("ActiveConversationCheckpoint")
 
+  @@index([conversationId, createdAt])
   @@map("conversation_checkpoints")
 }
 
@@ -193,6 +200,7 @@ model QuotaPeriod {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, periodStart])
+  @@index([status, periodEnd])
   @@map("quota_periods")
 }
 
@@ -217,5 +225,6 @@ model UsageRecord {
 
   @@unique([userId, requestId])
   @@index([userId, createdAt])
+  @@index([status, createdAt])
   @@map("usage_records")
 }

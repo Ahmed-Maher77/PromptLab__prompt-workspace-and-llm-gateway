@@ -95,7 +95,23 @@ erDiagram
     }
 ```
 
+## Indexes
+Besides the primary keys and unique constraints (which PostgreSQL also indexes), the schema defines indexes for every foreign key that is filtered on and for the hot list and background queries:
+
+| Table | Index | Serves |
+| :--- | :--- | :--- |
+| `prompts` | `(ownerId, updatedAt)` | Prompt list, newest first |
+| `experiments` | `(ownerId, createdAt)` | Comparison list, newest first |
+| `experiment_runs` | `(experimentId)`, `(promptVersionId)` | Loading runs per experiment; `ON DELETE SET NULL` on prompt versions |
+| `conversations` | `(ownerId, updatedAt)`, `(activeCheckpointId)` | Conversation list; `ON DELETE SET NULL` on checkpoints |
+| `conversation_checkpoints` | `(conversationId, createdAt)` | Checkpoints per conversation, latest first |
+| `quota_periods` | `(status, periodEnd)` | Closing expired periods (every minute) |
+| `usage_records` | `(userId, createdAt)`, `(status, createdAt)` | Usage ledger; stale-reservation sweeper (every minute) |
+
+`conversation_messages`, `prompt_versions` and `experiment_evaluations` are covered by their composite unique constraints, whose leading column is the parent ID.
+
 ## Schema Synchronization
 - The database schema is versioned via Prisma migrations in `apps/api/prisma/migrations/`.
 - Deploy migrations using `npm run prisma:push` or `npm run prisma:deploy` (`prisma migrate deploy`).
+- Migrations are append-only: never edit one that has been applied; add a new migration instead.
 - For new schema changes during development, use `npm run prisma:migrate` (`prisma migrate dev`).
