@@ -139,6 +139,55 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       expect(res.body.services).toBeDefined();
     });
 
+    describe('HEALTH-01 liveness and readiness probes', () => {
+      const realFetch = global.fetch;
+
+      afterEach(() => {
+        global.fetch = realFetch;
+      });
+
+      /** Routes only gateway-probe fetches to the stub; anything else keeps the real fetch. */
+      const stubGateway = (up: boolean) => {
+        global.fetch = jest.fn((input: any, init?: any) => {
+          const url = typeof input === 'string' ? input : input?.url ?? '';
+          if (/\/health(\/liveliness)?$/.test(url)) {
+            return up
+              ? Promise.resolve(new Response('ok', { status: 200 }))
+              : Promise.reject(new TypeError('fetch failed'));
+          }
+          return realFetch(input, init);
+        }) as typeof fetch;
+      };
+
+      it('GET /api/health/live answers 200 without credentials or dependency checks', async () => {
+        stubGateway(false);
+        const res = await request(app.getHttpServer()).get('/api/health/live').expect(200);
+        expect(res.body.status).toBe('ok');
+        expect(global.fetch).not.toHaveBeenCalled();
+      });
+
+      it('GET /api/health/ready answers 503 with the failing dependency when the gateway is down', async () => {
+        stubGateway(false);
+        const res = await request(app.getHttpServer()).get('/api/health/ready').expect(503);
+        expect(res.body.status).toBe(503);
+        expect(res.body.error).toMatchObject({ gateway: { status: 'down' } });
+        expect(res.body.info).toMatchObject({ database: { status: 'up' } });
+      });
+
+      it('GET /api/health/ready answers 200 when the database and gateway are up', async () => {
+        stubGateway(true);
+        const res = await request(app.getHttpServer()).get('/api/health/ready').expect(200);
+        expect(res.body.status).toBe('ok');
+        expect(res.body.info).toMatchObject({ database: { status: 'up' }, gateway: { status: 'up' } });
+      });
+
+      it('GET /api/health keeps answering 200 for the UI even when the gateway is down', async () => {
+        stubGateway(false);
+        const res = await request(app.getHttpServer()).get('/api/health').expect(200);
+        expect(res.body.services.gateway.serviceAvailability).toBe('unreachable');
+      });
+    });
+
     it('resolves GET /api/usage/status without duplicated prefix', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/usage/status')

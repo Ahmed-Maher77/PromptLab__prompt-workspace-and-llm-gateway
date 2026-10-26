@@ -32,6 +32,7 @@ export interface HealthCheckResult {
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
   private readonly startTime = Date.now();
+  static readonly GATEWAY_PROBE_TIMEOUT_MS = 1200;
 
   constructor(
     @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
@@ -41,11 +42,13 @@ export class HealthService {
   ) {}
 
   async getHealth(): Promise<HealthCheckResult> {
-    const dbHealth = await this.prisma.checkHealth();
     const rawLitellmUrl = this.appConfig.LITELLM_GATEWAY_URL;
     const environment = this.appConfig.NODE_ENV;
 
-    const gatewayHealth = await this.checkGateway(rawLitellmUrl);
+    const [dbHealth, gatewayHealth] = await Promise.all([
+      this.checkDatabase(),
+      this.checkGateway(rawLitellmUrl),
+    ]);
 
     // Database connectivity is required for core health; gateway reaches degraded if DB is down
     const overallStatus: 'ok' | 'degraded' = dbHealth.status === 'connected' ? 'ok' : 'degraded';
@@ -66,6 +69,46 @@ export class HealthService {
     };
   }
 
+  /** Database connectivity (used by both the diagnostic endpoint and the readiness probe). */
+  async checkDatabase(): Promise<HealthCheckResult['services']['database']> {
+    return this.prisma.checkHealth();
+  }
+
+  /**
+   * Gateway liveness only (no catalog lookup), for the readiness probe.
+   * Each fetch gets its own timeout signal: the previous implementation reused one
+   * AbortController for the fallback request, so after the first call timed out the
+   * fallback was born already aborted and could never succeed.
+   */
+  async checkGatewayLiveness(
+    url: string | undefined = this.appConfig.LITELLM_GATEWAY_URL,
+  ): Promise<{ serviceAvailability: 'available' | 'unreachable' | 'not_configured'; latencyMs?: number }> {
+    if (!url) {
+      return { serviceAvailability: 'not_configured' };
+    }
+
+    const targetUrl = url.replace(/\/$/, '');
+    const start = Date.now();
+    // 401/403/404 still prove the gateway process is up and answering HTTP.
+    const answered = (response: Response) =>
+      response.ok || response.status === 401 || response.status === 403 || response.status === 404;
+
+    for (const path of ['/health/liveliness', '/health']) {
+      try {
+        const response = await fetch(`${targetUrl}${path}`, {
+          signal: AbortSignal.timeout(HealthService.GATEWAY_PROBE_TIMEOUT_MS),
+        });
+        if (answered(response)) {
+          return { serviceAvailability: 'available', latencyMs: Date.now() - start };
+        }
+      } catch {
+        // Try the next path; report unreachable only if every probe fails.
+      }
+    }
+
+    return { serviceAvailability: 'unreachable', latencyMs: Date.now() - start };
+  }
+
   private async checkGateway(url?: string): Promise<{
     serviceAvailability: 'available' | 'unreachable' | 'not_configured';
     latencyMs?: number;
@@ -74,55 +117,17 @@ export class HealthService {
       configuredProviders: string[];
     };
   }> {
-    let configuredProviders: string[] = [];
-    try {
-      configuredProviders = await this.modelCatalog.getConfiguredProviders();
-    } catch {
-      configuredProviders = [];
-    }
+    const [configuredProviders, liveness] = await Promise.all([
+      this.modelCatalog.getConfiguredProviders().catch(() => [] as string[]),
+      this.checkGatewayLiveness(url),
+    ]);
 
-    const providerReadiness = {
-      status: configuredProviders.length > 0 ? ('ready' as const) : ('missing_provider_credentials' as const),
-      configuredProviders,
+    return {
+      ...liveness,
+      providerReadiness: {
+        status: configuredProviders.length > 0 ? 'ready' : 'missing_provider_credentials',
+        configuredProviders,
+      },
     };
-
-    if (!url) {
-      return {
-        serviceAvailability: 'not_configured',
-        providerReadiness,
-      };
-    }
-
-    const start = Date.now();
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1200);
-
-      const targetUrl = url.replace(/\/$/, '');
-      const response = await fetch(`${targetUrl}/health/liveliness`, {
-        signal: controller.signal,
-      }).catch(async () => {
-        return await fetch(`${targetUrl}/health`, {
-          signal: controller.signal,
-        });
-      }).finally(() => {
-        clearTimeout(timeoutId);
-      });
-
-      const isAvailable =
-        response && (response.ok || response.status === 401 || response.status === 403 || response.status === 404);
-
-      return {
-        serviceAvailability: isAvailable ? 'available' : 'unreachable',
-        latencyMs: Date.now() - start,
-        providerReadiness,
-      };
-    } catch {
-      return {
-        serviceAvailability: 'unreachable',
-        latencyMs: Date.now() - start,
-        providerReadiness,
-      };
-    }
   }
 }

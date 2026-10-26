@@ -127,4 +127,51 @@ describe('HealthService', () => {
     const health = await service.getHealth();
     expect(health.services.gateway.url).toBe('http://127.0.0.1:4000');
   });
+
+  describe('checkGatewayLiveness (HEALTH-01)', () => {
+    it('gives each probe its own fresh timeout signal', async () => {
+      const signals: AbortSignal[] = [];
+      global.fetch = jest.fn().mockImplementation((_url: string, init?: RequestInit) => {
+        signals.push(init!.signal as AbortSignal);
+        return Promise.reject(new Error('down'));
+      });
+
+      const result = await service.checkGatewayLiveness('http://gateway.test:4000');
+
+      expect(result.serviceAvailability).toBe('unreachable');
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(signals).toHaveLength(2);
+      expect(signals[0]).not.toBe(signals[1]);
+      // The fallback must not start out aborted (the old implementation reused an aborted controller).
+      expect(signals[1].aborted).toBe(false);
+    });
+
+    it('falls back to /health when /health/liveliness fails', async () => {
+      global.fetch = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('liveliness timed out'))
+        .mockResolvedValueOnce({ ok: true, status: 200 } as Response);
+
+      const result = await service.checkGatewayLiveness('http://gateway.test:4000/');
+
+      expect(result.serviceAvailability).toBe('available');
+      expect((global.fetch as jest.Mock).mock.calls.map((c) => c[0])).toEqual([
+        'http://gateway.test:4000/health/liveliness',
+        'http://gateway.test:4000/health',
+      ]);
+    });
+
+    it('treats 401 from the gateway as available (the process answered)', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 } as Response);
+      await expect(service.checkGatewayLiveness('http://gateway.test:4000')).resolves.toMatchObject({
+        serviceAvailability: 'available',
+      });
+    });
+
+    it('reports not_configured without calling fetch when no URL is set', async () => {
+      global.fetch = jest.fn();
+      await expect(service.checkGatewayLiveness('')).resolves.toEqual({ serviceAvailability: 'not_configured' });
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+  });
 });
