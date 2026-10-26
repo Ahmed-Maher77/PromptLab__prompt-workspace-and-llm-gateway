@@ -4,6 +4,7 @@ import { LlmExecutionService, ExecuteLlmParams } from './llm-execution.service';
 import { ProvidersService } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 
 describe('LlmExecutionService', () => {
   let service: LlmExecutionService;
@@ -18,6 +19,9 @@ describe('LlmExecutionService', () => {
   let providersServiceMock: {
     executeChatCompletion: jest.Mock;
     estimateTokens: jest.Mock;
+  };
+  let modelCatalogMock: {
+    calculateCost: jest.Mock;
   };
 
   let mockTrace: {
@@ -63,6 +67,8 @@ describe('LlmExecutionService', () => {
         model: 'gpt-4o-mini',
         content: 'Hello, world!',
         latencyMs: 120,
+        cost: 0.000045,
+        costSource: 'provider-reported',
         usage: {
           promptTokens: 40,
           completionTokens: 20,
@@ -72,12 +78,20 @@ describe('LlmExecutionService', () => {
       }),
     };
 
+    modelCatalogMock = {
+      calculateCost: jest.fn().mockResolvedValue({
+        cost: 0.00003,
+        costSource: 'catalog-estimate',
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LlmExecutionService,
         { provide: UsageService, useValue: usageServiceMock },
         { provide: ObservabilityService, useValue: observabilityServiceMock },
         { provide: ProvidersService, useValue: providersServiceMock },
+        { provide: ModelCatalogService, useValue: modelCatalogMock },
       ],
     }).compile();
 
@@ -255,7 +269,7 @@ describe('LlmExecutionService', () => {
       expect(mockTrace.complete).toHaveBeenCalledWith(
         expect.objectContaining({
           status: 'success',
-          metadata: { replayed: true },
+          metadata: expect.objectContaining({ replayed: true }),
         }),
       );
     });
@@ -373,6 +387,43 @@ describe('LlmExecutionService', () => {
           requestId: sharedKey,
         }),
       );
+    });
+
+    it('propagates provider-reported cost when returned by providersService', async () => {
+      providersServiceMock.executeChatCompletion.mockResolvedValueOnce({
+        success: true,
+        model: 'gpt-4o-mini',
+        content: 'Hello',
+        latencyMs: 100,
+        cost: 0.00012,
+        costSource: 'provider-reported',
+        usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+      });
+
+      const result = await service.execute(baseParams);
+      expect(result.cost).toBe(0.00012);
+      expect(result.costSource).toBe('provider-reported');
+      expect(modelCatalogMock.calculateCost).not.toHaveBeenCalled();
+    });
+
+    it('falls back to modelCatalog.calculateCost when provider does not report cost', async () => {
+      providersServiceMock.executeChatCompletion.mockResolvedValueOnce({
+        success: true,
+        model: 'gpt-4o-mini',
+        content: 'Hello',
+        latencyMs: 100,
+        cost: null,
+        usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+      });
+      modelCatalogMock.calculateCost.mockResolvedValueOnce({
+        cost: 0.00005,
+        costSource: 'catalog-estimate',
+      });
+
+      const result = await service.execute(baseParams);
+      expect(result.cost).toBe(0.00005);
+      expect(result.costSource).toBe('catalog-estimate');
+      expect(modelCatalogMock.calculateCost).toHaveBeenCalledWith('gpt-4o-mini', 10, 10);
     });
   });
 });

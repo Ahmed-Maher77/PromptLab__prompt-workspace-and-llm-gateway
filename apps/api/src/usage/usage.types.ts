@@ -39,7 +39,7 @@ import { UsageRecord } from '@prisma/client';
 
 export interface StoredLlmResponse {
   success: boolean;
-  content: string;
+  content?: string;
   model: string;
   latencyMs: number;
   usage?: {
@@ -49,6 +49,8 @@ export interface StoredLlmResponse {
     source: 'provider-reported' | 'estimated';
   };
   cost?: number | null;
+  costSource?: 'provider-reported' | 'catalog-estimate';
+  upstreamStatus?: number;
   traceId?: string;
   requestId?: string;
   error?: string;

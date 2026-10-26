@@ -1,8 +1,8 @@
 import { Injectable, Logger, ConflictException, HttpException } from '@nestjs/common';
 import { ProvidersService, CompletionResult } from '../providers/providers.service';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService, ActiveTraceContext } from '../observability/observability.service';
-import { calculateCost } from '../experiments/cost-calculator';
 import { StoredLlmResponse } from '../usage/usage.types';
 import { conflict } from '../common/utils/conflict.util';
 
@@ -29,6 +29,7 @@ export interface ExecuteLlmParams {
 
 export interface LlmExecutionResult extends CompletionResult {
   cost: number | null;
+  costSource?: 'provider-reported' | 'catalog-estimate';
   traceId?: string;
   requestId: string;
   isReplay?: boolean;
@@ -42,6 +43,7 @@ export class LlmExecutionService {
     private readonly usageService: UsageService,
     private readonly observabilityService: ObservabilityService,
     private readonly providersService: ProvidersService,
+    private readonly modelCatalog: ModelCatalogService,
   ) {}
 
   /**
@@ -88,6 +90,7 @@ export class LlmExecutionService {
     let executionError: any;
     let llmSpan: any;
     let calculatedCost: number | null = null;
+    let costSource: 'provider-reported' | 'catalog-estimate' | undefined;
 
     const reserveSpan = trace?.startSpan('quota.reserve', {
       estimatedTokens,
@@ -128,8 +131,12 @@ export class LlmExecutionService {
             usage: stored.usage,
             errorMessage: stored.error,
             errorType: stored.errorType as CompletionResult['errorType'],
+            cost: stored.cost ?? null,
+            costSource: stored.costSource,
+            upstreamStatus: stored.upstreamStatus,
           };
           calculatedCost = stored.cost ?? null;
+          costSource = stored.costSource;
 
           return {
             success: stored.success,
@@ -138,6 +145,8 @@ export class LlmExecutionService {
             latencyMs: stored.latencyMs,
             usage: stored.usage,
             cost: stored.cost ?? null,
+            costSource: stored.costSource,
+            upstreamStatus: stored.upstreamStatus,
             traceId: trace?.traceId || stored.traceId,
             requestId,
             isReplay: true,
@@ -176,13 +185,18 @@ export class LlmExecutionService {
       }
       throw err;
     } finally {
-      // 4. Compute cost once
-      if (completionResult?.usage) {
-        calculatedCost = calculateCost(
+      // 4. Resolve cost: prefer provider-reported cost, otherwise calculate from catalog
+      if (completionResult?.cost !== undefined && completionResult?.cost !== null) {
+        calculatedCost = completionResult.cost;
+        costSource = completionResult.costSource || 'catalog-estimate';
+      } else if (completionResult?.usage) {
+        const est = await this.modelCatalog.calculateCost(
           params.model,
           completionResult.usage.promptTokens || 0,
           completionResult.usage.completionTokens || 0,
         );
+        calculatedCost = est.cost;
+        costSource = est.costSource;
       }
 
       // 5. Guaranteed usage reconciliation whenever a quota reservation was established
@@ -204,10 +218,21 @@ export class LlmExecutionService {
                 latencyMs: completionResult?.latencyMs || 0,
                 usage: completionResult?.usage,
                 cost: calculatedCost,
+                costSource,
+                upstreamStatus: completionResult?.upstreamStatus,
                 traceId: trace?.traceId,
                 requestId,
               }
-            : undefined;
+            : {
+                success: false,
+                model: params.model,
+                latencyMs: completionResult?.latencyMs || 0,
+                error: errorMsg,
+                errorType: typedError,
+                upstreamStatus: completionResult?.upstreamStatus,
+                traceId: trace?.traceId,
+                requestId,
+              };
 
           await this.usageService.reconcileUsage({
             requestId,
@@ -215,6 +240,8 @@ export class LlmExecutionService {
             success: isSuccess,
             usage: completionResult?.usage,
             latencyMs: completionResult?.latencyMs,
+            cost: calculatedCost,
+            costSource,
             error: errorMsg,
             errorType: typedError,
             responseBody,
@@ -256,13 +283,18 @@ export class LlmExecutionService {
           : completionResult?.errorMessage ||
             executionError?.message ||
             (executionError ? String(executionError) : undefined),
-        metadata: isReplay ? { replayed: true } : undefined,
+        metadata: {
+          ...(isReplay ? { replayed: true } : {}),
+          ...(costSource ? { costSource } : {}),
+          ...(completionResult?.upstreamStatus ? { upstreamStatus: completionResult.upstreamStatus } : {}),
+        },
       });
     }
 
     const finalResult: LlmExecutionResult = {
       ...completionResult!,
       cost: calculatedCost,
+      costSource: costSource ?? completionResult?.costSource,
       traceId: trace?.traceId,
       requestId,
       isReplay: false,
@@ -282,11 +314,17 @@ export class LlmExecutionService {
     ) {
       return 'TIMEOUT';
     }
-    if (providerErrorType === 'provider_quota_error') {
+    if (
+      providerErrorType === 'provider_quota_error' ||
+      providerErrorType === 'provider_rate_limited'
+    ) {
       return 'RATE_LIMITED';
     }
     if (providerErrorType === 'provider_auth_error') {
       return 'AUTH_ERROR';
+    }
+    if (providerErrorType === 'invalid_request') {
+      return 'INVALID_REQUEST';
     }
     return 'PROVIDER_ERROR';
   }

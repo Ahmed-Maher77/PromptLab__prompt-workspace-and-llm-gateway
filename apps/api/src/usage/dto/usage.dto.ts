@@ -46,6 +46,8 @@ export class ReconcileUsageDto {
   latencyMs?: number;
   error?: string;
   errorType?: ReconcileErrorType;
+  cost?: number | null;
+  costSource?: 'provider-reported' | 'catalog-estimate';
   responseBody?: StoredLlmResponse;
 }
 
