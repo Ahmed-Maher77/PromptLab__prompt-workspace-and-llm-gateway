@@ -371,6 +371,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
         mockPrisma,
         {} as any,
         {} as any,
+        {} as any,
       );
 
       // User A (user-A) requests conversation conv-123 owned by User B (user-B)

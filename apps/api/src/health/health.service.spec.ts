@@ -3,11 +3,13 @@ import { HealthService } from './health.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { APP_CONFIG } from '../common/config/env.validation';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 
 describe('HealthService', () => {
   let service: HealthService;
   let mockPrismaService: { checkHealth: jest.Mock };
   let mockConfigService: { get: jest.Mock };
+  let mockModelCatalog: { getConfiguredProviders: jest.Mock };
   let mockAppConfig: { LITELLM_GATEWAY_URL: string; NODE_ENV: string; APP_VERSION: string };
 
   beforeEach(async () => {
@@ -28,9 +30,12 @@ describe('HealthService', () => {
       get: jest.fn((key: string, defaultValue?: string) => {
         if (key === 'LITELLM_PROXY_URL') return 'http://localhost:4000';
         if (key === 'NODE_ENV') return 'test';
-        if (key === 'OPENAI_API_KEY') return 'sk-test-key';
         return defaultValue;
       }),
+    };
+
+    mockModelCatalog = {
+      getConfiguredProviders: jest.fn().mockResolvedValue(['openai']),
     };
 
     // Mock global fetch to return 200 without network access
@@ -49,6 +54,10 @@ describe('HealthService', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: ModelCatalogService,
+          useValue: mockModelCatalog,
         },
         {
           provide: APP_CONFIG,
@@ -78,11 +87,7 @@ describe('HealthService', () => {
   });
 
   it('should mark provider readiness as missing_provider_credentials when no keys are set', async () => {
-    mockConfigService.get.mockImplementation((key: string, defaultValue?: string) => {
-      if (key === 'LITELLM_PROXY_URL') return 'http://localhost:4000';
-      if (key === 'NODE_ENV') return 'test';
-      return defaultValue;
-    });
+    mockModelCatalog.getConfiguredProviders.mockResolvedValueOnce([]);
 
     const health = await service.getHealth();
     expect(health.services.gateway.providerReadiness.status).toBe('missing_provider_credentials');

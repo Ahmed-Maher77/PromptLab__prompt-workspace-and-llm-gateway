@@ -6,6 +6,7 @@ import { PromptsService } from '../prompts/prompts.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -79,6 +80,17 @@ describe('ExperimentsService', () => {
         { provide: PromptsService, useValue: mockPrompts },
         { provide: UsageService, useValue: mockUsage },
         { provide: ObservabilityService, useValue: mockObservability },
+        {
+          provide: ModelCatalogService,
+          useValue: {
+            calculateCost: jest.fn().mockResolvedValue({ cost: 0.0001, costSource: 'catalog-estimate' }),
+            getModelContextPolicy: jest.fn().mockResolvedValue({
+              contextWindow: 128000,
+              targetResponseBudget: 4096,
+              maxInputBudget: 123904,
+            }),
+          },
+        },
       ],
     }).compile();
 

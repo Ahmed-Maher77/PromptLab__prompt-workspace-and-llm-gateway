@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConversationsService } from './conversations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
@@ -12,8 +13,56 @@ describe('ConversationsService', () => {
   let service: ConversationsService;
   let mockPrisma: any;
   let mockProviders: any;
+  let mockModelCatalog: any;
 
   beforeEach(async () => {
+    mockModelCatalog = {
+      getModel: jest.fn().mockImplementation(async (id: string) => {
+        if (id.toLowerCase() === 'gpt-4o-mini') {
+          return {
+            modelId: 'gpt-4o-mini',
+            provider: 'openai',
+            maxInputTokens: 128000,
+            maxOutputTokens: 16384,
+            inputCostPerToken: 0.00000015,
+            outputCostPerToken: 0.0000006,
+          };
+        }
+        return {
+          modelId: id,
+          provider: 'unknown',
+          maxInputTokens: null,
+          maxOutputTokens: 1024,
+          inputCostPerToken: null,
+          outputCostPerToken: null,
+          isUnknownDefault: true,
+        };
+      }),
+      getModelContextPolicy: jest.fn().mockImplementation(async (id: string) => {
+        if (id.toLowerCase() === 'gpt-4o-mini') {
+          return {
+            contextWindow: 128000,
+            status: 'known',
+            defaultInputBudget: 8192,
+            reservedOutputTokens: 1024,
+          };
+        }
+        return {
+          contextWindow: null,
+          status: 'unknown',
+          defaultInputBudget: 4096,
+          reservedOutputTokens: 1024,
+        };
+      }),
+      getMaxInputBudget: jest.fn().mockImplementation(async (id: string) => {
+        if (id.toLowerCase() === 'gpt-4o-mini') {
+          return 128000 - 1024;
+        }
+        return 4096;
+      }),
+      calculateCost: jest.fn().mockResolvedValue({ cost: 0.001, costSource: 'catalog-estimate' }),
+    };
+
     mockPrisma = {
       user: {
         findUnique: jest.fn().mockResolvedValue({ id: 'u-1', email: 'dev@test.com' }),
@@ -84,6 +133,7 @@ describe('ConversationsService', () => {
         LlmExecutionService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: ProvidersService, useValue: mockProviders },
+        { provide: ModelCatalogService, useValue: mockModelCatalog },
         { provide: UsageService, useValue: mockUsage },
         { provide: ObservabilityService, useValue: mockObservability },
       ],
@@ -859,6 +909,13 @@ describe('ConversationsService', () => {
     });
 
     it('caps effective contextBudget to model context limit (CONV-03a)', async () => {
+      const gptPolicy = {
+        contextWindow: 128_000,
+        status: 'known' as const,
+        defaultInputBudget: 8192,
+        reservedOutputTokens: 1024,
+      };
+
       // Known model: gpt-4o-mini (window 128,000, reservedOutput 1,024 -> maxInputBudget 126,976)
       const convKnown = {
         model: 'gpt-4o-mini',
@@ -866,7 +923,7 @@ describe('ConversationsService', () => {
         contextBudget: 1_048_576,
         messages: [{ role: 'system', content: 'sys', sequenceNumber: 1, status: 'complete' }],
       };
-      const resultKnown = assembleConversationContext(convKnown, 'hi');
+      const resultKnown = assembleConversationContext(convKnown, 'hi', gptPolicy);
       expect(resultKnown.requestedBudget).toBe(1_048_576);
       expect(resultKnown.inputBudget).toBe(126_976);
 
@@ -888,7 +945,7 @@ describe('ConversationsService', () => {
         contextBudget: null,
         messages: [{ role: 'system', content: 'sys', sequenceNumber: 1, status: 'complete' }],
       };
-      const resultNull = assembleConversationContext(convNull, 'hi');
+      const resultNull = assembleConversationContext(convNull, 'hi', gptPolicy);
       expect(resultNull.requestedBudget).toBeNull();
       expect(resultNull.inputBudget).toBe(8192); // 50% of 128k capped at 8192
     });
@@ -970,6 +1027,13 @@ describe('ConversationsService', () => {
       // Total tokens = 20 + 120 = 140 tokens
       const newMsg = 'N'.repeat(40); // 10 tokens
 
+      const gptPolicy = {
+        contextWindow: 128_000,
+        status: 'known' as const,
+        defaultInputBudget: 8192,
+        reservedOutputTokens: 1024,
+      };
+
       for (let budget = 20; budget <= 160; budget += 5) {
         const conv = {
           model: 'gpt-4o-mini',
@@ -978,7 +1042,7 @@ describe('ConversationsService', () => {
           messages,
         };
 
-        const result = assembleConversationContext(conv, newMsg);
+        const result = assembleConversationContext(conv, newMsg, gptPolicy);
 
         // Always fits within budget
         expect(result.totalEstimatedInputTokens).toBeLessThanOrEqual(result.inputBudget);

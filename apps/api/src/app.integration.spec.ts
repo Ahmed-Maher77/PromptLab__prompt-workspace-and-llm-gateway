@@ -10,6 +10,7 @@ import { PrismaClient, Prisma } from '@prisma/client';
 import { UsageService } from './usage/usage.service';
 import { LlmExecutionService } from './llm/llm-execution.service';
 import { ProvidersService } from './providers/providers.service';
+import { ModelCatalogService } from './providers/model-catalog.service';
 import { APP_CONFIG } from './common/config/env.validation';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -1030,7 +1031,11 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         const tzRows = await tzPrisma.$queryRaw<Array<{ TimeZone: string }>>`SHOW TIME ZONE;`;
         expect(tzRows[0]?.TimeZone).toBe('Asia/Baghdad');
 
-        const tzUsage = new UsageService(tzPrisma as unknown as PrismaService, appConfig);
+        const tzUsage = new UsageService(
+          tzPrisma as unknown as PrismaService,
+          appConfig,
+          app.get(ModelCatalogService),
+        );
         const testUserId = `user-time01-${Date.now()}`;
         const testRequestId = `req-time01-${Date.now()}`;
 
@@ -2661,6 +2666,221 @@ describe('HTTP Routing & App Integration (E2E)', () => {
           VALUES ('check-fail-slot', '${legacyExp.id}', 'C', 3, 'Invalid slot', NOW(), NOW());
         `)
       ).rejects.toThrow();
+    });
+  });
+
+  describe('Model Catalog & Gateway Error Classification (COST-01 & ERRCLS-01)', () => {
+    const origFetch = global.fetch;
+    let modelCatalog: ModelCatalogService;
+
+    beforeAll(() => {
+      modelCatalog = app.get(ModelCatalogService);
+    });
+
+    beforeEach(() => {
+      modelCatalog.clearCache();
+    });
+
+    afterEach(() => {
+      global.fetch = origFetch;
+      modelCatalog.clearCache();
+    });
+
+    afterAll(() => {
+      global.fetch = origFetch;
+    });
+
+    it('derives context budget and records cost from mocked LiteLLM gateway in a real conversation turn', async () => {
+      global.fetch = jest.fn().mockImplementation((input: any) => {
+        const url = typeof input === 'string' ? input : input?.url || '';
+        if (url.includes('/model/info')) {
+          const body = {
+            data: [
+              {
+                model_name: 'gpt-custom-mock',
+                litellm_params: { model: 'openai/gpt-custom-mock' },
+                model_info: {
+                  max_input_tokens: 64000,
+                  max_output_tokens: 4096,
+                  input_cost_per_token: 0.0000002,
+                  output_cost_per_token: 0.0000008,
+                },
+              },
+            ],
+          };
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify(body),
+            json: async () => body,
+          } as Response);
+        }
+
+        if (url.includes('/chat/completions')) {
+          const headers = new Headers();
+          headers.set('x-litellm-response-cost', '0.000042');
+          const body = {
+            id: 'chatcmpl-mock-123',
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  content: 'Gateway turn completed successfully',
+                },
+              },
+            ],
+            usage: {
+              prompt_tokens: 15,
+              completion_tokens: 25,
+              total_tokens: 40,
+            },
+          };
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            headers,
+            text: async () => JSON.stringify(body),
+            json: async () => body,
+          } as Response);
+        }
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ status: 'ok' }),
+          json: async () => ({ status: 'ok' }),
+        } as Response);
+      });
+
+      const createRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Catalog Integration Test Conv',
+          provider: 'openai',
+          model: 'gpt-custom-mock',
+        })
+        .expect(201);
+
+      const convId = createRes.body.id;
+
+      const contextRes = await request(app.getHttpServer())
+        .get(`/api/conversations/${convId}/context`)
+        .set(authHeader)
+        .expect(200);
+
+      expect(contextRes.body.contextWindow).toBe(64000);
+      expect(contextRes.body.reservedOutputTokens).toBe(4096);
+      expect(contextRes.body.contextLimitStatus).toBe('known');
+
+      const msgRes = await request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/messages`)
+        .set(authHeader)
+        .send({ content: 'Hello from catalog integration test' })
+        .expect(201);
+
+      expect(msgRes.body.success).toBe(true);
+      expect(msgRes.body.assistantMessage.content).toBe('Gateway turn completed successfully');
+
+      const prismaService = app.get(PrismaService);
+      const usageRecord = await prismaService.usageRecord.findFirst({
+        where: {
+          conversationId: convId,
+          status: 'reconciled',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      expect(usageRecord).toBeDefined();
+      expect(usageRecord?.estimatedCost).toBe(0.000042);
+      expect((usageRecord?.responseBody as any)?.costSource).toBe('provider-reported');
+      expect((usageRecord?.responseBody as any)?.cost).toBe(0.000042);
+    });
+
+    it('classifies gateway 500 error structurally without false-positive quota matching', async () => {
+      global.fetch = jest.fn().mockImplementation((input: any) => {
+        const url = typeof input === 'string' ? input : input?.url || '';
+        if (url.includes('/model/info')) {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            text: async () =>
+              JSON.stringify({
+                data: [
+                  {
+                    model_name: 'gpt-4o-mini',
+                    litellm_params: { model: 'openai/gpt-4o-mini' },
+                    model_info: { max_input_tokens: 128000, max_output_tokens: 16384 },
+                  },
+                ],
+              }),
+            json: async () => ({
+              data: [
+                {
+                  model_name: 'gpt-4o-mini',
+                  litellm_params: { model: 'openai/gpt-4o-mini' },
+                  model_info: { max_input_tokens: 128000, max_output_tokens: 16384 },
+                },
+              ],
+            }),
+          } as Response);
+        }
+
+        if (url.includes('/chat/completions')) {
+          const body = JSON.stringify({
+            error: {
+              message: 'Internal server error: upstream database quota reached',
+              type: 'internal_server_error',
+            },
+          });
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            text: async () => body,
+            json: async () => JSON.parse(body),
+          } as Response);
+        }
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ ok: true }),
+          json: async () => ({ ok: true }),
+        } as Response);
+      });
+
+      const createRes = await request(app.getHttpServer())
+        .post('/api/conversations')
+        .set(authHeader)
+        .send({
+          title: 'Error Classification Test',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+        })
+        .expect(201);
+
+      const convId = createRes.body.id;
+
+      const sendRes = await request(app.getHttpServer())
+        .post(`/api/conversations/${convId}/messages`)
+        .set(authHeader)
+        .send({ content: 'Trigger error turn' });
+
+      expect(sendRes.status).toBe(201);
+      expect(sendRes.body.success).toBe(false);
+      expect(sendRes.body.errorType).toBe('provider_error');
+      expect(sendRes.body.errorType).not.toBe('quota_exceeded');
+
+      const prismaService = app.get(PrismaService);
+      const errRecord = await prismaService.usageRecord.findFirst({
+        where: {
+          conversationId: convId,
+          status: 'failed',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(errRecord).toBeDefined();
+      expect((errRecord?.responseBody as any)?.upstreamStatus).toBe(500);
     });
   });
 

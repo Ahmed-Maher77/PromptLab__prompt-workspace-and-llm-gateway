@@ -10,7 +10,7 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsageRecord } from '@prisma/client';
-import { calculateCost } from '../experiments/cost-calculator';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import {
   UpdateQuotaPolicyDto,
@@ -32,6 +32,7 @@ export class UsageService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
+    private readonly modelCatalog: ModelCatalogService,
   ) {}
 
   /**
@@ -452,7 +453,11 @@ export class UsageService {
         const outputTokens = dto.usage?.completionTokens ?? 0;
         const totalTokens = dto.usage?.totalTokens ?? (inputTokens + outputTokens);
         const source = dto.usage?.source || 'provider-reported';
-        const cost = calculateCost(record.model, inputTokens, outputTokens);
+        let cost: number | null = dto.cost !== undefined ? dto.cost : null;
+        if (cost === null && dto.cost === undefined) {
+          const calculated = await this.modelCatalog.calculateCost(record.model, inputTokens, outputTokens);
+          cost = calculated.cost;
+        }
 
         // Update quota period: release reserved amount and add actual tokens
         if (period) {
@@ -509,7 +514,8 @@ export class UsageService {
             );
           }
 
-          const cost = calculateCost(record.model, conservativeConsumed, 0);
+          const timeoutCostEst = await this.modelCatalog.calculateCost(record.model, conservativeConsumed, 0);
+          const cost = timeoutCostEst.cost;
 
           const updatedRecord = await tx.usageRecord.update({
             where: { id: record.id },

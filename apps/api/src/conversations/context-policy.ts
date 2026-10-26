@@ -10,26 +10,33 @@ export interface ModelContextPolicy {
   sourceNote?: string;
 }
 
-export const KNOWN_MODEL_CONTEXT_LIMITS: Record<string, number> = {
-  'gpt-4o-mini': 128_000,
-  'gpt-4o': 128_000,
-  'claude-3-5-sonnet': 200_000,
-  'claude-3-5-sonnet-20241022': 200_000,
-  'claude-3-5-haiku': 200_000,
-};
+export interface ModelCatalogEntryLike {
+  maxInputTokens?: number | null;
+  maxOutputTokens?: number | null;
+  provider?: string;
+  isUnknownDefault?: boolean;
+}
 
-export function getModelContextPolicy(model: string): ModelContextPolicy {
-  const normalized = model.toLowerCase();
-  const limit = KNOWN_MODEL_CONTEXT_LIMITS[normalized];
+export const DEFAULT_UNKNOWN_CONTEXT_POLICY: ModelContextPolicy = Object.freeze({
+  contextWindow: null,
+  status: 'unknown',
+  defaultInputBudget: 4096,
+  reservedOutputTokens: 1024,
+  sourceNote: 'Context window metadata unavailable from gateway catalog; conservative default applied',
+});
 
-  if (limit) {
+export function getModelContextPolicy(
+  entry?: ModelCatalogEntryLike | null,
+): ModelContextPolicy {
+  if (entry && !entry.isUnknownDefault && typeof entry.maxInputTokens === 'number') {
+    const window = entry.maxInputTokens;
+    const reserved = entry.maxOutputTokens ?? 1024;
     return {
-      contextWindow: limit,
+      contextWindow: window,
       status: 'known',
-      // Safe default budget: 50% of context window or 8192 tokens max for POC
-      defaultInputBudget: Math.min(Math.floor(limit * 0.5), 8192),
-      reservedOutputTokens: 1024,
-      sourceNote: 'Vendor published context window specification',
+      defaultInputBudget: Math.min(Math.floor(window * 0.5), 8192),
+      reservedOutputTokens: reserved,
+      sourceNote: `Gateway model catalog specification (${entry.provider || 'gateway'})`,
     };
   }
 
@@ -37,17 +44,24 @@ export function getModelContextPolicy(model: string): ModelContextPolicy {
     contextWindow: null,
     status: 'unknown',
     defaultInputBudget: 4096,
-    reservedOutputTokens: 1024,
-    sourceNote: 'Context window metadata unavailable; do not imply exact limit',
+    reservedOutputTokens: entry?.maxOutputTokens ?? 1024,
+    sourceNote: 'Context window metadata unavailable from gateway catalog; conservative default applied',
   };
 }
 
-export function getMaxInputBudget(model: string): number {
-  const policy = getModelContextPolicy(model);
+export function getMaxInputBudget(
+  input?: ModelContextPolicy | ModelCatalogEntryLike | null,
+): number {
+  const policy =
+    input && typeof input === 'object' && 'contextWindow' in input && 'defaultInputBudget' in input
+      ? (input as ModelContextPolicy)
+      : getModelContextPolicy(input as ModelCatalogEntryLike | null | undefined);
+
   return policy.contextWindow !== null
     ? policy.contextWindow - policy.reservedOutputTokens
     : policy.defaultInputBudget;
 }
+
 
 import { estimateTokens } from '../common/utils/token-estimator';
 export { estimateTokens };
@@ -135,9 +149,10 @@ export interface AssembleContextConversationInput {
 export function assembleConversationContext(
   conv: AssembleContextConversationInput,
   proposedInput?: string,
+  policy?: ModelContextPolicy,
 ): ContextInspectionResult {
-  const policy = getModelContextPolicy(conv.model);
-  const maxInputBudget = getMaxInputBudget(conv.model);
+  const effectivePolicy = policy ?? getModelContextPolicy();
+  const maxInputBudget = getMaxInputBudget(effectivePolicy);
 
   const requestedBudget =
     typeof conv.contextBudget === 'number' && conv.contextBudget > 0
@@ -147,7 +162,7 @@ export function assembleConversationContext(
   const effectiveBudget =
     requestedBudget !== null
       ? Math.min(requestedBudget, maxInputBudget)
-      : policy.defaultInputBudget;
+      : effectivePolicy.defaultInputBudget;
 
   const activeCheckpoint =
     conv.activeCheckpoint !== undefined
@@ -303,11 +318,11 @@ export function assembleConversationContext(
   return {
     model: conv.model,
     provider: conv.provider,
-    contextWindow: policy.contextWindow,
-    contextLimitStatus: policy.status,
+    contextWindow: effectivePolicy.contextWindow,
+    contextLimitStatus: effectivePolicy.status,
     requestedBudget,
     inputBudget: effectiveBudget,
-    reservedOutputTokens: policy.reservedOutputTokens,
+    reservedOutputTokens: effectivePolicy.reservedOutputTokens,
     totalEstimatedInputTokens,
     tokenUsageSource: 'estimated',
     isCompacted,

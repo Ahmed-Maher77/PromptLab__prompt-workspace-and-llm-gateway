@@ -3,12 +3,20 @@ import { UsageService } from './usage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { APP_CONFIG } from '../common/config/env.validation';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 
 describe('UsageService', () => {
   let service: UsageService;
   let mockPrisma: any;
+  let mockModelCatalog: any;
 
   beforeEach(async () => {
+    mockModelCatalog = {
+      calculateCost: jest.fn().mockImplementation((model: string, inputTokens: number, outputTokens: number) =>
+        Promise.resolve({ cost: (inputTokens + outputTokens) * 0.000001, costSource: 'catalog-estimate' }),
+      ),
+    };
+
     mockPrisma = {
       user: {
         findFirst: jest.fn().mockResolvedValue({ id: 'dev-user-001', email: 'developer@promptlab.local' }),
@@ -95,6 +103,7 @@ describe('UsageService', () => {
         UsageService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: APP_CONFIG, useValue: { LLM_REQUEST_TIMEOUT_MS: 30000, QUOTA_TIMEOUT_CHARGE_RATIO: 0.5 } },
+        { provide: ModelCatalogService, useValue: mockModelCatalog },
       ],
     }).compile();
 

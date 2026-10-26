@@ -1,21 +1,28 @@
-import { calculateCost } from './cost-calculator';
+import { calculateCost, calculateCostFromRates } from './cost-calculator';
 
-describe('Cost Calculator', () => {
-  it('should calculate cost accurately for gpt-4o-mini', () => {
-    // 1,000,000 prompt tokens = $0.15, 1,000,000 completion tokens = $0.60
-    const cost = calculateCost('gpt-4o-mini', 1000, 500);
-    // (1000 / 1e6)*0.15 + (500 / 1e6)*0.60 = 0.00015 + 0.00030 = 0.00045
+describe('Cost Calculator (COST-01)', () => {
+  it('calculates cost accurately given per-token rates', () => {
+    // e.g. gpt-4o-mini rates: $0.00000015 input, $0.00000060 output
+    const cost = calculateCost(1000, 500, 0.00000015, 0.0000006);
+    // (1000 * 0.00000015) + (500 * 0.00000060) = 0.00015 + 0.00030 = 0.00045
     expect(cost).toBe(0.00045);
   });
 
-  it('should calculate cost accurately for claude-3-5-sonnet', () => {
-    // 1000 prompt tokens = $0.003, 1000 completion tokens = $0.015
-    const cost = calculateCost('claude-3-5-sonnet', 1000, 1000);
-    expect(cost).toBe(0.018);
+  it('calculates cost accurately with calculateCostFromRates and includes source', () => {
+    const details = calculateCostFromRates(1000, 1000, {
+      inputCostPerToken: 0.000003,
+      outputCostPerToken: 0.000015,
+      source: 'litellm-model-info',
+    });
+    expect(details.estimatedCost).toBe(0.018);
+    expect(details.pricingSource).toBe('litellm-model-info');
+    expect(details.isEstimate).toBe(true);
   });
 
-  it('should return null if model pricing is unknown (no fake numbers)', () => {
-    const cost = calculateCost('custom-unknown-model', 500, 200);
-    expect(cost).toBeNull();
+  it('returns null if rates are null or undefined (no made-up numbers)', () => {
+    expect(calculateCost(500, 200, null, null)).toBeNull();
+    expect(calculateCost(500, 200, 0.000001, null)).toBeNull();
+    expect(calculateCost(500, 200, null, 0.000002)).toBeNull();
+    expect(calculateCost(500, 200)).toBeNull();
   });
 });

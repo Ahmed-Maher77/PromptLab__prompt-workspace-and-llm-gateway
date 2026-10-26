@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProvidersService } from '../providers/providers.service';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -33,6 +34,7 @@ export class ConversationsService {
     private readonly prisma: PrismaService,
     private readonly providersService: ProvidersService,
     private readonly llmExecutionService: LlmExecutionService,
+    private readonly modelCatalog: ModelCatalogService,
   ) {}
 
   /**
@@ -50,7 +52,7 @@ export class ConversationsService {
       systemPromptContent && systemPromptContent.length > 0,
     );
 
-    const maxInputBudget = getMaxInputBudget(dto.model);
+    const maxInputBudget = await this.modelCatalog.getMaxInputBudget(dto.model);
     const storedBudget =
       typeof dto.contextBudget === 'number' && dto.contextBudget > 0
         ? Math.min(dto.contextBudget, maxInputBudget)
@@ -226,7 +228,8 @@ export class ConversationsService {
     userId: string,
   ): Promise<ContextInspectionResult> {
     const conv = await this.findOne(id, userId);
-    return assembleConversationContext(conv, proposedInput);
+    const policy = await this.modelCatalog.getModelContextPolicy(conv.model);
+    return assembleConversationContext(conv, proposedInput, policy);
   }
 
   /**
@@ -246,7 +249,8 @@ export class ConversationsService {
     const conv = await this.findOne(id, userId);
 
     // 1. Build assembled context payload including proposed current input via shared assembly
-    const inspection = assembleConversationContext(conv, dto.content.trim());
+    const policy = await this.modelCatalog.getModelContextPolicy(conv.model);
+    const inspection = assembleConversationContext(conv, dto.content.trim(), policy);
 
     // After sliding window truncation of dialogue messages, total estimated tokens
     // are <= effectiveBudget unless the pinned essential tokens alone (system prompt,
@@ -721,12 +725,13 @@ export class ConversationsService {
       return { checkpoint: created, conv };
     });
 
+    const policy = await this.modelCatalog.getModelContextPolicy(checkpointData.conv.model);
     const inspection = assembleConversationContext({
       ...checkpointData.conv,
       activeCheckpointId: checkpointData.checkpoint.id,
       activeCheckpoint: checkpointData.checkpoint,
       checkpoints: [checkpointData.checkpoint, ...checkpointData.conv.checkpoints],
-    });
+    }, undefined, policy);
 
     return {
       success: true,
@@ -777,7 +782,8 @@ export class ConversationsService {
       activeCheckpointId: targetCheckpointId,
       activeCheckpoint: targetCheckpoint,
     };
-    const inspection = assembleConversationContext(updatedConv);
+    const policy = await this.modelCatalog.getModelContextPolicy(updatedConv.model);
+    const inspection = assembleConversationContext(updatedConv, undefined, policy);
 
     return {
       success: true,

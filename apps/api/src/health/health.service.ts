@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 
 export interface HealthCheckResult {
   status: 'ok' | 'degraded';
@@ -36,6 +37,7 @@ export class HealthService {
     @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly modelCatalog: ModelCatalogService,
   ) {}
 
   async getHealth(): Promise<HealthCheckResult> {
@@ -72,10 +74,12 @@ export class HealthService {
       configuredProviders: string[];
     };
   }> {
-    const configuredProviders: string[] = [];
-    if (this.configService.get<string>('OPENAI_API_KEY')) configuredProviders.push('openai');
-    if (this.configService.get<string>('ANTHROPIC_API_KEY')) configuredProviders.push('anthropic');
-    if (this.configService.get<string>('GEMINI_API_KEY')) configuredProviders.push('gemini');
+    let configuredProviders: string[] = [];
+    try {
+      configuredProviders = await this.modelCatalog.getConfiguredProviders();
+    } catch {
+      configuredProviders = [];
+    }
 
     const providerReadiness = {
       status: configuredProviders.length > 0 ? ('ready' as const) : ('missing_provider_credentials' as const),
