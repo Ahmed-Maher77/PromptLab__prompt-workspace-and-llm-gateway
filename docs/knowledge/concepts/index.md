@@ -17,8 +17,8 @@ This directory specifies the core domain concepts, entities, and business rules 
 
 | Concept | Description | Document Link |
 | :--- | :--- | :--- |
-| **Prompt Studio** | Composable techniques, dynamic variable resolution, monospaced template editing, and immutable versioning | [prompt-studio.md](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/prompt-studio.md) |
-| **Model Comparison** | Multi-model side-by-side A/B execution, evaluation ratings, and October 2024 pricing models | [model-comparison.md](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/model-comparison.md) |
-| **Context Window Compaction** | Context budget consumption tracking, warning thresholds, and Summarize & Truncate algorithm | [context-window-compaction.md](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/context-window-compaction.md) |
-| **Quota Governance** | Monthly token limits, request rate limits, atomic ACID reservations, and audit ledger | [quota-governance.md](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/quota-governance.md) |
-| **Observability & Redaction** | W3C distributed trace context, OpenTelemetry OTLP & Langfuse exporters, and regex redaction | [observability-and-redaction.md](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/observability-and-redaction.md) |
+| **Prompt Studio** | Composable techniques, dynamic variable resolution, monospaced template editing, and immutable versioning | [prompt-studio.md](./prompt-studio.md) |
+| **Model Comparison** | Multi-model side-by-side A/B execution, evaluation ratings, and October 2024 pricing models | [model-comparison.md](./model-comparison.md) |
+| **Context Window Compaction** | Context budget consumption tracking, warning thresholds, and Summarize & Truncate algorithm | [context-window-compaction.md](./context-window-compaction.md) |
+| **Quota Governance** | Monthly token limits, request rate limits, atomic ACID reservations, and audit ledger | [quota-governance.md](./quota-governance.md) |
+| **Observability & Redaction** | W3C distributed trace context, OpenTelemetry OTLP & Langfuse exporters, and regex redaction | [observability-and-redaction.md](./observability-and-redaction.md) |

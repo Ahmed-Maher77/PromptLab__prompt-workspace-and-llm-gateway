@@ -58,11 +58,11 @@ docs/knowledge/
 
 | Section | Description | Entry Point |
 | :--- | :--- | :--- |
-| **Architecture** | Component boundaries, system interactions, network topology, and Prisma schema | [Architecture Index](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/architecture/index.md) |
-| **Concepts** | In-depth domain specifications (prompts, experiments, context compaction, quotas, tracing) | [Concepts Index](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/index.md) |
-| **Decisions (ADRs)** | Formal Architecture Decision Records documenting key technical and architectural choices | [Decisions Index](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/decisions/index.md) |
-| **Operations** | Local development setup, troubleshooting guides, and full verification test procedures | [Operations Index](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/operations/index.md) |
-| **Change Log** | Chronological log of project milestones, hardening steps, and knowledge updates | [Knowledge Log](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/log.md) |
+| **Architecture** | Component boundaries, system interactions, network topology, and Prisma schema | [Architecture Index](./architecture/index.md) |
+| **Concepts** | In-depth domain specifications (prompts, experiments, context compaction, quotas, tracing) | [Concepts Index](./concepts/index.md) |
+| **Decisions (ADRs)** | Formal Architecture Decision Records documenting key technical and architectural choices | [Decisions Index](./decisions/index.md) |
+| **Operations** | Local development setup, troubleshooting guides, and full verification test procedures | [Operations Index](./operations/index.md) |
+| **Change Log** | Chronological log of project milestones, hardening steps, and knowledge updates | [Knowledge Log](./log.md) |
 
 ---
 
@@ -70,5 +70,5 @@ docs/knowledge/
 
 When inspecting this repository:
 1. **Locate Intent:** Use this root `index.md` to identify the appropriate category before reading individual documents.
-2. **Consult ADRs:** Check [docs/knowledge/decisions/](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/decisions/index.md) to understand constraints and rationales behind existing patterns before proposing structural changes.
-3. **Domain Invariants:** Review [docs/knowledge/concepts/](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/index.md) to preserve domain rules (e.g., immutable prompt versions, two-phase quota reservation, privacy redaction).
+2. **Consult ADRs:** Check [docs/knowledge/decisions/](./decisions/index.md) to understand constraints and rationales behind existing patterns before proposing structural changes.
+3. **Domain Invariants:** Review [docs/knowledge/concepts/](./concepts/index.md) to preserve domain rules (e.g., immutable prompt versions, two-phase quota reservation, privacy redaction).

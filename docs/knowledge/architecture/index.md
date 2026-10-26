@@ -17,5 +17,5 @@ This directory details the architectural blueprints, component interactions, and
 
 | Document | Description | Link |
 | :--- | :--- | :--- |
-| **System Topology** | Multi-tier interaction between Angular frontend, NestJS API, PostgreSQL, and LiteLLM Proxy | [system-topology.md](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/architecture/system-topology.md) |
-| **Data Model & Schema** | Relational data schema defined in Prisma, entity relationships, and database constraints | [data-model.md](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/architecture/data-model.md) |
+| **System Topology** | Multi-tier interaction between Angular frontend, NestJS API, PostgreSQL, and LiteLLM Proxy | [system-topology.md](./system-topology.md) |
+| **Data Model & Schema** | Relational data schema defined in Prisma, entity relationships, and database constraints | [data-model.md](./data-model.md) |

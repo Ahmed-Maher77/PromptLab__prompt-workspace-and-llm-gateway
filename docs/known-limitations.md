@@ -28,7 +28,7 @@ This document provides an honest, rigorous catalog of known technical limitation
 ## 3. Model Pricing and Cost Estimation
 
 - **Configurable October 2024 Reference Rates:**
-  - Model pricing rates are configurable in [`apps/api/src/experiments/cost-calculator.ts`](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/apps/api/src/experiments/cost-calculator.ts), defaulting to reference pricing published in **October 2024**:
+  - Model pricing rates are configurable in [`apps/api/src/experiments/cost-calculator.ts`](../apps/api/src/experiments/cost-calculator.ts), defaulting to reference pricing published in **October 2024**:
     - `gpt-4o-mini`: $0.150 / 1M prompt tokens, $0.600 / 1M completion tokens.
     - `claude-3-5-sonnet`: $3.000 / 1M prompt tokens, $15.000 / 1M completion tokens.
   - **Limitation:** These figures are static estimation references, not real-time billing feeds. Upstream provider pricing changes, custom volume discounts, prompt caching discounts, or batch API discounts are not reflected automatically. Unknown models fall back to zero-cost estimates with explicit provenance labelling (`estimated`).
