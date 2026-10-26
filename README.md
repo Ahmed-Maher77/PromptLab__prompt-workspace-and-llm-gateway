@@ -80,6 +80,42 @@ PromptLab employs a modular monolith architecture for the application backend pa
 
 ## 4. Quickstart & Installation
 
+### 4a. Docker (recommended for a full-stack run)
+
+> [!IMPORTANT]
+> Copy `.env.example` to `.env` and set at minimum the four required variables below before starting.
+
+**Required `.env` variables for the containerised stack:**
+
+| Variable | Description |
+| :--- | :--- |
+| `POSTGRES_PASSWORD` | PostgreSQL password. **Must be URL-safe** (no `@ : / ? #`) — it is interpolated directly into `DATABASE_URL`. |
+| `LITELLM_MASTER_KEY` | LiteLLM proxy master key (arbitrary secret, e.g. `sk-promptlab-dev-key`). |
+| `AUTH_JWT_SECRET` | JWT signing secret, **≥ 32 characters** in production. |
+| `AUTH_API_KEYS` | Comma-separated API keys (`key:userId:role`). At least one of `AUTH_JWT_SECRET` or `AUTH_API_KEYS` must be set. |
+
+Optional provider keys: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`.
+
+**One-command flow (clean start):**
+```bash
+docker compose down -v
+docker compose up --build -d
+```
+
+Check all services are healthy:
+```bash
+docker compose ps
+```
+
+API health probe:
+```bash
+curl http://127.0.0.1:3100/api/health
+```
+
+---
+
+### 4b. Local (without Docker)
+
 ### Prerequisites
 - **Node.js:** v20.0+ (Verified on **v22.13.0**)
 - **npm:** v10.0+ (Verified on **v10.9.2**)

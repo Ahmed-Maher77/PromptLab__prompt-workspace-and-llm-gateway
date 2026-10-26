@@ -4,7 +4,7 @@ title: "Architecture Decision Records (ADRs)"
 description: "Index of formal architectural decisions made during the design and delivery of PromptLab"
 status: active
 maintainer: "PromptLab Core Team"
-last_updated: "2026-10-20"
+last_updated: "2026-10-26"
 ---
 
 # Architecture Decision Records (ADRs)
@@ -30,4 +30,5 @@ This directory documents all significant technical and architectural decisions f
 | [ADR-011](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/decisions/adr-011-typed-timeout-reconciliation-and-per-user-throttling.md) | Typed Timeout Reconciliation & Per-User Throttling | **Accepted** | 2026-10-26 | Typed timeout error kinds, configurable timeout charge ratio, and per-user throttling with idempotency bypass. |
 | [ADR-012](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/decisions/adr-012-model-catalog-and-structural-error-classification.md) | Dynamic Model Catalog & Structural Error Classification | **Accepted** | 2026-10-26 | Single-flight cached LiteLLM /model/info as source of truth for limits/pricing, response cost header authority, and HTTP status-first structural error classification. |
 | [ADR-013](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/decisions/adr-013-model-aware-token-counter.md) | Model-Aware Local Tokenizer & Unified Estimation Service | **Accepted** | 2026-10-26 | In-process js-tiktoken with model-aware encoding resolution, bounded LRU caching, and unified REST estimation endpoint over network-based token counting. |
+| [ADR-014](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/decisions/adr-014-containerized-stack.md) | Containerized Stack — Image Pinning, Migration Strategy, Proxy Trust, and Offline Fonts | **Accepted** | 2026-10-26 | LiteLLM image pinned by tag + digest; `prisma migrate deploy` in entrypoint (single-replica); `TRUST_PROXY=1` for correct per-IP throttling behind Nginx; `optimization.fonts: false` for offline CI builds. |
 
