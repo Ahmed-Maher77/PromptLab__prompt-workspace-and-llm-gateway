@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { ConversationsComponent } from './conversations.component';
 import {
   ConversationService,
@@ -162,6 +162,7 @@ describe('ConversationsComponent', () => {
       },
     ],
     withinBudget: true,
+    tokenEstimationMethod: 'tiktoken:o200k_base',
   };
 
   const mockCompactionPreview: CompactionPreviewResult = {
@@ -188,6 +189,7 @@ describe('ConversationsComponent', () => {
       'previewCompaction',
       'applyCompaction',
       'resume',
+      'estimateTokens',
     ]);
 
     mockPromptService = jasmine.createSpyObj('PromptService', ['getModels']);
@@ -206,6 +208,9 @@ describe('ConversationsComponent', () => {
     mockConversationService.getConversation.and.returnValue(of(mockDetailC1));
     mockConversationService.inspectContext.and.returnValue(of(mockInspectionC1));
     mockConversationService.previewCompaction.and.returnValue(of(mockCompactionPreview));
+    mockConversationService.estimateTokens.and.returnValue(
+      of({ tokens: 3, method: 'tiktoken:o200k_base' }),
+    );
 
     await TestBed.configureTestingModule({
       imports: [ConversationsComponent],
@@ -389,15 +394,36 @@ describe('ConversationsComponent', () => {
     expect(component.currentSendMessageKey).toBeNull();
   });
 
-  it('updates token estimate reactively when messageInput changes (FE-01)', () => {
+  it('calls debounced estimate endpoint and updates token estimate and method (TOKEN-01)', fakeAsync(() => {
     expect(component.currentInputTokensEstimate()).toBe(0);
+    expect(component.isEstimateApproximate()).toBeFalse();
 
-    component.messageInput.set('Hello world');
+    component.onMessageInputChange('Hello world');
+    tick(350);
+
+    expect(mockConversationService.estimateTokens).toHaveBeenCalledWith(
+      jasmine.objectContaining({ text: 'Hello world' }),
+    );
     expect(component.currentInputTokensEstimate()).toBe(3);
+    expect(component.inputTokensMethod()).toBe('tiktoken:o200k_base');
+    expect(component.isEstimateApproximate()).toBeFalse();
 
-    component.messageInput.set('');
+    mockConversationService.estimateTokens.and.returnValue(
+      of({ tokens: 18, method: 'approximate:o200k_base' }),
+    );
+    component.onMessageInputChange('Some text for claude');
+    tick(350);
+
+    expect(component.currentInputTokensEstimate()).toBe(18);
+    expect(component.inputTokensMethod()).toBe('approximate:o200k_base');
+    expect(component.isEstimateApproximate()).toBeTrue();
+
+    mockConversationService.estimateTokens.calls.reset();
+    component.onMessageInputChange('');
     expect(component.currentInputTokensEstimate()).toBe(0);
-  });
+    expect(component.inputTokensMethod()).toBeNull();
+    expect(mockConversationService.estimateTokens).not.toHaveBeenCalled();
+  }));
 
   it('should handle provider errors explicitly when message fails without fabricating responses', () => {
     const mockFailResponse: SendMessageResponse = {

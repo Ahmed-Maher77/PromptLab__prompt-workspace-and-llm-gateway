@@ -128,8 +128,8 @@
           <span class="meter-title">Active Context Budget:</span>
           @if (contextData()) {
             <span class="meter-value">
-              <strong>~{{ contextData()?.totalEstimatedInputTokens }}</strong> tokens
-              <span class="provenance-tag">({{ contextData()?.tokenUsageSource }})</span>
+              <strong>@if (contextData()?.tokenEstimationMethod?.startsWith('approximate:') || contextData()?.tokenEstimationMethod?.startsWith('heuristic:')) {~}{{ contextData()?.totalEstimatedInputTokens }}</strong> tokens
+              <span class="provenance-tag" [attr.title]="contextData()?.tokenEstimationMethod ? 'Method: ' + contextData()?.tokenEstimationMethod : null">({{ contextData()?.tokenEstimationMethod || contextData()?.tokenUsageSource }})</span>
               /
               @if (contextData()?.contextLimitStatus === 'known') {
                 <span>{{ contextData()?.contextWindow | number }} max limit</span>
@@ -256,8 +256,11 @@
           ></textarea>
 
           <div class="input-controls">
-            <span class="input-estimate">
-              ~{{ currentInputTokensEstimate() }} estimated tokens
+            <span
+              class="input-estimate"
+              [attr.title]="inputTokensMethod() ? 'Method: ' + inputTokensMethod() : null"
+            >
+              @if (isEstimateApproximate()) {~}{{ currentInputTokensEstimate() }} tokens
             </span>
 
             <button
@@ -388,8 +391,10 @@
 
             <div class="c-metric-card">
               <span class="c-metric-label">Total Input Tokens</span>
-              <span class="c-metric-value text-accent">~{{ contextData()?.totalEstimatedInputTokens }}</span>
-              <span class="c-metric-sub">Provenance: <strong>{{ contextData()?.tokenUsageSource }}</strong></span>
+              <span class="c-metric-value text-accent">
+                @if (contextData()?.tokenEstimationMethod?.startsWith('approximate:') || contextData()?.tokenEstimationMethod?.startsWith('heuristic:')) {~}{{ contextData()?.totalEstimatedInputTokens }}
+              </span>
+              <span class="c-metric-sub">Method: <strong>{{ contextData()?.tokenEstimationMethod || contextData()?.tokenUsageSource }}</strong></span>
             </div>
 
             <div class="c-metric-card">

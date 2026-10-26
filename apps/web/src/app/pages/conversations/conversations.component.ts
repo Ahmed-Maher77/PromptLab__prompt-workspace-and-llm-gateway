@@ -1,7 +1,9 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
+import { Subject, Subscription, of } from 'rxjs';
+import { debounceTime, switchMap, catchError } from 'rxjs/operators';
 import {
   LucidePlus,
   LucideX,
@@ -45,7 +47,7 @@ import { isUnknownOutcomeError } from '../../utils/http-retry.util';
   templateUrl: './conversations.component.html',
   styleUrls: ['./conversations.component.css'],
 })
-export class ConversationsComponent implements OnInit {
+export class ConversationsComponent implements OnInit, OnDestroy {
   // Inventory
   conversations = signal<ConversationSummary[]>([]);
   selectedConversation = signal<ConversationDetail | null>(null);
@@ -86,11 +88,17 @@ export class ConversationsComponent implements OnInit {
   showHistoryDrawer = signal<boolean>(false);
   resumeMessage = signal<string | null>(null);
 
-  // Computed Token Counter for current message input (FE-01: reactively tracks messageInput signal)
-  currentInputTokensEstimate = computed(() => {
-    const text = this.messageInput() || '';
-    if (!text.trim()) return 0;
-    return Math.max(1, Math.ceil(text.length / 3.8));
+  // Model-aware Token Counter for current message input (TOKEN-01)
+  private readonly tokenEstimateSubject = new Subject<{ text: string; model: string; provider?: string }>();
+  private tokenEstimateSub?: Subscription;
+
+  inputTokensCount = signal<number>(0);
+  inputTokensMethod = signal<string | null>(null);
+
+  currentInputTokensEstimate = computed(() => this.inputTokensCount());
+  isEstimateApproximate = computed(() => {
+    const method = this.inputTokensMethod();
+    return Boolean(method && (method.startsWith('approximate:') || method.startsWith('heuristic:')));
   });
 
   constructor(
@@ -101,6 +109,26 @@ export class ConversationsComponent implements OnInit {
   ngOnInit(): void {
     this.loadModels();
     this.loadConversations();
+
+    this.tokenEstimateSub = this.tokenEstimateSubject
+      .pipe(
+        debounceTime(350),
+        switchMap(({ text, model, provider }) =>
+          this.conversationService.estimateTokens({ text, model, provider }).pipe(
+            catchError(() =>
+              of({ tokens: Math.max(1, Math.ceil(text.length / 4)), method: 'heuristic:chars/4' }),
+            ),
+          ),
+        ),
+      )
+      .subscribe((res) => {
+        this.inputTokensCount.set(res.tokens);
+        this.inputTokensMethod.set(res.method);
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.tokenEstimateSub?.unsubscribe();
   }
 
   loadModels(): void {
@@ -214,6 +242,16 @@ export class ConversationsComponent implements OnInit {
   onMessageInputChange(val: string): void {
     this.messageInput.set(val);
     this.currentSendMessageKey = null; // Input changed -> reset key
+    const trimmed = (val || '').trim();
+    if (!trimmed) {
+      this.inputTokensCount.set(0);
+      this.inputTokensMethod.set(null);
+      return;
+    }
+    const conv = this.selectedConversation();
+    const model = conv?.model || this.newModel || 'gpt-4o';
+    const provider = conv?.provider || this.newProvider;
+    this.tokenEstimateSubject.next({ text: trimmed, model, provider });
   }
 
   sendMessage(): void {
@@ -235,6 +273,8 @@ export class ConversationsComponent implements OnInit {
       next: (res) => {
         this.currentSendMessageKey = null; // Cleared on success!
         this.messageInput.set('');
+        this.inputTokensCount.set(0);
+        this.inputTokensMethod.set(null);
         this.sendingMessage.set(false);
 
         if (!res.success) {
