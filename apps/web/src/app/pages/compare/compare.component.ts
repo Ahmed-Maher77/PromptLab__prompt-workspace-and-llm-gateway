@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -42,6 +42,7 @@ import { isUnknownOutcomeError } from '../../utils/http-retry.util';
   ],
   templateUrl: './compare.component.html',
   styleUrls: ['./compare.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class CompareComponent implements OnInit {
   // Inventory

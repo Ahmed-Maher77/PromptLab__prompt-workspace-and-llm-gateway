@@ -4,9 +4,9 @@
 
 [![CI](https://github.com/Ahmed-Maher77/PromptLab__prompt-workspace-and-llm-gateway/actions/workflows/ci.yml/badge.svg)](.github/workflows/ci.yml)
 ![Node.js 22](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
-![TypeScript 5.7](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9%20%7C%206.0-3178C6?logo=typescript&logoColor=white)
 ![NestJS 11](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)
-![Angular 19](https://img.shields.io/badge/Angular-19-DD0031?logo=angular&logoColor=white)
+![Angular 22](https://img.shields.io/badge/Angular-22-DD0031?logo=angular&logoColor=white)
 ![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Prisma 6](https://img.shields.io/badge/Prisma-6-2D3748?logo=prisma&logoColor=white)
 ![LiteLLM 1.106](https://img.shields.io/badge/LiteLLM-1.106-412991)
@@ -60,7 +60,7 @@ flowchart LR
     user(["Engineer<br/>(browser)"])
 
     subgraph web["Web tier"]
-        spa["Angular 19 SPA<br/>Prompt Studio · Compare · Conversations<br/>Usage · Observability · Settings"]
+        spa["Angular 22 SPA<br/>Prompt Studio · Compare · Conversations<br/>Usage · Observability · Settings"]
         nginx["Nginx<br/>static files + /api reverse proxy"]
     end
 
@@ -387,7 +387,7 @@ The schema is managed with versioned Prisma migrations in [`apps/api/prisma/migr
 
 | Layer | Technology |
 | :--- | :--- |
-| Frontend | Angular 19 (standalone components, signals), Lucide icons, Karma + Jasmine |
+| Frontend | Angular 22 (standalone components, signals, built-in control flow), Lucide icons, Karma + Jasmine |
 | Backend | NestJS 11, class-validator, `@nestjs/throttler`, `@nestjs/terminus`, `@nestjs/schedule`, Jest |
 | Data | PostgreSQL 16, Prisma 6 |
 | LLM gateway | LiteLLM proxy 1.106 (pinned by digest) |
@@ -640,7 +640,7 @@ See [`docs/observability.md`](docs/observability.md) for details.
 | Topic | Location |
 | :--- | :--- |
 | Knowledge base index | [`docs/knowledge/index.md`](docs/knowledge/index.md) |
-| Architecture decisions (ADR-001 – ADR-017) | [`docs/knowledge/decisions`](docs/knowledge/decisions/index.md) |
+| Architecture decisions (ADR-001 – ADR-018) | [`docs/knowledge/decisions`](docs/knowledge/decisions/index.md) |
 | Domain concepts | [`docs/knowledge/concepts`](docs/knowledge/concepts/index.md) |
 | System topology and data model | [`docs/knowledge/architecture`](docs/knowledge/architecture/index.md) |
 | Runbooks and troubleshooting | [`docs/knowledge/operations`](docs/knowledge/operations/index.md) |

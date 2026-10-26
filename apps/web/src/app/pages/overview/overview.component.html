@@ -2,40 +2,80 @@
   <div class="page-header">
     <div>
       <h1 class="page-title">Platform health</h1>
-      <p class="page-subtitle">Live status checks for the API, database, and model gateway.</p>
+      <p class="page-subtitle">
+        Live status checks for the API, database, and model gateway.
+      </p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-secondary" (click)="refreshHealth()" [disabled]="isLoading" aria-label="Refresh status">
+      <button
+        class="btn btn-secondary"
+        (click)="refreshHealth()"
+        [disabled]="isLoading"
+        aria-label="Refresh status"
+      >
         <svg lucideRefreshCw [size]="14" [class.spin]="isLoading"></svg>
-        <span *ngIf="isLoading">Checking…</span>
-        <span *ngIf="!isLoading">Refresh status</span>
+        @if (isLoading) {
+          <span>Checking…</span>
+        }
+        @if (!isLoading) {
+          <span>Refresh status</span>
+        }
       </button>
     </div>
   </div>
 
-  <p class="checked-at" aria-live="polite">{{ isLoading ? 'Checking services…' : 'Last checked ' + (lastChecked | date:'mediumTime') }}</p>
+  <p class="checked-at" aria-live="polite">
+    {{
+      isLoading
+        ? "Checking services…"
+        : "Last checked " + (lastChecked | date: "mediumTime")
+    }}
+  </p>
 
   <div class="grid-cards">
     <!-- API Status Card -->
     <div class="panel status-card">
       <div class="card-header">
         <span class="card-label">Application API</span>
-        <span class="badge" [ngClass]="isLoading ? 'badge-neutral' : (healthData?.status === 'ok' ? 'badge-success' : 'badge-danger')">
-          {{ isLoading ? 'Checking' : (healthData ? (healthData.status === 'ok' ? 'Online' : 'Degraded') : 'Offline') }}
+        <span
+          class="badge"
+          [ngClass]="
+            isLoading
+              ? 'badge-neutral'
+              : healthData?.status === 'ok'
+                ? 'badge-success'
+                : 'badge-danger'
+          "
+        >
+          {{
+            isLoading
+              ? "Checking"
+              : healthData
+                ? healthData.status === "ok"
+                  ? "Online"
+                  : "Degraded"
+                : "Offline"
+          }}
         </span>
       </div>
       <div class="card-body">
         <div class="metric-row">
           <span class="metric-label">Environment</span>
-          <span class="metric-val font-mono">{{ healthData?.environment || 'unknown' }}</span>
+          <span class="metric-val font-mono">{{
+            healthData?.environment || "unknown"
+          }}</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Version</span>
-          <span class="metric-val font-mono">{{ healthData?.version || '0.1.0' }}</span>
+          <span class="metric-val font-mono">{{
+            healthData?.version || "0.1.0"
+          }}</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Uptime</span>
-          <span class="metric-val">{{ healthData ? (healthData.uptimeSeconds + 's') : 'N/A' }}</span>
+          <span class="metric-val">{{
+            healthData ? healthData.uptimeSeconds + "s" : "N/A"
+          }}</span>
         </div>
       </div>
     </div>
@@ -44,8 +84,23 @@
     <div class="panel status-card">
       <div class="card-header">
         <span class="card-label">PostgreSQL Database</span>
-        <span class="badge" [ngClass]="isLoading ? 'badge-neutral' : (healthData?.services?.database?.status === 'connected' ? 'badge-success' : 'badge-danger')">
-          {{ isLoading ? 'Checking' : (healthData?.services?.database?.status === 'connected' ? 'Connected' : 'Disconnected') }}
+        <span
+          class="badge"
+          [ngClass]="
+            isLoading
+              ? 'badge-neutral'
+              : healthData?.services?.database?.status === 'connected'
+                ? 'badge-success'
+                : 'badge-danger'
+          "
+        >
+          {{
+            isLoading
+              ? "Checking"
+              : healthData?.services?.database?.status === "connected"
+                ? "Connected"
+                : "Disconnected"
+          }}
         </span>
       </div>
       <div class="card-body">
@@ -56,13 +111,19 @@
         <div class="metric-row">
           <span class="metric-label">Ping Latency</span>
           <span class="metric-val font-mono">
-            {{ healthData?.services?.database?.latencyMs !== undefined ? (healthData?.services?.database?.latencyMs + ' ms') : 'N/A' }}
+            {{
+              healthData?.services?.database?.latencyMs != null
+                ? healthData?.services?.database?.latencyMs + " ms"
+                : "N/A"
+            }}
           </span>
         </div>
-        <div class="metric-row" *ngIf="healthData?.services?.database?.error">
-          <span class="metric-label">Notice</span>
-          <span class="metric-val text-danger font-mono">{{ healthData?.services?.database?.error }}</span>
-        </div>
+        @if (healthData?.services?.database?.error; as dbError) {
+          <div class="metric-row">
+            <span class="metric-label">Notice</span>
+            <span class="metric-val text-danger font-mono">{{ dbError }}</span>
+          </div>
+        }
       </div>
     </div>
 
@@ -70,25 +131,64 @@
     <div class="panel status-card">
       <div class="card-header">
         <span class="card-label">Model gateway</span>
-        <span class="badge" [ngClass]="isLoading ? 'badge-neutral' : (healthData?.services?.gateway?.serviceAvailability === 'available' ? 'badge-success' : 'badge-neutral')">
-          {{ isLoading ? 'Checking' : (healthData?.services?.gateway?.serviceAvailability === 'available' ? 'Available' : 'Standby') }}
+        <span
+          class="badge"
+          [ngClass]="
+            isLoading
+              ? 'badge-neutral'
+              : healthData?.services?.gateway?.serviceAvailability ===
+                  'available'
+                ? 'badge-success'
+                : 'badge-neutral'
+          "
+        >
+          {{
+            isLoading
+              ? "Checking"
+              : healthData?.services?.gateway?.serviceAvailability ===
+                  "available"
+                ? "Available"
+                : "Standby"
+          }}
         </span>
       </div>
       <div class="card-body">
         <div class="metric-row">
           <span class="metric-label">Gateway Endpoint</span>
-          <span class="metric-val font-mono">{{ healthData?.services?.gateway?.url || 'http://localhost:4000' }}</span>
+          <span class="metric-val font-mono">{{
+            healthData?.services?.gateway?.url || "http://localhost:4000"
+          }}</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Provider Readiness</span>
-          <span class="badge" [ngClass]="healthData?.services?.gateway?.providerReadiness?.status === 'ready' ? 'badge-success' : 'badge-warning'">
-            {{ healthData?.services?.gateway?.providerReadiness?.status === 'ready' ? 'Credentials Configured' : 'Credentials Needed' }}
+          <span
+            class="badge"
+            [ngClass]="
+              healthData?.services?.gateway?.providerReadiness?.status ===
+              'ready'
+                ? 'badge-success'
+                : 'badge-warning'
+            "
+          >
+            {{
+              healthData?.services?.gateway?.providerReadiness?.status ===
+              "ready"
+                ? "Credentials Configured"
+                : "Credentials Needed"
+            }}
           </span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Configured Providers</span>
           <span class="metric-val font-mono">
-            {{ (healthData?.services?.gateway?.providerReadiness?.configuredProviders?.length || 0) > 0 ? healthData?.services?.gateway?.providerReadiness?.configuredProviders?.join(', ') : 'None (server-side only)' }}
+            {{
+              (healthData?.services?.gateway?.providerReadiness
+                ?.configuredProviders?.length || 0) > 0
+                ? healthData?.services?.gateway?.providerReadiness?.configuredProviders?.join(
+                    ", "
+                  )
+                : "None (server-side only)"
+            }}
           </span>
         </div>
       </div>
@@ -106,44 +206,83 @@
       <a class="module-link" routerLink="/prompt-studio">
         <span class="module-info">
           <strong>Prompt Studio</strong>
-          <small>Author templates, test variables, and manage immutable versions</small>
+          <small
+            >Author templates, test variables, and manage immutable
+            versions</small
+          >
         </span>
-        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
+        <svg
+          lucideArrowRight
+          [size]="16"
+          class="module-arrow"
+          aria-hidden="true"
+        ></svg>
       </a>
       <a class="module-link" routerLink="/compare">
         <span class="module-info">
           <strong>Compare</strong>
           <small>Run side-by-side experiments across models and prompts</small>
         </span>
-        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
+        <svg
+          lucideArrowRight
+          [size]="16"
+          class="module-arrow"
+          aria-hidden="true"
+        ></svg>
       </a>
       <a class="module-link" routerLink="/conversations">
         <span class="module-info">
           <strong>Conversations</strong>
           <small>Inspect dialogue turns, token budgets, and compaction</small>
         </span>
-        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
+        <svg
+          lucideArrowRight
+          [size]="16"
+          class="module-arrow"
+          aria-hidden="true"
+        ></svg>
       </a>
       <a class="module-link" routerLink="/usage">
         <span class="module-info">
           <strong>Usage &amp; quotas</strong>
-          <small>Monitor monthly token limits, reservations, and audit ledger</small>
+          <small
+            >Monitor monthly token limits, reservations, and audit ledger</small
+          >
         </span>
-        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
+        <svg
+          lucideArrowRight
+          [size]="16"
+          class="module-arrow"
+          aria-hidden="true"
+        ></svg>
       </a>
       <a class="module-link" routerLink="/observability">
         <span class="module-info">
           <strong>Observability</strong>
-          <small>Inspect distributed traces, gateway latency, and telemetry</small>
+          <small
+            >Inspect distributed traces, gateway latency, and telemetry</small
+          >
         </span>
-        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
+        <svg
+          lucideArrowRight
+          [size]="16"
+          class="module-arrow"
+          aria-hidden="true"
+        ></svg>
       </a>
       <a class="module-link" routerLink="/settings">
         <span class="module-info">
           <strong>Settings</strong>
-          <small>Inspect configured model routes and service connectivity</small>
+          <small
+            >Inspect configured model routes and service connectivity</small
+          >
         </span>
-        <svg lucideArrowRight [size]="16" class="module-arrow" aria-hidden="true"></svg>
+        <svg
+          lucideArrowRight
+          [size]="16"
+          class="module-arrow"
+          aria-hidden="true"
+        ></svg>
       </a>
     </nav>
   </section>

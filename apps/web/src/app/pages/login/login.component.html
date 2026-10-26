@@ -4,13 +4,16 @@
       <div class="login-badge">Authentication Required</div>
       <h1 class="login-title">PromptLab Access</h1>
       <p class="login-subtitle">
-        Enter your API Key or JWT Bearer Token to authenticate with the PromptLab gateway.
+        Enter your API Key or JWT Bearer Token to authenticate with the
+        PromptLab gateway.
       </p>
     </div>
 
     <form (ngSubmit)="onSubmit()" class="login-form">
       <div class="form-group">
-        <label for="tokenInput" class="form-label">API Key or Bearer Token</label>
+        <label for="tokenInput" class="form-label"
+          >API Key or Bearer Token</label
+        >
         <input
           id="tokenInput"
           type="password"
@@ -23,9 +26,11 @@
         />
       </div>
 
-      <div *ngIf="errorMessage" class="error-banner" role="alert">
-        {{ errorMessage }}
-      </div>
+      @if (errorMessage) {
+        <div class="error-banner" role="alert">
+          {{ errorMessage }}
+        </div>
+      }
 
       <button type="submit" class="submit-button" id="loginSubmitBtn">
         Authenticate &amp; Continue
@@ -33,7 +38,10 @@
 
       <div class="security-note">
         <svg lucideLock [size]="14" class="note-icon"></svg>
-        <span>Credentials are stored locally in your browser and transmitted securely over TLS.</span>
+        <span
+          >Credentials are stored locally in your browser and transmitted
+          securely over TLS.</span
+        >
       </div>
     </form>
   </div>

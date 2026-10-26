@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { LucideRefreshCw, LucideArrowRight } from '@lucide/angular';
@@ -10,6 +10,7 @@ import { HealthService, HealthResponse } from '../../services/health.service';
   imports: [CommonModule, RouterLink, LucideRefreshCw, LucideArrowRight],
   templateUrl: './overview.component.html',
   styleUrls: ['./overview.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class OverviewComponent implements OnInit {
   healthData: HealthResponse | null = null;

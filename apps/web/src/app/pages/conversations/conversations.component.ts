@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, computed } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -46,6 +46,7 @@ import { isUnknownOutcomeError } from '../../utils/http-retry.util';
   ],
   templateUrl: './conversations.component.html',
   styleUrls: ['./conversations.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class ConversationsComponent implements OnInit, OnDestroy {
   // Inventory

@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   LucideRefreshCw,
@@ -37,6 +37,7 @@ import { SettingsService, SystemSettings } from '../../services/settings.service
   ],
   templateUrl: './settings.component.html',
   styleUrl: './settings.component.css',
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class SettingsComponent implements OnInit {
   settings: SystemSettings | null = null;

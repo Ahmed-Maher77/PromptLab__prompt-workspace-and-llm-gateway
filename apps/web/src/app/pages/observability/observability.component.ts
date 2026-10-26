@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -35,6 +35,7 @@ import {
   ],
   templateUrl: './observability.component.html',
   styleUrls: ['./observability.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class ObservabilityComponent implements OnInit {
   status: ObservabilityStatus | null = null;

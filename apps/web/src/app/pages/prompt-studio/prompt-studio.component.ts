@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal, computed, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -45,6 +45,7 @@ export type StudioViewMode = 'library' | 'editor';
   ],
   templateUrl: './prompt-studio.component.html',
   styleUrls: ['./prompt-studio.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class PromptStudioComponent implements OnInit {
   // Navigation / View State

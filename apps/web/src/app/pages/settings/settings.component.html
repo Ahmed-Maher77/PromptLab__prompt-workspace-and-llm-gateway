@@ -5,60 +5,74 @@
       <div class="header-tag-group">
         <span class="env-pill">
           <span class="status-pulse-dot"></span>
-          {{ settings?.application?.environment || 'development' }}
+          {{ settings?.application?.environment || "development" }}
         </span>
-        <span class="version-tag">v{{ settings?.application?.version || '0.1.0' }}</span>
+        <span class="version-tag"
+          >v{{ settings?.application?.version || "0.1.0" }}</span
+        >
       </div>
       <h1 class="page-title">System settings</h1>
       <p class="header-sub">
-        Real-time introspection of LiteLLM gateway connectivity, model routing, database health, quota governance, and telemetry pipelines.
+        Real-time introspection of LiteLLM gateway connectivity, model routing,
+        database health, quota governance, and telemetry pipelines.
       </p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-secondary" (click)="loadSettings()" [disabled]="loading">
-        <svg
-          lucideRefreshCw
-          [size]="15"
-          [class.spin]="loading"
-        ></svg>
-        <span>{{ loading ? 'Inspecting...' : 'Refresh Status' }}</span>
+      <button
+        class="btn btn-secondary"
+        (click)="loadSettings()"
+        [disabled]="loading"
+      >
+        <svg lucideRefreshCw [size]="15" [class.spin]="loading"></svg>
+        <span>{{ loading ? "Inspecting..." : "Refresh Status" }}</span>
       </button>
     </div>
   </header>
 
   <!-- Error Alert -->
-  <div *ngIf="errorMessage" class="alert alert-error">
-    <svg lucideCircleAlert [size]="18"></svg>
-    <div class="alert-content">
-      <strong>Gateway Connection Error</strong>
-      <p>{{ errorMessage }}</p>
+  @if (errorMessage) {
+    <div class="alert alert-error">
+      <svg lucideCircleAlert [size]="18"></svg>
+      <div class="alert-content">
+        <strong>Gateway Connection Error</strong>
+        <p>{{ errorMessage }}</p>
+      </div>
     </div>
-  </div>
+  }
 
   <!-- Loading State -->
-  <div *ngIf="loading && !settings" class="loading-state">
-    <div class="spinner"></div>
-    <p>Inspecting runtime services and gateway connectivity...</p>
-  </div>
+  @if (loading && !settings) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Inspecting runtime services and gateway connectivity...</p>
+    </div>
+  }
 
-  <ng-container *ngIf="settings">
+  @if (settings) {
     <!-- Quick Status Strip -->
     <div class="status-strip">
       <div class="status-metric-card">
-        <div class="metric-icon-wrap" [class.success]="settings.gateway.connected" [class.danger]="!settings.gateway.connected">
+        <div
+          class="metric-icon-wrap"
+          [class.success]="settings.gateway.connected"
+          [class.danger]="!settings.gateway.connected"
+        >
           <svg lucideServer [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Gateway Status</span>
           <div class="metric-value-row">
-            <span class="metric-status-text" [class.text-success]="settings.gateway.connected" [class.text-danger]="!settings.gateway.connected">
-              {{ settings.gateway.connected ? 'Connected' : 'Offline' }}
+            <span
+              class="metric-status-text"
+              [class.text-success]="settings.gateway.connected"
+              [class.text-danger]="!settings.gateway.connected"
+            >
+              {{ settings.gateway.connected ? "Connected" : "Offline" }}
             </span>
             <span class="metric-sub">{{ settings.gateway.url }}</span>
           </div>
         </div>
       </div>
-
       <div class="status-metric-card">
         <div class="metric-icon-wrap primary">
           <svg lucideBox [size]="18"></svg>
@@ -66,25 +80,33 @@
         <div class="metric-body">
           <span class="metric-label">Model Catalog</span>
           <div class="metric-value-row">
-            <span class="metric-value-bold">{{ settings.gateway.modelsConfigured }} Active</span>
+            <span class="metric-value-bold"
+              >{{ settings.gateway.modelsConfigured }} Active</span
+            >
             <span class="metric-sub">Across 2 Providers</span>
           </div>
         </div>
       </div>
-
       <div class="status-metric-card">
-        <div class="metric-icon-wrap" [class.success]="settings.database.connected" [class.danger]="!settings.database.connected">
+        <div
+          class="metric-icon-wrap"
+          [class.success]="settings.database.connected"
+          [class.danger]="!settings.database.connected"
+        >
           <svg lucideDatabase [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Database Engine</span>
           <div class="metric-value-row">
-            <span class="metric-status-text text-success">{{ settings.database.type }}</span>
-            <span class="latency-chip">{{ settings.database.latencyMs }}ms latency</span>
+            <span class="metric-status-text text-success">{{
+              settings.database.type
+            }}</span>
+            <span class="latency-chip"
+              >{{ settings.database.latencyMs }}ms latency</span
+            >
           </div>
         </div>
       </div>
-
       <div class="status-metric-card">
         <div class="metric-icon-wrap warning">
           <svg lucideClock [size]="18"></svg>
@@ -92,13 +114,14 @@
         <div class="metric-body">
           <span class="metric-label">Token Quota</span>
           <div class="metric-value-row">
-            <span class="metric-value-bold">{{ settings.quotaPolicy.monthlyTokenLimit | number }}</span>
+            <span class="metric-value-bold">{{
+              settings.quotaPolicy.monthlyTokenLimit | number
+            }}</span>
             <span class="metric-sub">tokens / mo</span>
           </div>
         </div>
       </div>
     </div>
-
     <!-- Main Architecture Grid -->
     <div class="settings-main-grid">
       <!-- Column 1: Gateway & Platform -->
@@ -112,69 +135,87 @@
               </div>
               <div>
                 <h2 class="box-title">LiteLLM Proxy Gateway</h2>
-                <span class="box-desc">Unified OpenAI-compatible proxy interface</span>
+                <span class="box-desc"
+                  >Unified OpenAI-compatible proxy interface</span
+                >
               </div>
             </div>
             <span
               class="badge"
-              [ngClass]="settings.gateway.connected ? 'badge-success' : 'badge-danger'"
+              [ngClass]="
+                settings.gateway.connected ? 'badge-success' : 'badge-danger'
+              "
             >
               <span class="status-dot"></span>
-              {{ settings.gateway.connected ? 'Connected' : 'Unreachable' }}
+              {{ settings.gateway.connected ? "Connected" : "Unreachable" }}
             </span>
           </div>
-
           <div class="box-body">
             <div class="endpoint-banner">
               <div class="endpoint-meta">
                 <span class="meta-label">GATEWAY URL</span>
-                <span class="endpoint-url font-mono">{{ settings.gateway.url }}</span>
+                <span class="endpoint-url font-mono">{{
+                  settings.gateway.url
+                }}</span>
               </div>
               <span class="badge badge-neutral">Proxy Mode</span>
             </div>
-
-            <div *ngIf="settings.gateway.error" class="notice notice-warning">
-              <svg lucideTriangleAlert [size]="14"></svg>
-              <span>{{ settings.gateway.error }}</span>
-            </div>
-
+            @if (settings.gateway.error) {
+              <div class="notice notice-warning">
+                <svg lucideTriangleAlert [size]="14"></svg>
+                <span>{{ settings.gateway.error }}</span>
+              </div>
+            }
             <!-- Model Catalog -->
             <div class="model-catalog-section">
               <div class="section-header-inline">
                 <span class="section-title">Available Model Catalog</span>
-                <span class="badge badge-neutral">{{ settings.gateway.modelsConfigured }} active</span>
+                <span class="badge badge-neutral"
+                  >{{ settings.gateway.modelsConfigured }} active</span
+                >
               </div>
-
-              <div *ngIf="settings.gateway.models.length === 0" class="empty-hint">
-                No models detected. Ensure LiteLLM is running (<code>npm run start:gateway</code>).
-              </div>
-
-              <div class="model-grid" *ngIf="settings.gateway.models.length > 0">
-                <div *ngFor="let model of settings.gateway.models" class="model-card">
-                  <div class="model-card-header">
-                    <span class="model-id font-mono">{{ model.id }}</span>
-                    <span class="provider-pill" [class.openai]="model.provider === 'openai'" [class.anthropic]="model.provider === 'anthropic'">
-                      {{ model.provider }}
-                    </span>
-                  </div>
-                  <div class="model-card-footer">
-                    <span class="status-indicator">
-                      <span class="dot-online"></span>
-                      Available
-                    </span>
-                    <span class="routing-type">Chat Completions</span>
-                  </div>
+              @if (settings.gateway.models.length === 0) {
+                <div class="empty-hint">
+                  No models detected. Ensure LiteLLM is running (<code
+                    >npm run start:gateway</code
+                  >).
                 </div>
-              </div>
+              }
+              @if (settings.gateway.models.length > 0) {
+                <div class="model-grid">
+                  @for (model of settings.gateway.models; track model) {
+                    <div class="model-card">
+                      <div class="model-card-header">
+                        <span class="model-id font-mono">{{ model.id }}</span>
+                        <span
+                          class="provider-pill"
+                          [class.openai]="model.provider === 'openai'"
+                          [class.anthropic]="model.provider === 'anthropic'"
+                        >
+                          {{ model.provider }}
+                        </span>
+                      </div>
+                      <div class="model-card-footer">
+                        <span class="status-indicator">
+                          <span class="dot-online"></span>
+                          Available
+                        </span>
+                        <span class="routing-type">Chat Completions</span>
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
             </div>
-
             <div class="security-banner">
               <svg lucideLock [size]="14"></svg>
-              <span>Provider API keys reside strictly on the server and are never exposed to client bundles.</span>
+              <span
+                >Provider API keys reside strictly on the server and are never
+                exposed to client bundles.</span
+              >
             </div>
           </div>
         </div>
-
         <!-- Card 2: Database & Platform Runtime -->
         <div class="card settings-box">
           <div class="box-header">
@@ -184,47 +225,58 @@
               </div>
               <div>
                 <h2 class="box-title">Database & Platform</h2>
-                <span class="box-desc">Persistence layer and host environment</span>
+                <span class="box-desc"
+                  >Persistence layer and host environment</span
+                >
               </div>
             </div>
             <span
               class="badge"
-              [ngClass]="settings.database.connected ? 'badge-success' : 'badge-danger'"
+              [ngClass]="
+                settings.database.connected ? 'badge-success' : 'badge-danger'
+              "
             >
               <span class="status-dot"></span>
-              {{ settings.database.connected ? 'Connected' : 'Disconnected' }}
+              {{ settings.database.connected ? "Connected" : "Disconnected" }}
             </span>
           </div>
-
           <div class="box-body">
             <div class="info-list">
               <div class="info-item">
                 <span class="item-label">Database Engine</span>
                 <div class="item-value-group">
-                  <span class="item-value font-medium">{{ settings.database.type }}</span>
-                  <span class="latency-badge">{{ settings.database.latencyMs }} ms</span>
+                  <span class="item-value font-medium">{{
+                    settings.database.type
+                  }}</span>
+                  <span class="latency-badge"
+                    >{{ settings.database.latencyMs }} ms</span
+                  >
                 </div>
               </div>
-
               <div class="info-item">
                 <span class="item-label">Application Version</span>
-                <span class="item-value font-mono">v{{ settings.application.version }}</span>
+                <span class="item-value font-mono"
+                  >v{{ settings.application.version }}</span
+                >
               </div>
-
               <div class="info-item">
                 <span class="item-label">Node Runtime</span>
-                <span class="item-value font-mono">{{ settings.application.nodeVersion }} ({{ settings.application.platform }})</span>
+                <span class="item-value font-mono"
+                  >{{ settings.application.nodeVersion }} ({{
+                    settings.application.platform
+                  }})</span
+                >
               </div>
-
               <div class="info-item">
                 <span class="item-label">API Uptime</span>
-                <span class="item-value uptime-badge">{{ formatUptime(settings.application.uptimeSeconds) }}</span>
+                <span class="item-value uptime-badge">{{
+                  formatUptime(settings.application.uptimeSeconds)
+                }}</span>
               </div>
             </div>
           </div>
         </div>
       </div>
-
       <!-- Column 2: Governance & Observability -->
       <div class="settings-column">
         <!-- Card 3: Quota & Rate Limit Policy -->
@@ -241,50 +293,66 @@
             </div>
             <span class="badge badge-neutral">Enforced Server-Side</span>
           </div>
-
           <div class="box-body">
             <!-- Quota Stat Tiles -->
             <div class="quota-tiles-row">
               <div class="quota-tile">
                 <span class="tile-caption">Monthly Token Limit</span>
                 <div class="tile-number-row">
-                  <span class="tile-number font-mono">{{ settings.quotaPolicy.monthlyTokenLimit | number }} tokens</span>
+                  <span class="tile-number font-mono"
+                    >{{
+                      settings.quotaPolicy.monthlyTokenLimit | number
+                    }}
+                    tokens</span
+                  >
                 </div>
                 <span class="tile-sub">Hard spending ceiling</span>
               </div>
-
               <div class="quota-tile">
                 <span class="tile-caption">Request Rate Limit</span>
                 <div class="tile-number-row">
-                  <span class="tile-number font-mono">{{ settings.quotaPolicy.requestRateLimit }}</span>
+                  <span class="tile-number font-mono">{{
+                    settings.quotaPolicy.requestRateLimit
+                  }}</span>
                   <span class="tile-unit">req / min</span>
                 </div>
                 <span class="tile-sub">Per user burst cap</span>
               </div>
             </div>
-
             <div class="info-list">
               <div class="info-item">
                 <span class="item-label">Policy Scope</span>
-                <span class="item-value font-mono">{{ settings.quotaPolicy.scope }} ({{ settings.quotaPolicy.scopeId }})</span>
+                <span class="item-value font-mono"
+                  >{{ settings.quotaPolicy.scope }} ({{
+                    settings.quotaPolicy.scopeId
+                  }})</span
+                >
               </div>
-
               <div class="info-item">
                 <span class="item-label">Effective From</span>
-                <span class="item-value font-mono">{{ settings.quotaPolicy.effectiveFrom | date:'yyyy-MM-dd HH:mm:ss' }} UTC</span>
+                <span class="item-value font-mono"
+                  >{{
+                    settings.quotaPolicy.effectiveFrom
+                      | date: "yyyy-MM-dd HH:mm:ss"
+                  }}
+                  UTC</span
+                >
               </div>
             </div>
-
             <div class="architectural-callout">
               <svg lucideLock [size]="15"></svg>
               <div>
                 <strong>Pessimistic Locking Active:</strong>
-                <span>Budget enforcement uses row-level locking (<code>SELECT ... FOR UPDATE</code>) in PostgreSQL to eliminate concurrency race conditions.</span>
+                <span
+                  >Budget enforcement uses row-level locking (<code
+                    >SELECT ... FOR UPDATE</code
+                  >) in PostgreSQL to eliminate concurrency race
+                  conditions.</span
+                >
               </div>
             </div>
           </div>
         </div>
-
         <!-- Card 4: Observability & Telemetry Status -->
         <div class="card settings-box">
           <div class="box-header">
@@ -294,27 +362,39 @@
               </div>
               <div>
                 <h2 class="box-title">Telemetry & Observability</h2>
-                <span class="box-desc">Distributed tracing & LLM monitoring</span>
+                <span class="box-desc"
+                  >Distributed tracing & LLM monitoring</span
+                >
               </div>
             </div>
             <span
               class="badge"
-              [ngClass]="settings.observability.telemetryEnabled ? 'badge-success' : 'badge-neutral'"
+              [ngClass]="
+                settings.observability.telemetryEnabled
+                  ? 'badge-success'
+                  : 'badge-neutral'
+              "
             >
-              {{ settings.observability.telemetryEnabled ? 'Telemetry Active' : 'Disabled' }}
+              {{
+                settings.observability.telemetryEnabled
+                  ? "Telemetry Active"
+                  : "Disabled"
+              }}
             </span>
           </div>
-
           <div class="box-body">
             <div class="telemetry-items-grid">
               <div class="telemetry-item">
                 <div class="telemetry-item-header">
                   <span class="telemetry-title">In-Memory Trace Buffer</span>
-                  <span class="badge badge-info">{{ settings.observability.tracesRecorded }} traces</span>
+                  <span class="badge badge-info"
+                    >{{ settings.observability.tracesRecorded }} traces</span
+                  >
                 </div>
-                <span class="telemetry-caption">Ring buffer retaining the last 500 LLM execution spans.</span>
+                <span class="telemetry-caption"
+                  >Ring buffer retaining the last 500 LLM execution spans.</span
+                >
               </div>
-
               <div class="telemetry-item">
                 <div class="telemetry-item-header">
                   <span class="telemetry-title">Privacy & Sanitization</span>
@@ -323,50 +403,74 @@
                     Enforced
                   </span>
                 </div>
-                <span class="telemetry-caption">Automatic PII & secret masking (<code>Bearer</code>, <code>sk-*</code>, <code>pk-*</code>).</span>
+                <span class="telemetry-caption"
+                  >Automatic PII & secret masking (<code>Bearer</code>,
+                  <code>sk-*</code>, <code>pk-*</code>).</span
+                >
               </div>
-
               <div class="telemetry-item">
                 <div class="telemetry-item-header">
                   <span class="telemetry-title">OpenTelemetry OTLP</span>
                   <span
                     class="badge"
-                    [ngClass]="settings.observability.otelConfigured ? 'badge-success' : 'badge-neutral'"
+                    [ngClass]="
+                      settings.observability.otelConfigured
+                        ? 'badge-success'
+                        : 'badge-neutral'
+                    "
                   >
-                    {{ settings.observability.otelConfigured ? 'Configured' : 'Known Follow-Up' }}
+                    {{
+                      settings.observability.otelConfigured
+                        ? "Configured"
+                        : "Known Follow-Up"
+                    }}
                   </span>
                 </div>
-                <span class="telemetry-caption font-mono" *ngIf="settings.observability.otelEndpoint">
-                  {{ settings.observability.otelEndpoint }}
-                </span>
-                <span class="telemetry-caption" *ngIf="!settings.observability.otelEndpoint">
-                  Standard HTTP OTLP export via W3C TraceContext.
-                </span>
+                @if (settings.observability.otelEndpoint) {
+                  <span class="telemetry-caption font-mono">
+                    {{ settings.observability.otelEndpoint }}
+                  </span>
+                }
+                @if (!settings.observability.otelEndpoint) {
+                  <span class="telemetry-caption">
+                    Standard HTTP OTLP export via W3C TraceContext.
+                  </span>
+                }
               </div>
-
               <div class="telemetry-item">
                 <div class="telemetry-item-header">
                   <span class="telemetry-title">Langfuse LLM Telemetry</span>
                   <span
                     class="badge"
-                    [ngClass]="settings.observability.langfuseConfigured ? 'badge-success' : 'badge-neutral'"
+                    [ngClass]="
+                      settings.observability.langfuseConfigured
+                        ? 'badge-success'
+                        : 'badge-neutral'
+                    "
                   >
-                    {{ settings.observability.langfuseConfigured ? 'Configured' : 'Known Follow-Up' }}
+                    {{
+                      settings.observability.langfuseConfigured
+                        ? "Configured"
+                        : "Known Follow-Up"
+                    }}
                   </span>
                 </div>
-                <span class="telemetry-caption font-mono" *ngIf="settings.observability.langfuseHost">
-                  {{ settings.observability.langfuseHost }}
-                </span>
-                <span class="telemetry-caption" *ngIf="!settings.observability.langfuseHost">
-                  Trace & generation ingestion for production LLM analytics.
-                </span>
+                @if (settings.observability.langfuseHost) {
+                  <span class="telemetry-caption font-mono">
+                    {{ settings.observability.langfuseHost }}
+                  </span>
+                }
+                @if (!settings.observability.langfuseHost) {
+                  <span class="telemetry-caption">
+                    Trace & generation ingestion for production LLM analytics.
+                  </span>
+                }
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-
     <!-- Card 5: Security Architecture & Boundary Status (Full Width) -->
     <div class="card settings-box full-width-box">
       <div class="box-header">
@@ -376,12 +480,14 @@
           </div>
           <div>
             <h2 class="box-title">Security & Environment Boundaries</h2>
-            <span class="box-desc">Isolation guarantees, authentication posture, and access control</span>
+            <span class="box-desc"
+              >Isolation guarantees, authentication posture, and access
+              control</span
+            >
           </div>
         </div>
         <span class="badge badge-neutral">Developer Mode</span>
       </div>
-
       <div class="box-body">
         <div class="security-cards-grid">
           <div class="security-card">
@@ -392,10 +498,12 @@
               <span class="security-card-title">Authentication Model</span>
             </div>
             <p class="security-card-text">
-              Active identity: <code class="font-mono">{{ settings.security.defaultUser }}</code>. Single-tenant local development profile. Production requires OAuth2 / OIDC bearer authorization.
+              Active identity:
+              <code class="font-mono">{{ settings.security.defaultUser }}</code
+              >. Single-tenant local development profile. Production requires
+              OAuth2 / OIDC bearer authorization.
             </p>
           </div>
-
           <div class="security-card">
             <div class="security-card-header">
               <div class="shield-circle">
@@ -404,10 +512,11 @@
               <span class="security-card-title">CORS Restrictions</span>
             </div>
             <p class="security-card-text">
-              Restricted to verified browser origins: <code class="font-mono">{{ settings.security.corsOrigins }}</code>. All untrusted cross-origin preflight requests are rejected.
+              Restricted to verified browser origins:
+              <code class="font-mono">{{ settings.security.corsOrigins }}</code
+              >. All untrusted cross-origin preflight requests are rejected.
             </p>
           </div>
-
           <div class="security-card">
             <div class="security-card-header">
               <div class="shield-circle">
@@ -416,11 +525,13 @@
               <span class="security-card-title">Zero-Secret Vaulting</span>
             </div>
             <p class="security-card-text">
-              Provider API keys, PostgreSQL credentials, and proxy master keys reside strictly in memory/env server-side. Zero upstream credentials leak to the browser.
+              Provider API keys, PostgreSQL credentials, and proxy master keys
+              reside strictly in memory/env server-side. Zero upstream
+              credentials leak to the browser.
             </p>
           </div>
         </div>
       </div>
     </div>
-  </ng-container>
+  }
 </div>

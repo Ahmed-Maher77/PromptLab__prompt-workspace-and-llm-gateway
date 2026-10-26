@@ -4,10 +4,13 @@
     <div class="header-left">
       <h1 class="compare-title">Compare prompts</h1>
       <div class="breadcrumbs">
-        <span class="breadcrumb-current">{{ experimentName || 'Untitled comparison' }}</span>
+        <span class="breadcrumb-current">{{
+          experimentName || "Untitled comparison"
+        }}</span>
       </div>
       <p class="header-sub">
-        Evaluate prompt versions and models side by side using shared inputs, configurable criteria, and honest metrics.
+        Evaluate prompt versions and models side by side using shared inputs,
+        configurable criteria, and honest metrics.
       </p>
     </div>
 
@@ -27,18 +30,24 @@
         [disabled]="runningComparison()"
         id="btn-run-comparison"
       >
-        <span *ngIf="runningComparison()" class="spinner-sm"></span>
-        <svg *ngIf="!runningComparison()" lucidePlay [size]="14"></svg>
-        {{ runningComparison() ? 'Running Comparison...' : 'Run Comparison' }}
+        @if (runningComparison()) {
+          <span class="spinner-sm"></span>
+        }
+        @if (!runningComparison()) {
+          <svg lucidePlay [size]="14"></svg>
+        }
+        {{ runningComparison() ? "Running Comparison..." : "Run Comparison" }}
       </button>
     </div>
   </header>
 
   <!-- Error Banner -->
-  <div *ngIf="runError()" class="alert alert-danger" id="alert-compare-error">
-    <svg lucideCircleAlert [size]="16"></svg>
-    <span>{{ runError() }}</span>
-  </div>
+  @if (runError()) {
+    <div class="alert alert-danger" id="alert-compare-error">
+      <svg lucideCircleAlert [size]="16"></svg>
+      <span>{{ runError() }}</span>
+    </div>
+  }
 
   <!-- Shared Configuration Strip -->
   <section class="shared-config-panel" aria-labelledby="experiment-setup-title">
@@ -47,7 +56,10 @@
         <span class="step-badge">1</span>
         <div>
           <h2 id="experiment-setup-title">Experiment setup</h2>
-          <p class="step-sub">Define shared inputs and automated scoring criteria for both candidate configurations.</p>
+          <p class="step-sub">
+            Define shared inputs and automated scoring criteria for both
+            candidate configurations.
+          </p>
         </div>
       </div>
     </div>
@@ -64,7 +76,10 @@
       </div>
 
       <div class="sync-settings-control">
-        <label class="checkbox-label" title="Synchronizes model parameters between Slot A and Slot B">
+        <label
+          class="checkbox-label"
+          title="Synchronizes model parameters between Slot A and Slot B"
+        >
           <input
             type="checkbox"
             [ngModel]="syncSettings()"
@@ -77,35 +92,62 @@
     </div>
 
     <!-- Common Input Variables Deck -->
-    <div class="common-input-deck" *ngIf="detectedVariables().length > 0">
-      <div class="deck-title-row">
-        <span class="deck-title">Common Input Variables</span>
-        <span class="text-xs text-muted">Values provided here are shared and evaluated by both Slot A and Slot B</span>
-      </div>
-
-      <div class="variables-grid">
-        <div *ngFor="let varName of detectedVariables()" class="variable-field">
-          <label class="form-label font-mono">{{ '{{' + varName + '}}' }}</label>
-          <input
-            type="text"
-            class="form-control form-control-sm font-mono"
-            [(ngModel)]="commonInput[varName]"
-            placeholder="Enter shared test value for {{ varName }}..."
-            [id]="'input-common-var-' + varName"
-          />
+    @if (detectedVariables().length > 0) {
+      <div class="common-input-deck">
+        <div class="deck-title-row">
+          <span class="deck-title">Common Input Variables</span>
+          <span class="text-xs text-muted"
+            >Values provided here are shared and evaluated by both Slot A and
+            Slot B</span
+          >
+        </div>
+        <div class="variables-grid">
+          @for (varName of detectedVariables(); track varName) {
+            <div class="variable-field">
+              <label class="form-label font-mono"
+                >{{ '{{' + varName + '}}' }}</label
+              >
+              <input
+                type="text"
+                class="form-control form-control-sm font-mono"
+                [(ngModel)]="commonInput[varName]"
+                placeholder="Enter shared test value for {{ varName }}..."
+                [id]="'input-common-var-' + varName"
+              />
+            </div>
+          }
         </div>
       </div>
-    </div>
+    }
 
     <!-- Repeatable Evaluation Criteria Builder -->
     <div class="criteria-deck">
       <div class="deck-title-row">
         <div>
-          <span class="deck-title">Repeatable Evaluation Criteria ({{ evaluationCriteria.length }})</span>
-          <span class="text-xs text-muted" style="margin-left: var(--space-2);">Configurable criteria evaluated automatically against both outputs</span>
+          <span class="deck-title"
+            >Repeatable Evaluation Criteria ({{
+              evaluationCriteria.length
+            }})</span
+          >
+          <span class="text-xs text-muted" style="margin-left: var(--space-2)"
+            >Configurable criteria evaluated automatically against both
+            outputs</span
+          >
         </div>
-        <button type="button" class="btn btn-secondary btn-sm" (click)="addEvaluationCriterion()" id="btn-add-criterion">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          (click)="addEvaluationCriterion()"
+          id="btn-add-criterion"
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
           </svg>
@@ -114,34 +156,53 @@
       </div>
 
       <div class="criteria-list">
-        <div *ngFor="let crit of evaluationCriteria; let idx = index" class="criterion-row">
-          <input
-            type="text"
-            class="form-control form-control-sm crit-name-input"
-            [(ngModel)]="crit.name"
-            placeholder="Criterion name..."
-          />
-          <select class="form-control form-control-sm crit-type-select" [(ngModel)]="crit.type">
-            <option value="contains_text">Contains Keyword</option>
-            <option value="json_validity">Valid JSON Object</option>
-            <option value="max_length">Max Length (chars)</option>
-            <option value="regex">Matches Regex</option>
-            <option value="manual">Manual Rating</option>
-          </select>
-          <input
-            *ngIf="crit.type !== 'json_validity' && crit.type !== 'manual'"
-            type="text"
-            class="form-control form-control-sm crit-val-input font-mono"
-            [(ngModel)]="crit.expectedValue"
-            placeholder="Expected value / keyword..."
-          />
-          <button type="button" class="btn-remove-criterion" (click)="removeEvaluationCriterion(idx)" title="Remove criterion" aria-label="Remove criterion">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
+        @for (crit of evaluationCriteria; track crit; let idx = $index) {
+          <div class="criterion-row">
+            <input
+              type="text"
+              class="form-control form-control-sm crit-name-input"
+              [(ngModel)]="crit.name"
+              placeholder="Criterion name..."
+            />
+            <select
+              class="form-control form-control-sm crit-type-select"
+              [(ngModel)]="crit.type"
+            >
+              <option value="contains_text">Contains Keyword</option>
+              <option value="json_validity">Valid JSON Object</option>
+              <option value="max_length">Max Length (chars)</option>
+              <option value="regex">Matches Regex</option>
+              <option value="manual">Manual Rating</option>
+            </select>
+            @if (crit.type !== "json_validity" && crit.type !== "manual") {
+              <input
+                type="text"
+                class="form-control form-control-sm crit-val-input font-mono"
+                [(ngModel)]="crit.expectedValue"
+                placeholder="Expected value / keyword..."
+              />
+            }
+            <button
+              type="button"
+              class="btn-remove-criterion"
+              (click)="removeEvaluationCriterion(idx)"
+              title="Remove criterion"
+              aria-label="Remove criterion"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+        }
       </div>
     </div>
   </section>
@@ -153,422 +214,566 @@
         <span class="step-badge">2</span>
         <div>
           <h2 id="candidates-title">Candidate configurations</h2>
-          <p class="step-sub">Select prompt templates, versions, and model parameters to evaluate side by side.</p>
+          <p class="step-sub">
+            Select prompt templates, versions, and model parameters to evaluate
+            side by side.
+          </p>
         </div>
       </div>
     </div>
-  <section class="side-by-side-grid">
-    <!-- ==================== SLOT A ==================== -->
-    <div class="slot-column slot-a-col" id="col-slot-a">
-      <div class="slot-card">
-        <!-- Slot Header -->
-        <div class="slot-header">
-          <div class="slot-title-wrap">
-            <span class="slot-badge badge-slot-a">Slot A</span>
-            <span class="slot-prompt-display font-mono">
-              {{ comparisonResult()?.slotA?.promptName || 'Configuration A' }}
-            </span>
-          </div>
-
-          <div class="slot-status-wrap">
-            <span
-              *ngIf="comparisonResult()?.slotA"
-              class="badge"
-              [class.badge-success]="comparisonResult()?.slotA?.status === 'completed'"
-              [class.badge-danger]="comparisonResult()?.slotA?.status === 'failed'"
-            >
-              {{ comparisonResult()?.slotA?.status === 'completed' ? 'Completed' : 'Failed' }}
-            </span>
-          </div>
-        </div>
-
-        <!-- Slot Configuration Controls -->
-        <div class="slot-config-deck">
-          <div class="config-row">
-            <div class="form-group flex-2">
-              <label class="form-label">Prompt Template</label>
-              <select
-                class="form-control form-control-sm"
-                [ngModel]="slotAPromptId"
-                (ngModelChange)="onSlotAPromptChange($event)"
-                id="select-slot-a-prompt"
-              >
-                <option *ngFor="let p of prompts()" [value]="p.id">
-                  {{ p.name }} ({{ p.versionCount }} versions)
-                </option>
-              </select>
-            </div>
-
-            <div class="form-group flex-1">
-              <label class="form-label">Version</label>
-              <select
-                class="form-control form-control-sm"
-                [ngModel]="slotAVersionId"
-                (ngModelChange)="onSlotAVersionChange($event)"
-                id="select-slot-a-version"
-              >
-                <option *ngFor="let v of getPromptVersions(slotAPromptId)" [value]="v.id">
-                  v{{ v.versionNumber }}
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div class="config-row">
-            <div class="form-group flex-2">
-              <label class="form-label">Model</label>
-              <select
-                class="form-control form-control-sm"
-                [ngModel]="slotAModel"
-                (ngModelChange)="onSlotAModelChange($event)"
-                id="select-slot-a-model"
-              >
-                <option *ngFor="let m of availableModels()" [value]="m.id">
-                  {{ m.name }} ({{ m.provider }})
-                </option>
-              </select>
-            </div>
-
-            <div class="form-group flex-1">
-              <label class="form-label">Temperature: {{ slotATemperature }}</label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                [(ngModel)]="slotATemperature"
-                (ngModelChange)="onSlotATemperatureChange()"
-                class="range-slider"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- Slot A Output & Metrics -->
-        <div class="slot-output-section">
-          <!-- Metrics Strip -->
-          <div class="slot-metrics-strip" *ngIf="comparisonResult()?.slotA">
-            <div class="metric-cell">
-              <span class="cell-label">Latency</span>
-              <span class="cell-value font-mono">{{ comparisonResult()?.slotA?.latencyMs }} ms</span>
-            </div>
-            <div class="metric-cell">
-              <span class="cell-label">Tokens</span>
-              <span class="cell-value font-mono">
-                {{ comparisonResult()?.slotA?.inputTokens }} in / {{ comparisonResult()?.slotA?.outputTokens }} out
-              </span>
-              <span class="cell-sub badge" [class.badge-success]="comparisonResult()?.slotA?.tokenUsageSource === 'provider-reported'" [class.badge-neutral]="comparisonResult()?.slotA?.tokenUsageSource === 'estimated'">
-                {{ comparisonResult()?.slotA?.tokenUsageSource === 'provider-reported' ? 'Provider reported' : 'Estimated' }}
+    <section class="side-by-side-grid">
+      <!-- ==================== SLOT A ==================== -->
+      <div class="slot-column slot-a-col" id="col-slot-a">
+        <div class="slot-card">
+          <!-- Slot Header -->
+          <div class="slot-header">
+            <div class="slot-title-wrap">
+              <span class="slot-badge badge-slot-a">Slot A</span>
+              <span class="slot-prompt-display font-mono">
+                {{ comparisonResult()?.slotA?.promptName || "Configuration A" }}
               </span>
             </div>
-            <div class="metric-cell">
-              <span class="cell-label">Cost</span>
-              <span class="cell-value font-mono">
-                {{ comparisonResult()?.slotA?.estimatedCost !== null ? ('$' + comparisonResult()?.slotA?.estimatedCost) : 'N/A' }}
-              </span>
-            </div>
-          </div>
 
-          <!-- Error Alert (Partial Failure Support) -->
-          <div *ngIf="comparisonResult()?.slotA?.status === 'failed'" class="alert alert-danger slot-error">
-            <div class="error-title">Slot A Execution Failed</div>
-            <div class="error-msg">{{ comparisonResult()?.slotA?.errorMessage || 'Execution failed' }}</div>
-            <div *ngIf="comparisonResult()?.slotA?.configurationHint" class="error-hint">
-              {{ comparisonResult()?.slotA?.configurationHint }}
-            </div>
-          </div>
-
-          <!-- Completion Output Box (Whitespace Preserved) -->
-          <div
-            *ngIf="comparisonResult()?.slotA?.output"
-            class="slot-output-box font-mono"
-            id="output-slot-a"
-          >
-            {{ comparisonResult()?.slotA?.output }}
-          </div>
-
-          <!-- Placeholder when idle -->
-          <div *ngIf="!comparisonResult()?.slotA" class="slot-placeholder">
-            <p>Click "Run Comparison" to generate output for Slot A.</p>
-          </div>
-
-          <!-- Automated Criteria Results for Slot A -->
-          <div class="criteria-results-deck" *ngIf="comparisonResult()?.slotA?.criteriaResults?.length">
-            <span class="criteria-deck-heading">Automated Evaluation Criteria</span>
-            <div class="criteria-badges">
-              <span
-                *ngFor="let res of comparisonResult()?.slotA?.criteriaResults"
-                class="eval-pill"
-                [class.pill-pass]="res.passed"
-                [class.pill-fail]="!res.passed"
-                [title]="res.notes || ''"
-              >
-                <svg *ngIf="res.passed" lucideCheck [size]="12"></svg>
-                <svg *ngIf="!res.passed" lucideX [size]="12"></svg>
-                {{ res.name }}: {{ res.notes }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Manual Evaluation for Slot A -->
-          <div class="manual-rating-deck" *ngIf="comparisonResult()?.slotA">
-            <div class="rating-row">
-              <span class="rating-label">Quality Rating:</span>
-              <div class="star-rating">
-                <button
-                  *ngFor="let star of [1, 2, 3, 4, 5]"
-                  type="button"
-                  class="star-btn"
-                  [class.active]="star <= slotARating"
-                  (click)="rateSlot('A', star)"
+            <div class="slot-status-wrap">
+              @if (comparisonResult()?.slotA) {
+                <span
+                  class="badge"
+                  [class.badge-success]="
+                    comparisonResult()?.slotA?.status === 'completed'
+                  "
+                  [class.badge-danger]="
+                    comparisonResult()?.slotA?.status === 'failed'
+                  "
                 >
-                  ★
-                </button>
-              </div>
-              <span class="rating-status-text font-mono" *ngIf="!slotARating">not rated</span>
-            </div>
-            <div class="rating-notes-row">
-              <input
-                type="text"
-                class="form-control form-control-sm"
-                [(ngModel)]="slotANotes"
-                (blur)="saveSlotNotes('A')"
-                placeholder="Evaluation notes for Slot A..."
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ==================== SLOT B ==================== -->
-    <div class="slot-column slot-b-col" id="col-slot-b">
-      <div class="slot-card">
-        <!-- Slot Header -->
-        <div class="slot-header">
-          <div class="slot-title-wrap">
-            <span class="slot-badge badge-slot-b">Slot B</span>
-            <span class="slot-prompt-display font-mono">
-              {{ comparisonResult()?.slotB?.promptName || 'Configuration B' }}
-            </span>
-          </div>
-
-          <div class="slot-status-wrap">
-            <span
-              *ngIf="comparisonResult()?.slotB"
-              class="badge"
-              [class.badge-success]="comparisonResult()?.slotB?.status === 'completed'"
-              [class.badge-danger]="comparisonResult()?.slotB?.status === 'failed'"
-            >
-              {{ comparisonResult()?.slotB?.status === 'completed' ? 'Completed' : 'Failed' }}
-            </span>
-          </div>
-        </div>
-
-        <!-- Slot Configuration Controls -->
-        <div class="slot-config-deck">
-          <div class="config-row">
-            <div class="form-group flex-2">
-              <label class="form-label">Prompt Template</label>
-              <select
-                class="form-control form-control-sm"
-                [ngModel]="slotBPromptId"
-                (ngModelChange)="onSlotBPromptChange($event)"
-                id="select-slot-b-prompt"
-              >
-                <option *ngFor="let p of prompts()" [value]="p.id">
-                  {{ p.name }} ({{ p.versionCount }} versions)
-                </option>
-              </select>
-            </div>
-
-            <div class="form-group flex-1">
-              <label class="form-label">Version</label>
-              <select
-                class="form-control form-control-sm"
-                [ngModel]="slotBVersionId"
-                (ngModelChange)="onSlotBVersionChange($event)"
-                id="select-slot-b-version"
-              >
-                <option *ngFor="let v of getPromptVersions(slotBPromptId)" [value]="v.id">
-                  v{{ v.versionNumber }}
-                </option>
-              </select>
+                  {{
+                    comparisonResult()?.slotA?.status === "completed"
+                      ? "Completed"
+                      : "Failed"
+                  }}
+                </span>
+              }
             </div>
           </div>
 
-          <div class="config-row">
-            <div class="form-group flex-2">
-              <label class="form-label">Model</label>
-              <select
-                class="form-control form-control-sm"
-                [ngModel]="slotBModel"
-                (ngModelChange)="onSlotBModelChange($event)"
-                id="select-slot-b-model"
-              >
-                <option *ngFor="let m of availableModels()" [value]="m.id">
-                  {{ m.name }} ({{ m.provider }})
-                </option>
-              </select>
-            </div>
-
-            <div class="form-group flex-1">
-              <label class="form-label">Temperature: {{ slotBTemperature }}</label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                [(ngModel)]="slotBTemperature"
-                class="range-slider"
-              />
-            </div>
-          </div>
-        </div>
-
-        <!-- Slot B Output & Metrics -->
-        <div class="slot-output-section">
-          <!-- Metrics Strip -->
-          <div class="slot-metrics-strip" *ngIf="comparisonResult()?.slotB">
-            <div class="metric-cell">
-              <span class="cell-label">Latency</span>
-              <span class="cell-value font-mono">{{ comparisonResult()?.slotB?.latencyMs }} ms</span>
-            </div>
-            <div class="metric-cell">
-              <span class="cell-label">Tokens</span>
-              <span class="cell-value font-mono">
-                {{ comparisonResult()?.slotB?.inputTokens }} in / {{ comparisonResult()?.slotB?.outputTokens }} out
-              </span>
-              <span class="cell-sub badge" [class.badge-success]="comparisonResult()?.slotB?.tokenUsageSource === 'provider-reported'" [class.badge-neutral]="comparisonResult()?.slotB?.tokenUsageSource === 'estimated'">
-                {{ comparisonResult()?.slotB?.tokenUsageSource === 'provider-reported' ? 'Provider reported' : 'Estimated' }}
-              </span>
-            </div>
-            <div class="metric-cell">
-              <span class="cell-label">Cost</span>
-              <span class="cell-value font-mono">
-                {{ comparisonResult()?.slotB?.estimatedCost !== null ? ('$' + comparisonResult()?.slotB?.estimatedCost) : 'N/A' }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Error Alert (Partial Failure Support) -->
-          <div *ngIf="comparisonResult()?.slotB?.status === 'failed'" class="alert alert-danger slot-error">
-            <div class="error-title">Slot B Execution Failed</div>
-            <div class="error-msg">{{ comparisonResult()?.slotB?.errorMessage || 'Execution failed' }}</div>
-            <div *ngIf="comparisonResult()?.slotB?.configurationHint" class="error-hint">
-              {{ comparisonResult()?.slotB?.configurationHint }}
-            </div>
-          </div>
-
-          <!-- Completion Output Box (Whitespace Preserved) -->
-          <div
-            *ngIf="comparisonResult()?.slotB?.output"
-            class="slot-output-box font-mono"
-            id="output-slot-b"
-          >
-            {{ comparisonResult()?.slotB?.output }}
-          </div>
-
-          <!-- Placeholder when idle -->
-          <div *ngIf="!comparisonResult()?.slotB" class="slot-placeholder">
-            <p>Click "Run Comparison" to generate output for Slot B.</p>
-          </div>
-
-          <!-- Automated Criteria Results for Slot B -->
-          <div class="criteria-results-deck" *ngIf="comparisonResult()?.slotB?.criteriaResults?.length">
-            <span class="criteria-deck-heading">Automated Evaluation Criteria</span>
-            <div class="criteria-badges">
-              <span
-                *ngFor="let res of comparisonResult()?.slotB?.criteriaResults"
-                class="eval-pill"
-                [class.pill-pass]="res.passed"
-                [class.pill-fail]="!res.passed"
-                [title]="res.notes || ''"
-              >
-                <svg *ngIf="res.passed" lucideCheck [size]="12"></svg>
-                <svg *ngIf="!res.passed" lucideX [size]="12"></svg>
-                {{ res.name }}: {{ res.notes }}
-              </span>
-            </div>
-          </div>
-
-          <!-- Manual Evaluation for Slot B -->
-          <div class="manual-rating-deck" *ngIf="comparisonResult()?.slotB">
-            <div class="rating-row">
-              <span class="rating-label">Quality Rating:</span>
-              <div class="star-rating">
-                <button
-                  *ngFor="let star of [1, 2, 3, 4, 5]"
-                  type="button"
-                  class="star-btn"
-                  [class.active]="star <= slotBRating"
-                  (click)="rateSlot('B', star)"
+          <!-- Slot Configuration Controls -->
+          <div class="slot-config-deck">
+            <div class="config-row">
+              <div class="form-group flex-2">
+                <label class="form-label">Prompt Template</label>
+                <select
+                  class="form-control form-control-sm"
+                  [ngModel]="slotAPromptId"
+                  (ngModelChange)="onSlotAPromptChange($event)"
+                  id="select-slot-a-prompt"
                 >
-                  ★
-                </button>
+                  @for (p of prompts(); track p) {
+                    <option [value]="p.id">
+                      {{ p.name }} ({{ p.versionCount }} versions)
+                    </option>
+                  }
+                </select>
               </div>
-              <span class="rating-status-text font-mono" *ngIf="!slotBRating">not rated</span>
+
+              <div class="form-group flex-1">
+                <label class="form-label">Version</label>
+                <select
+                  class="form-control form-control-sm"
+                  [ngModel]="slotAVersionId"
+                  (ngModelChange)="onSlotAVersionChange($event)"
+                  id="select-slot-a-version"
+                >
+                  @for (v of getPromptVersions(slotAPromptId); track v) {
+                    <option [value]="v.id">v{{ v.versionNumber }}</option>
+                  }
+                </select>
+              </div>
             </div>
-            <div class="rating-notes-row">
-              <input
-                type="text"
-                class="form-control form-control-sm"
-                [(ngModel)]="slotBNotes"
-                (blur)="saveSlotNotes('B')"
-                placeholder="Evaluation notes for Slot B..."
-              />
+
+            <div class="config-row">
+              <div class="form-group flex-2">
+                <label class="form-label">Model</label>
+                <select
+                  class="form-control form-control-sm"
+                  [ngModel]="slotAModel"
+                  (ngModelChange)="onSlotAModelChange($event)"
+                  id="select-slot-a-model"
+                >
+                  @for (m of availableModels(); track m) {
+                    <option [value]="m.id">
+                      {{ m.name }} ({{ m.provider }})
+                    </option>
+                  }
+                </select>
+              </div>
+
+              <div class="form-group flex-1">
+                <label class="form-label"
+                  >Temperature: {{ slotATemperature }}</label
+                >
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  [(ngModel)]="slotATemperature"
+                  (ngModelChange)="onSlotATemperatureChange()"
+                  class="range-slider"
+                />
+              </div>
             </div>
+          </div>
+
+          <!-- Slot A Output & Metrics -->
+          <div class="slot-output-section">
+            <!-- Metrics Strip -->
+            @if (comparisonResult()?.slotA) {
+              <div class="slot-metrics-strip">
+                <div class="metric-cell">
+                  <span class="cell-label">Latency</span>
+                  <span class="cell-value font-mono"
+                    >{{ comparisonResult()?.slotA?.latencyMs }} ms</span
+                  >
+                </div>
+                <div class="metric-cell">
+                  <span class="cell-label">Tokens</span>
+                  <span class="cell-value font-mono">
+                    {{ comparisonResult()?.slotA?.inputTokens }} in /
+                    {{ comparisonResult()?.slotA?.outputTokens }} out
+                  </span>
+                  <span
+                    class="cell-sub badge"
+                    [class.badge-success]="
+                      comparisonResult()?.slotA?.tokenUsageSource ===
+                      'provider-reported'
+                    "
+                    [class.badge-neutral]="
+                      comparisonResult()?.slotA?.tokenUsageSource ===
+                      'estimated'
+                    "
+                  >
+                    {{
+                      comparisonResult()?.slotA?.tokenUsageSource ===
+                      "provider-reported"
+                        ? "Provider reported"
+                        : "Estimated"
+                    }}
+                  </span>
+                </div>
+                <div class="metric-cell">
+                  <span class="cell-label">Cost</span>
+                  <span class="cell-value font-mono">
+                    {{
+                      comparisonResult()?.slotA?.estimatedCost != null
+                        ? "$" + comparisonResult()?.slotA?.estimatedCost
+                        : "N/A"
+                    }}
+                  </span>
+                </div>
+              </div>
+            }
+
+            <!-- Error Alert (Partial Failure Support) -->
+            @if (comparisonResult()?.slotA?.status === "failed") {
+              <div class="alert alert-danger slot-error">
+                <div class="error-title">Slot A Execution Failed</div>
+                <div class="error-msg">
+                  {{
+                    comparisonResult()?.slotA?.errorMessage ||
+                      "Execution failed"
+                  }}
+                </div>
+                @if (comparisonResult()?.slotA?.configurationHint) {
+                  <div class="error-hint">
+                    {{ comparisonResult()?.slotA?.configurationHint }}
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Completion Output Box (Whitespace Preserved) -->
+            @if (comparisonResult()?.slotA?.output) {
+              <div class="slot-output-box font-mono" id="output-slot-a">
+                {{ comparisonResult()?.slotA?.output }}
+              </div>
+            }
+
+            <!-- Placeholder when idle -->
+            @if (!comparisonResult()?.slotA) {
+              <div class="slot-placeholder">
+                <p>Click "Run Comparison" to generate output for Slot A.</p>
+              </div>
+            }
+
+            <!-- Automated Criteria Results for Slot A -->
+            @if (comparisonResult()?.slotA?.criteriaResults?.length) {
+              <div class="criteria-results-deck">
+                <span class="criteria-deck-heading"
+                  >Automated Evaluation Criteria</span
+                >
+                <div class="criteria-badges">
+                  @for (
+                    res of comparisonResult()?.slotA?.criteriaResults;
+                    track res
+                  ) {
+                    <span
+                      class="eval-pill"
+                      [class.pill-pass]="res.passed"
+                      [class.pill-fail]="!res.passed"
+                      [title]="res.notes || ''"
+                    >
+                      @if (res.passed) {
+                        <svg lucideCheck [size]="12"></svg>
+                      }
+                      @if (!res.passed) {
+                        <svg lucideX [size]="12"></svg>
+                      }
+                      {{ res.name }}: {{ res.notes }}
+                    </span>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Manual Evaluation for Slot A -->
+            @if (comparisonResult()?.slotA) {
+              <div class="manual-rating-deck">
+                <div class="rating-row">
+                  <span class="rating-label">Quality Rating:</span>
+                  <div class="star-rating">
+                    @for (star of [1, 2, 3, 4, 5]; track star) {
+                      <button
+                        type="button"
+                        class="star-btn"
+                        [class.active]="star <= slotARating"
+                        (click)="rateSlot('A', star)"
+                      >
+                        ★
+                      </button>
+                    }
+                  </div>
+                  @if (!slotARating) {
+                    <span class="rating-status-text font-mono">not rated</span>
+                  }
+                </div>
+                <div class="rating-notes-row">
+                  <input
+                    type="text"
+                    class="form-control form-control-sm"
+                    [(ngModel)]="slotANotes"
+                    (blur)="saveSlotNotes('A')"
+                    placeholder="Evaluation notes for Slot A..."
+                  />
+                </div>
+              </div>
+            }
           </div>
         </div>
       </div>
-    </div>
-  </section>
+
+      <!-- ==================== SLOT B ==================== -->
+      <div class="slot-column slot-b-col" id="col-slot-b">
+        <div class="slot-card">
+          <!-- Slot Header -->
+          <div class="slot-header">
+            <div class="slot-title-wrap">
+              <span class="slot-badge badge-slot-b">Slot B</span>
+              <span class="slot-prompt-display font-mono">
+                {{ comparisonResult()?.slotB?.promptName || "Configuration B" }}
+              </span>
+            </div>
+
+            <div class="slot-status-wrap">
+              @if (comparisonResult()?.slotB) {
+                <span
+                  class="badge"
+                  [class.badge-success]="
+                    comparisonResult()?.slotB?.status === 'completed'
+                  "
+                  [class.badge-danger]="
+                    comparisonResult()?.slotB?.status === 'failed'
+                  "
+                >
+                  {{
+                    comparisonResult()?.slotB?.status === "completed"
+                      ? "Completed"
+                      : "Failed"
+                  }}
+                </span>
+              }
+            </div>
+          </div>
+
+          <!-- Slot Configuration Controls -->
+          <div class="slot-config-deck">
+            <div class="config-row">
+              <div class="form-group flex-2">
+                <label class="form-label">Prompt Template</label>
+                <select
+                  class="form-control form-control-sm"
+                  [ngModel]="slotBPromptId"
+                  (ngModelChange)="onSlotBPromptChange($event)"
+                  id="select-slot-b-prompt"
+                >
+                  @for (p of prompts(); track p) {
+                    <option [value]="p.id">
+                      {{ p.name }} ({{ p.versionCount }} versions)
+                    </option>
+                  }
+                </select>
+              </div>
+
+              <div class="form-group flex-1">
+                <label class="form-label">Version</label>
+                <select
+                  class="form-control form-control-sm"
+                  [ngModel]="slotBVersionId"
+                  (ngModelChange)="onSlotBVersionChange($event)"
+                  id="select-slot-b-version"
+                >
+                  @for (v of getPromptVersions(slotBPromptId); track v) {
+                    <option [value]="v.id">v{{ v.versionNumber }}</option>
+                  }
+                </select>
+              </div>
+            </div>
+
+            <div class="config-row">
+              <div class="form-group flex-2">
+                <label class="form-label">Model</label>
+                <select
+                  class="form-control form-control-sm"
+                  [ngModel]="slotBModel"
+                  (ngModelChange)="onSlotBModelChange($event)"
+                  id="select-slot-b-model"
+                >
+                  @for (m of availableModels(); track m) {
+                    <option [value]="m.id">
+                      {{ m.name }} ({{ m.provider }})
+                    </option>
+                  }
+                </select>
+              </div>
+
+              <div class="form-group flex-1">
+                <label class="form-label"
+                  >Temperature: {{ slotBTemperature }}</label
+                >
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  [(ngModel)]="slotBTemperature"
+                  class="range-slider"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Slot B Output & Metrics -->
+          <div class="slot-output-section">
+            <!-- Metrics Strip -->
+            @if (comparisonResult()?.slotB) {
+              <div class="slot-metrics-strip">
+                <div class="metric-cell">
+                  <span class="cell-label">Latency</span>
+                  <span class="cell-value font-mono"
+                    >{{ comparisonResult()?.slotB?.latencyMs }} ms</span
+                  >
+                </div>
+                <div class="metric-cell">
+                  <span class="cell-label">Tokens</span>
+                  <span class="cell-value font-mono">
+                    {{ comparisonResult()?.slotB?.inputTokens }} in /
+                    {{ comparisonResult()?.slotB?.outputTokens }} out
+                  </span>
+                  <span
+                    class="cell-sub badge"
+                    [class.badge-success]="
+                      comparisonResult()?.slotB?.tokenUsageSource ===
+                      'provider-reported'
+                    "
+                    [class.badge-neutral]="
+                      comparisonResult()?.slotB?.tokenUsageSource ===
+                      'estimated'
+                    "
+                  >
+                    {{
+                      comparisonResult()?.slotB?.tokenUsageSource ===
+                      "provider-reported"
+                        ? "Provider reported"
+                        : "Estimated"
+                    }}
+                  </span>
+                </div>
+                <div class="metric-cell">
+                  <span class="cell-label">Cost</span>
+                  <span class="cell-value font-mono">
+                    {{
+                      comparisonResult()?.slotB?.estimatedCost != null
+                        ? "$" + comparisonResult()?.slotB?.estimatedCost
+                        : "N/A"
+                    }}
+                  </span>
+                </div>
+              </div>
+            }
+
+            <!-- Error Alert (Partial Failure Support) -->
+            @if (comparisonResult()?.slotB?.status === "failed") {
+              <div class="alert alert-danger slot-error">
+                <div class="error-title">Slot B Execution Failed</div>
+                <div class="error-msg">
+                  {{
+                    comparisonResult()?.slotB?.errorMessage ||
+                      "Execution failed"
+                  }}
+                </div>
+                @if (comparisonResult()?.slotB?.configurationHint) {
+                  <div class="error-hint">
+                    {{ comparisonResult()?.slotB?.configurationHint }}
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Completion Output Box (Whitespace Preserved) -->
+            @if (comparisonResult()?.slotB?.output) {
+              <div class="slot-output-box font-mono" id="output-slot-b">
+                {{ comparisonResult()?.slotB?.output }}
+              </div>
+            }
+
+            <!-- Placeholder when idle -->
+            @if (!comparisonResult()?.slotB) {
+              <div class="slot-placeholder">
+                <p>Click "Run Comparison" to generate output for Slot B.</p>
+              </div>
+            }
+
+            <!-- Automated Criteria Results for Slot B -->
+            @if (comparisonResult()?.slotB?.criteriaResults?.length) {
+              <div class="criteria-results-deck">
+                <span class="criteria-deck-heading"
+                  >Automated Evaluation Criteria</span
+                >
+                <div class="criteria-badges">
+                  @for (
+                    res of comparisonResult()?.slotB?.criteriaResults;
+                    track res
+                  ) {
+                    <span
+                      class="eval-pill"
+                      [class.pill-pass]="res.passed"
+                      [class.pill-fail]="!res.passed"
+                      [title]="res.notes || ''"
+                    >
+                      @if (res.passed) {
+                        <svg lucideCheck [size]="12"></svg>
+                      }
+                      @if (!res.passed) {
+                        <svg lucideX [size]="12"></svg>
+                      }
+                      {{ res.name }}: {{ res.notes }}
+                    </span>
+                  }
+                </div>
+              </div>
+            }
+
+            <!-- Manual Evaluation for Slot B -->
+            @if (comparisonResult()?.slotB) {
+              <div class="manual-rating-deck">
+                <div class="rating-row">
+                  <span class="rating-label">Quality Rating:</span>
+                  <div class="star-rating">
+                    @for (star of [1, 2, 3, 4, 5]; track star) {
+                      <button
+                        type="button"
+                        class="star-btn"
+                        [class.active]="star <= slotBRating"
+                        (click)="rateSlot('B', star)"
+                      >
+                        ★
+                      </button>
+                    }
+                  </div>
+                  @if (!slotBRating) {
+                    <span class="rating-status-text font-mono">not rated</span>
+                  }
+                </div>
+                <div class="rating-notes-row">
+                  <input
+                    type="text"
+                    class="form-control form-control-sm"
+                    [(ngModel)]="slotBNotes"
+                    (blur)="saveSlotNotes('B')"
+                    placeholder="Evaluation notes for Slot B..."
+                  />
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    </section>
   </section>
 
   <!-- Nondeterminism Disclaimer per DESIGN_SYSTEM.md -->
   <footer class="compare-footer-disclaimer">
     <svg lucideInfo [size]="14"></svg>
     <span>
-      <strong>Notice:</strong> LLM generation outputs are nondeterministic. Latency, token metrics, and output text may vary between consecutive runs under the same configuration.
+      <strong>Notice:</strong> LLM generation outputs are nondeterministic.
+      Latency, token metrics, and output text may vary between consecutive runs
+      under the same configuration.
     </span>
   </footer>
 
   <!-- ==================== SAVED EXPERIMENTS DRAWER ==================== -->
-  <div class="history-drawer-backdrop" *ngIf="showHistoryDrawer()" (click)="toggleHistoryDrawer()">
-    <div class="history-drawer" (click)="$event.stopPropagation()">
-      <div class="drawer-header">
-        <span class="drawer-title">Comparison History</span>
-        <button class="btn btn-ghost btn-sm" (click)="toggleHistoryDrawer()"><svg lucideX [size]="14"></svg></button>
-      </div>
-
-      <div class="drawer-body">
-        <div *ngIf="loadingHistory()" class="loading-state">
-          <div class="spinner"></div>
-          <p>Loading experiments...</p>
+  @if (showHistoryDrawer()) {
+    <div class="history-drawer-backdrop" (click)="toggleHistoryDrawer()">
+      <div class="history-drawer" (click)="$event.stopPropagation()">
+        <div class="drawer-header">
+          <span class="drawer-title">Comparison History</span>
+          <button class="btn btn-ghost btn-sm" (click)="toggleHistoryDrawer()">
+            <svg lucideX [size]="14"></svg>
+          </button>
         </div>
-
-        <div *ngIf="!loadingHistory() && savedExperiments().length === 0" class="empty-state">
-          <p>No previous comparison runs saved yet.</p>
-        </div>
-
-        <div class="history-list" *ngIf="!loadingHistory() && savedExperiments().length > 0">
-          <div
-            *ngFor="let exp of savedExperiments()"
-            class="history-card"
-            (click)="loadSavedExperiment(exp.id)"
-          >
-            <div class="history-card-header">
-              <span class="history-card-title">{{ exp.name }}</span>
-              <span class="history-card-date">{{ exp.createdAt | date:'short' }}</span>
+        <div class="drawer-body">
+          @if (loadingHistory()) {
+            <div class="loading-state">
+              <div class="spinner"></div>
+              <p>Loading experiments...</p>
             </div>
-            <div class="history-runs-info">
-              <span *ngFor="let r of exp.runs" class="run-mini-tag">
-                Slot {{ r.slot }}: {{ r.model }} ({{ r.status }})
-              </span>
+          }
+          @if (!loadingHistory() && savedExperiments().length === 0) {
+            <div class="empty-state">
+              <p>No previous comparison runs saved yet.</p>
             </div>
-          </div>
+          }
+          @if (!loadingHistory() && savedExperiments().length > 0) {
+            <div class="history-list">
+              @for (exp of savedExperiments(); track exp) {
+                <div class="history-card" (click)="loadSavedExperiment(exp.id)">
+                  <div class="history-card-header">
+                    <span class="history-card-title">{{ exp.name }}</span>
+                    <span class="history-card-date">{{
+                      exp.createdAt | date: "short"
+                    }}</span>
+                  </div>
+                  <div class="history-runs-info">
+                    @for (r of exp.runs; track r) {
+                      <span class="run-mini-tag">
+                        Slot {{ r.slot }}: {{ r.model }} ({{ r.status }})
+                      </span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
         </div>
       </div>
     </div>
-  </div>
+  }
 </div>

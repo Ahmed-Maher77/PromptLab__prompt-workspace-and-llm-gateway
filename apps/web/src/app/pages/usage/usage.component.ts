@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -27,6 +27,7 @@ import {
   ],
   templateUrl: './usage.component.html',
   styleUrls: ['./usage.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class UsageComponent implements OnInit {
   status: QuotaPeriodStatus | null = null;
