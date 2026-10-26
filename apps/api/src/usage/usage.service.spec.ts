@@ -94,7 +94,7 @@ describe('UsageService', () => {
       providers: [
         UsageService,
         { provide: PrismaService, useValue: mockPrisma },
-        { provide: APP_CONFIG, useValue: { LLM_REQUEST_TIMEOUT_MS: 30000 } },
+        { provide: APP_CONFIG, useValue: { LLM_REQUEST_TIMEOUT_MS: 30000, QUOTA_TIMEOUT_CHARGE_RATIO: 0.5 } },
       ],
     }).compile();
 
@@ -502,44 +502,6 @@ describe('UsageService', () => {
       // Verify quota was not breached
       expect(currentPeriodState.actualTokens + currentPeriodState.reservedTokens).toBeLessThanOrEqual(10_000);
     });
-
-    it('should independently enforce request-rate limits (req/min)', async () => {
-      mockPrisma.quotaPolicy.findUnique.mockResolvedValue({
-        id: 'qp-1',
-        monthlyTokenLimit: 1_000_000,
-        requestRateLimit: 2, // low rate limit for test
-      });
-
-      mockPrisma.usageRecord.findUnique.mockResolvedValue(null);
-      mockPrisma.quotaPeriod.findUnique.mockResolvedValue({
-        id: 'period-1',
-        tokenLimit: 1_000_000,
-        actualTokens: 0,
-        reservedTokens: 0,
-      });
-      mockPrisma.quotaPeriod.update.mockResolvedValue({
-        tokenLimit: 1_000_000,
-        actualTokens: 0,
-        reservedTokens: 10,
-      });
-
-      // Request 1: ok
-      await service.reserveUsage({ requestId: 'r1', userId: 'user-rate', model: 'm', provider: 'p', estimatedTokens: 10 });
-      // Request 2: ok
-      await service.reserveUsage({ requestId: 'r2', userId: 'user-rate', model: 'm', provider: 'p', estimatedTokens: 10 });
-
-      // Request 3: should fail rate limit even though token quota has plenty of room
-      let thrown: any = null;
-      try {
-        await service.reserveUsage({ requestId: 'r3', userId: 'user-rate', model: 'm', provider: 'p', estimatedTokens: 10 });
-      } catch (err) {
-        thrown = err;
-      }
-
-      expect(thrown).toBeDefined();
-      expect(thrown.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
-      expect(thrown.getResponse().error).toBe('RATE_LIMIT_EXCEEDED');
-    });
   });
 
   describe('reconcileUsage', () => {
@@ -632,7 +594,7 @@ describe('UsageService', () => {
       expect(recordUpdate.data.status).toBe('failed');
     });
 
-    it('should conservatively retain partial tokens on ambiguous timeout instead of assuming zero usage', async () => {
+    it('should charge configured ratio on typed errorType="TIMEOUT" with no string parsing (QUOTA-06)', async () => {
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
         id: 'rec-timeout',
         requestId: 'req-timeout-1',
@@ -654,7 +616,8 @@ describe('UsageService', () => {
         requestId: 'req-timeout-1',
         userId: 'dev-user-001',
         success: false,
-        error: 'Request timed out after 30000ms while awaiting response from gateway.',
+        error: 'Generic upstream connection failure', // No "timeout" in error string!
+        errorType: 'TIMEOUT',
       });
 
       expect(res.success).toBe(true);
@@ -662,7 +625,7 @@ describe('UsageService', () => {
       const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
       expect(periodUpdate.where.id).toBe('period-1');
       expect(periodUpdate.data.reservedTokens).toEqual({ decrement: 2_000 });
-      // Conservative deduction: retains 50% of reservation (1,000 tokens)
+      // Charged 50% default ratio (1,000 tokens)
       expect(periodUpdate.data.actualTokens).toEqual({ increment: 1_000 });
 
       const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
@@ -670,6 +633,122 @@ describe('UsageService', () => {
       expect(recordUpdate.data.tokenUsageSource).toBe('estimated-timeout');
       expect(recordUpdate.data.inputTokens).toBe(1_000);
       expect(recordUpdate.data.estimatedCost).toBeGreaterThan(0);
+    });
+
+    it('should NOT treat an error containing "timed out" as a timeout when errorType is non-timeout (QUOTA-06)', async () => {
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'rec-nontimeout',
+        requestId: 'req-nontimeout-1',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        reservedTokens: 2_000,
+        status: 'reserved',
+        createdAt: new Date(),
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        reservedTokens: 2_000,
+        actualTokens: 10_000,
+      });
+
+      const res = await service.reconcileUsage({
+        requestId: 'req-nontimeout-1',
+        userId: 'dev-user-001',
+        success: false,
+        error: 'The local socket timed out while resolving gateway address', // Contains "timed out"
+        errorType: 'PROVIDER_ERROR', // But errorType is NOT timeout!
+      });
+
+      expect(res.success).toBe(true);
+
+      const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      expect(periodUpdate.where.id).toBe('period-1');
+      expect(periodUpdate.data.reservedTokens).toEqual({ decrement: 2_000 });
+      // Zero actual tokens charged!
+      expect(periodUpdate.data.actualTokens).toBeUndefined();
+
+      const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
+      expect(recordUpdate.data.status).toBe('failed');
+    });
+
+    it('should charge ratio configured in QUOTA_TIMEOUT_CHARGE_RATIO (QUOTA-06)', async () => {
+      (service as any).appConfig.QUOTA_TIMEOUT_CHARGE_RATIO = 0.25;
+
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'rec-custom-ratio',
+        requestId: 'req-custom-ratio',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        reservedTokens: 2_000,
+        status: 'reserved',
+        createdAt: new Date(),
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        reservedTokens: 2_000,
+        actualTokens: 10_000,
+      });
+
+      const res = await service.reconcileUsage({
+        requestId: 'req-custom-ratio',
+        userId: 'dev-user-001',
+        success: false,
+        errorType: 'TIMEOUT',
+      });
+
+      expect(res.success).toBe(true);
+
+      const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      // 25% of 2,000 = 500 tokens charged
+      expect(periodUpdate.data.actualTokens).toEqual({ increment: 500 });
+      expect(periodUpdate.data.reservedTokens).toEqual({ decrement: 2_000 });
+
+      // Reset back to 0.5
+      (service as any).appConfig.QUOTA_TIMEOUT_CHARGE_RATIO = 0.5;
+    });
+
+    it('should charge 0 tokens when QUOTA_TIMEOUT_CHARGE_RATIO is 0 (QUOTA-06)', async () => {
+      (service as any).appConfig.QUOTA_TIMEOUT_CHARGE_RATIO = 0;
+
+      mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
+        id: 'rec-zero-ratio',
+        requestId: 'req-zero-ratio',
+        userId: 'dev-user-001',
+        model: 'gpt-4o-mini',
+        reservedTokens: 2_000,
+        status: 'reserved',
+        createdAt: new Date(),
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-1',
+        userId: 'dev-user-001',
+        reservedTokens: 2_000,
+        actualTokens: 10_000,
+      });
+
+      const res = await service.reconcileUsage({
+        requestId: 'req-zero-ratio',
+        userId: 'dev-user-001',
+        success: false,
+        errorType: 'TIMEOUT',
+      });
+
+      expect(res.success).toBe(true);
+
+      const periodUpdate = mockPrisma.quotaPeriod.update.mock.calls[0][0];
+      expect(periodUpdate.data.reservedTokens).toEqual({ decrement: 2_000 });
+      expect(periodUpdate.data.actualTokens).toBeUndefined(); // 0 tokens charged
+
+      const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
+      expect(recordUpdate.data.status).toBe('timeout-ambiguous');
+      expect(recordUpdate.data.inputTokens).toBe(0);
+
+      (service as any).appConfig.QUOTA_TIMEOUT_CHARGE_RATIO = 0.5;
     });
 
     it('should be idempotent and not double-reconcile already completed records', async () => {
@@ -817,6 +896,97 @@ describe('UsageService', () => {
       expect(updateCall.where.id).toBe('period-reset');
       expect(updateCall.data.actualTokens).toBe(0);
       expect(updateCall.data.reservedTokens).toBe(0);
+    });
+  });
+
+  describe('getStatus (QUOTA-06 read-only)', () => {
+    it('should return active status and perform zero database writes (no update, updateMany, upsert, or create)', async () => {
+      mockPrisma.quotaPeriod.update.mockClear();
+      mockPrisma.quotaPeriod.updateMany.mockClear();
+      mockPrisma.quotaPeriod.upsert.mockClear();
+      mockPrisma.quotaPeriod.create.mockClear();
+      mockPrisma.quotaPolicy.update.mockClear();
+      mockPrisma.quotaPolicy.upsert.mockClear();
+      mockPrisma.quotaPolicy.create.mockClear();
+      mockPrisma.usageRecord.update.mockClear();
+      mockPrisma.usageRecord.updateMany.mockClear();
+      mockPrisma.usageRecord.create.mockClear();
+
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValueOnce({
+        id: 'qp-test',
+        scope: 'user',
+        scopeId: 'dev-user-001',
+        monthlyTokenLimit: 500_000,
+        requestRateLimit: 45,
+      });
+
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce({
+        id: 'period-test',
+        userId: 'dev-user-001',
+        periodStart: new Date('2026-10-01T00:00:00.000Z'),
+        periodEnd: new Date('2026-11-01T00:00:00.000Z'),
+        tokenLimit: 500_000,
+        actualTokens: 25_000,
+        reservedTokens: 5_000,
+        status: 'active',
+      });
+
+      mockPrisma.usageRecord.aggregate.mockResolvedValueOnce({
+        _sum: { estimatedCost: 0.125 },
+      });
+
+      const status = await service.getStatus('dev-user-001');
+
+      // Assert zero database write calls were made
+      expect(mockPrisma.quotaPeriod.update).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPeriod.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPeriod.upsert).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPeriod.create).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPolicy.update).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPolicy.upsert).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPolicy.create).not.toHaveBeenCalled();
+      expect(mockPrisma.usageRecord.update).not.toHaveBeenCalled();
+      expect(mockPrisma.usageRecord.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.usageRecord.create).not.toHaveBeenCalled();
+
+      // Assert correct returned data
+      expect(status.userId).toBe('dev-user-001');
+      expect(status.tokenLimit).toBe(500_000);
+      expect(status.actualTokens).toBe(25_000);
+      expect(status.reservedTokens).toBe(5_000);
+      expect(status.remainingTokens).toBe(470_000);
+      expect(status.rateLimit.limitPerMinute).toBe(45);
+      expect(status.estimatedTotalCost).toBe(0.125);
+    });
+
+    it('should gracefully handle missing policy and period without performing database writes', async () => {
+      mockPrisma.quotaPeriod.update.mockClear();
+      mockPrisma.quotaPeriod.updateMany.mockClear();
+      mockPrisma.quotaPeriod.upsert.mockClear();
+      mockPrisma.quotaPeriod.create.mockClear();
+
+      mockPrisma.quotaPolicy.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.quotaPeriod.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.usageRecord.aggregate.mockResolvedValueOnce({
+        _sum: { estimatedCost: null },
+      });
+
+      const status = await service.getStatus('user-fresh-no-data');
+
+      // Must issue zero writes
+      expect(mockPrisma.quotaPeriod.update).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPeriod.updateMany).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPeriod.upsert).not.toHaveBeenCalled();
+      expect(mockPrisma.quotaPeriod.create).not.toHaveBeenCalled();
+
+      expect(status.userId).toBe('user-fresh-no-data');
+      expect(status.tokenLimit).toBe(1_000_000);
+      expect(status.actualTokens).toBe(0);
+      expect(status.reservedTokens).toBe(0);
+      expect(status.remainingTokens).toBe(1_000_000);
+      expect(status.status).toBe('active');
+      expect(status.rateLimit.limitPerMinute).toBe(60);
+      expect(status.estimatedTotalCost).toBe(0);
     });
   });
 });

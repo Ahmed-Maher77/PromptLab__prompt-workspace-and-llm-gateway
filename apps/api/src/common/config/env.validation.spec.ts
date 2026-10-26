@@ -42,6 +42,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     expect(config.IS_DEV_OR_TEST).toBe(true);
     expect(config.AUTH_DEV_TOKENS_ENABLED).toBe(false);
     expect(config.LLM_REQUEST_TIMEOUT_MS).toBe(30000);
+    expect(config.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0.5);
   });
 
   it('parses custom PORT, CORS origins, and custom LLM_REQUEST_TIMEOUT_MS', () => {
@@ -382,6 +383,65 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
         TELEMETRY_ENABLED: 'false',
       });
       expect(config.ENABLE_TELEMETRY).toBe(false);
+    });
+  });
+
+  describe('QUOTA_TIMEOUT_CHARGE_RATIO validation (QUOTA-06)', () => {
+    it('defaults QUOTA_TIMEOUT_CHARGE_RATIO to 0.5 when unset', () => {
+      const config = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+      });
+      expect(config.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0.5);
+    });
+
+    it('accepts valid floating-point numbers between 0.0 and 1.0', () => {
+      const c0 = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        QUOTA_TIMEOUT_CHARGE_RATIO: '0',
+      });
+      expect(c0.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0);
+
+      const c25 = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        QUOTA_TIMEOUT_CHARGE_RATIO: '0.25',
+      });
+      expect(c25.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0.25);
+
+      const c1 = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        QUOTA_TIMEOUT_CHARGE_RATIO: '1.0',
+      });
+      expect(c1.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(1.0);
+    });
+
+    it('throws on non-numeric or out-of-range ratio values', () => {
+      expect(() =>
+        validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          QUOTA_TIMEOUT_CHARGE_RATIO: '-0.1',
+        }),
+      ).toThrow(/Invalid QUOTA_TIMEOUT_CHARGE_RATIO/);
+
+      expect(() =>
+        validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          QUOTA_TIMEOUT_CHARGE_RATIO: '1.5',
+        }),
+      ).toThrow(/Invalid QUOTA_TIMEOUT_CHARGE_RATIO/);
+
+      expect(() =>
+        validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          QUOTA_TIMEOUT_CHARGE_RATIO: 'invalid-ratio',
+        }),
+      ).toThrow(/Invalid QUOTA_TIMEOUT_CHARGE_RATIO/);
     });
   });
 });

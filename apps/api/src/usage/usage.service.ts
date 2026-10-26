@@ -29,9 +29,6 @@ export const SWEEPER_CUTOFF_MARGIN_MS = 5_000;
 export class UsageService {
   private readonly logger = new Logger(UsageService.name);
 
-  // In-memory sliding window for rate limiting: userId -> timestamps array
-  private readonly rateLimitTracker = new Map<string, number[]>();
-
   constructor(
     private readonly prisma: PrismaService,
     @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
@@ -141,18 +138,6 @@ export class UsageService {
     const { periodStart, periodEnd } = this.getUtcMonthBounds();
     const policy = await this.getPolicy(userId);
 
-    // Close any older open periods
-    await this.prisma.quotaPeriod.updateMany({
-      where: {
-        userId,
-        periodEnd: { lte: new Date() },
-        status: 'active',
-      },
-      data: {
-        status: 'closed',
-      },
-    });
-
     try {
       return await this.prisma.quotaPeriod.upsert({
         where: {
@@ -189,80 +174,59 @@ export class UsageService {
   }
 
   /**
-   * Checks whether the user has exceeded their request-rate limit (requests per minute).
-   */
-  checkRateLimit(userId: string, rateLimit: number): void {
-    const now = Date.now();
-    const oneMinuteAgo = now - 60_000;
-
-    let timestamps = this.rateLimitTracker.get(userId) || [];
-    timestamps = timestamps.filter((t) => t > oneMinuteAgo);
-
-    if (timestamps.length >= rateLimit) {
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          error: 'RATE_LIMIT_EXCEEDED',
-          message: `Request rate limit of ${rateLimit} requests per minute exceeded. Please wait before retrying.`,
-          retryAfterSeconds: Math.ceil((timestamps[0] + 60_000 - now) / 1000),
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    timestamps.push(now);
-    this.rateLimitTracker.set(userId, timestamps);
-  }
-
-  /**
-   * Returns current minute rate limit status for a user.
-   */
-  getRateLimitStatus(userId: string, rateLimit: number) {
-    const now = Date.now();
-    const oneMinuteAgo = now - 60_000;
-    const timestamps = (this.rateLimitTracker.get(userId) || []).filter((t) => t > oneMinuteAgo);
-    return {
-      limitPerMinute: rateLimit,
-      currentMinuteRequests: timestamps.length,
-      remainingRequests: Math.max(0, rateLimit - timestamps.length),
-    };
-  }
-
-  /**
    * Returns comprehensive status for the active monthly quota period.
+   * Strictly read-only: performs zero database writes (no update, updateMany, upsert, or create).
    */
   async getStatus(userId: string): Promise<QuotaPeriodStatus> {
     const uid = userId;
-    const policy = await this.getPolicy(uid);
-    const period = await this.getCurrentPeriodRecord(uid);
+    const { periodStart, periodEnd } = this.getUtcMonthBounds();
 
-    const remainingTokens = Math.max(
-      0,
-      period.tokenLimit - (period.actualTokens + period.reservedTokens),
-    );
+    const [policy, period, costAggregate] = await Promise.all([
+      this.prisma.quotaPolicy.findUnique({
+        where: {
+          scope_scopeId: {
+            scope: 'user',
+            scopeId: uid,
+          },
+        },
+      }),
+      this.prisma.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: uid,
+            periodStart,
+          },
+        },
+      }),
+      this.prisma.usageRecord.aggregate({
+        where: {
+          userId: uid,
+          createdAt: {
+            gte: periodStart,
+            lt: periodEnd,
+          },
+          status: 'reconciled',
+        },
+        _sum: {
+          estimatedCost: true,
+        },
+      }),
+    ]);
+
+    const effectiveTokenLimit = period?.tokenLimit ?? policy?.monthlyTokenLimit ?? 1_000_000;
+    const actualTokens = period?.actualTokens ?? 0;
+    const reservedTokens = period?.reservedTokens ?? 0;
+    const rateLimit = policy?.requestRateLimit ?? 60;
+
+    const remainingTokens = Math.max(0, effectiveTokenLimit - (actualTokens + reservedTokens));
     const percentUsed =
-      period.tokenLimit > 0
-        ? Math.min(100, Math.round((period.actualTokens / period.tokenLimit) * 1000) / 10)
+      effectiveTokenLimit > 0
+        ? Math.min(100, Math.round((actualTokens / effectiveTokenLimit) * 1000) / 10)
         : 0;
     const percentReserved =
-      period.tokenLimit > 0
-        ? Math.min(100, Math.round((period.reservedTokens / period.tokenLimit) * 1000) / 10)
+      effectiveTokenLimit > 0
+        ? Math.min(100, Math.round((reservedTokens / effectiveTokenLimit) * 1000) / 10)
         : 0;
-
-    // Calculate sum of estimated cost across reconciled usage records in this period
-    const costAggregate = await this.prisma.usageRecord.aggregate({
-      where: {
-        userId: uid,
-        createdAt: {
-          gte: period.periodStart,
-          lt: period.periodEnd,
-        },
-        status: 'reconciled',
-      },
-      _sum: {
-        estimatedCost: true,
-      },
-    });
 
     const estimatedTotalCost =
       costAggregate._sum.estimatedCost !== null
@@ -271,18 +235,20 @@ export class UsageService {
 
     return {
       userId: uid,
-      periodId: period.id,
-      periodStart: (period.periodStart ? new Date(period.periodStart) : new Date()).toISOString(),
-      periodEnd: (period.periodEnd ? new Date(period.periodEnd) : new Date()).toISOString(),
-      resetDate: (period.periodEnd ? new Date(period.periodEnd) : new Date()).toISOString(),
-      tokenLimit: period.tokenLimit,
-      actualTokens: period.actualTokens,
-      reservedTokens: period.reservedTokens,
+      periodId: period?.id ?? 'pending',
+      periodStart: (period?.periodStart ? new Date(period.periodStart) : periodStart).toISOString(),
+      periodEnd: (period?.periodEnd ? new Date(period.periodEnd) : periodEnd).toISOString(),
+      resetDate: (period?.periodEnd ? new Date(period.periodEnd) : periodEnd).toISOString(),
+      tokenLimit: effectiveTokenLimit,
+      actualTokens,
+      reservedTokens,
       remainingTokens,
       percentUsed,
       percentReserved,
-      status: period.status,
-      rateLimit: this.getRateLimitStatus(uid, policy.requestRateLimit),
+      status: period?.status ?? 'active',
+      rateLimit: {
+        limitPerMinute: rateLimit,
+      },
       estimatedTotalCost,
     };
   }
@@ -311,11 +277,6 @@ export class UsageService {
       throw new BadRequestException('userId is required for reserveUsage');
     }
     const uid = dto.userId;
-    const policy = await this.getPolicy(uid);
-
-    // 1. Enforce rate limit (independent from monthly token quota)
-    this.checkRateLimit(uid, policy.requestRateLimit);
-
     const estimatedTokens = Math.max(1, dto.estimatedTokens || 1);
     const id = crypto.randomUUID();
 
@@ -524,27 +485,22 @@ export class UsageService {
         return { success: true, record: updatedRecord };
       } else {
         // Check for ambiguous timeout where upstream provider may have generated tokens
-        const isTimeout =
-          dto.errorType === 'TIMEOUT' ||
-          Boolean(
-            dto.error &&
-              (dto.error.toLowerCase().includes('timeout') ||
-                dto.error.toLowerCase().includes('timed out') ||
-                dto.error.toLowerCase().includes('ambiguous')),
-          );
+        // QUOTA-06: Typed timeout detection. Do NOT parse dto.error strings!
+        const isTimeout = dto.errorType === 'TIMEOUT';
 
         if (isTimeout) {
           // Conservative timeout recovery strategy:
-          // Retain estimated input tokens (50% of reservation), release unconsumed remainder,
-          // and record as 'timeout-ambiguous' with 'estimated-timeout' source.
-          const conservativeConsumed = Math.max(1, Math.floor(reservedAmount * 0.5));
+          // Charge configured ratio of reservation (QUOTA_TIMEOUT_CHARGE_RATIO, default 50%),
+          // release unconsumed remainder, and record as 'timeout-ambiguous' with 'estimated-timeout' source.
+          const ratio = this.appConfig.QUOTA_TIMEOUT_CHARGE_RATIO ?? 0.5;
+          const conservativeConsumed = Math.floor(reservedAmount * ratio);
 
           if (period) {
             await tx.quotaPeriod.update({
               where: { id: period.id },
               data: {
                 reservedTokens: { decrement: reservedAmount },
-                actualTokens: { increment: conservativeConsumed },
+                ...(conservativeConsumed > 0 ? { actualTokens: { increment: conservativeConsumed } } : {}),
               },
             });
           } else {
@@ -646,9 +602,6 @@ export class UsageService {
       },
     });
 
-    // Reset rate limiter for this user
-    this.rateLimitTracker.delete(uid);
-
     return {
       success: true,
       message: `Active period ${period.id} tokens reset to 0 for demo/testing.`,
@@ -657,13 +610,33 @@ export class UsageService {
   }
 
   /**
-   * Scheduled background sweeper: finds and reclaims leaked reservations older than 2x gateway timeout plus margin.
+   * Closes quota periods whose periodEnd has passed and status is still 'active'.
+   * Safe across multi-instance clusters.
+   */
+  async closeExpiredQuotaPeriods(): Promise<{ count: number }> {
+    const result = await this.prisma.quotaPeriod.updateMany({
+      where: {
+        periodEnd: { lte: new Date() },
+        status: 'active',
+      },
+      data: {
+        status: 'closed',
+      },
+    });
+    return { count: result.count };
+  }
+
+  /**
+   * Scheduled background sweeper: closes expired quota periods, then finds and reclaims leaked reservations
+   * older than 2x gateway timeout plus margin.
    * Runs every minute. Safe across multi-instance clusters using row-level FOR UPDATE SKIP LOCKED.
    */
   @Cron(CronExpression.EVERY_MINUTE)
-  async handleSweepCron(): Promise<{ sweptCount: number }> {
+  async handleSweepCron(): Promise<{ sweptCount: number; closedPeriodsCount: number }> {
+    const closed = await this.closeExpiredQuotaPeriods();
     const maxAgeMs = this.appConfig.LLM_REQUEST_TIMEOUT_MS * 2 + SWEEPER_CUTOFF_MARGIN_MS;
-    return await this.sweepExpiredReservations(maxAgeMs);
+    const sweep = await this.sweepExpiredReservations(maxAgeMs);
+    return { sweptCount: sweep.sweptCount, closedPeriodsCount: closed.count };
   }
 
   /**

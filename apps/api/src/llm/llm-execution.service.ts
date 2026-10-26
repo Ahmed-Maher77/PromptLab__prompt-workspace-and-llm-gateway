@@ -278,7 +278,7 @@ export class LlmExecutionService {
     if (
       providerErrorType === 'timeout' ||
       executionError?.name === 'TimeoutError' ||
-      executionError?.message?.toLowerCase().includes('timeout')
+      executionError?.code === 'ETIMEDOUT'
     ) {
       return 'TIMEOUT';
     }

@@ -64,6 +64,7 @@ export interface ValidatedEnvironment {
   ENABLE_DEMO_ENDPOINTS: boolean;
   TRUST_PROXY: string | number | false;
   LLM_REQUEST_TIMEOUT_MS: number;
+  QUOTA_TIMEOUT_CHARGE_RATIO: number;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   LANGFUSE_HOST?: string;
   LANGFUSE_BASEURL?: string;
@@ -240,6 +241,18 @@ export function validateEnvironment(
   const llmRequestTimeoutMs =
     !isNaN(rawLlmTimeout) && rawLlmTimeout > 0 ? rawLlmTimeout : 30000;
 
+  const rawRatio = env.QUOTA_TIMEOUT_CHARGE_RATIO;
+  let quotaTimeoutChargeRatio = 0.5;
+  if (rawRatio !== undefined && rawRatio !== null && String(rawRatio).trim() !== '') {
+    const parsedRatio = parseFloat(String(rawRatio));
+    if (isNaN(parsedRatio) || parsedRatio < 0 || parsedRatio > 1) {
+      throw new Error(
+        `[Startup Error] Invalid QUOTA_TIMEOUT_CHARGE_RATIO: "${rawRatio}". Must be a number between 0.0 and 1.0 inclusive.`,
+      );
+    }
+    quotaTimeoutChargeRatio = parsedRatio;
+  }
+
   return {
     APP_VERSION: packageVersion,
     DATABASE_URL: env.DATABASE_URL!,
@@ -278,6 +291,7 @@ export function validateEnvironment(
       return raw;
     })(),
     LLM_REQUEST_TIMEOUT_MS: llmRequestTimeoutMs,
+    QUOTA_TIMEOUT_CHARGE_RATIO: quotaTimeoutChargeRatio,
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
     LANGFUSE_HOST: env.LANGFUSE_HOST || env.LANGFUSE_BASEURL,
     LANGFUSE_BASEURL: env.LANGFUSE_BASEURL || env.LANGFUSE_HOST,

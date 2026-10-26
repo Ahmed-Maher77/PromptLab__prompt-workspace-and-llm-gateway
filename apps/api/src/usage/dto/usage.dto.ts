@@ -25,6 +25,14 @@ export class ReserveUsageDto {
 
 import { StoredLlmResponse } from '../usage.types';
 
+export type ReconcileErrorType =
+  | 'TIMEOUT'
+  | 'RATE_LIMITED'
+  | 'AUTH_ERROR'
+  | 'INVALID_REQUEST'
+  | 'PROVIDER_ERROR'
+  | string;
+
 export class ReconcileUsageDto {
   requestId!: string;
   userId!: string;
@@ -37,7 +45,7 @@ export class ReconcileUsageDto {
   };
   latencyMs?: number;
   error?: string;
-  errorType?: 'TIMEOUT' | 'RATE_LIMITED' | 'AUTH_ERROR' | 'INVALID_REQUEST' | 'PROVIDER_ERROR' | string;
+  errorType?: ReconcileErrorType;
   responseBody?: StoredLlmResponse;
 }
 

@@ -235,6 +235,17 @@ export class ProvidersService {
       };
     }
 
+    // Check for gateway timeout
+    if (status === 504 || status === 408) {
+      return {
+        success: false,
+        model,
+        latencyMs,
+        errorType: 'timeout',
+        errorMessage: `Gateway timed out (HTTP ${status}): ${errorDetail}`,
+      };
+    }
+
     // Check for provider quota/rate limits
     if (status === 429 || lower.includes('rate limit') || lower.includes('quota')) {
       return {
