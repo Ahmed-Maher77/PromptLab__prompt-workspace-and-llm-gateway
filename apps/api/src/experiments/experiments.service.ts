@@ -201,7 +201,7 @@ export class ExperimentsService {
       createdAt: exp.createdAt,
       commonInput: parsedInput,
       evaluationCriteria: settings.evaluationCriteria || [],
-      evaluations: settings.evaluations || {},
+      evaluations: evaluationsMap,
       runs: exp.runs.map((r) => ({
         id: r.id,
         slot: r.slot,
@@ -365,22 +365,9 @@ export class ExperimentsService {
             },
           ],
         },
-        evaluations: {
-          create: [
-            {
-              slot: 'A',
-              criteriaScores: runA.criteriaResults as any,
-            },
-            {
-              slot: 'B',
-              criteriaScores: runB.criteriaResults as any,
-            },
-          ],
-        },
       },
       include: {
         runs: true,
-        evaluations: true,
       },
     });
 

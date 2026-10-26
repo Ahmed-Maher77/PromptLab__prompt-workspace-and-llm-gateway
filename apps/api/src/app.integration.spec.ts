@@ -2438,6 +2438,232 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
+  describe('Experiment Evaluations & Concurrent Ratings (EXP-02)', () => {
+    it('two concurrent rating updates for slots A and B of the same experiment both persist (no lost update)', async () => {
+      const prisma = app.get(PrismaService);
+      const exp = await prisma.experiment.create({
+        data: {
+          ownerId: 'dev-user-001',
+          name: 'Concurrent Ratings Experiment',
+          commonInput: '{"topic":"concurrent"}',
+          settings: {},
+          runs: {
+            create: [
+              { slot: 'A', provider: 'openai', model: 'gpt-4o-mini', status: 'completed' },
+              { slot: 'B', provider: 'openai', model: 'gpt-4o-mini', status: 'completed' },
+            ],
+          },
+        },
+      });
+
+      // Fire concurrent rating updates for slot A and slot B
+      const [resA, resB] = await Promise.all([
+        request(app.getHttpServer())
+          .post(`/api/experiments/${exp.id}/rate`)
+          .set(authHeader)
+          .send({ slot: 'A', rating: 4, notes: 'Slot A rating' }),
+        request(app.getHttpServer())
+          .post(`/api/experiments/${exp.id}/rate`)
+          .set(authHeader)
+          .send({ slot: 'B', rating: 5, notes: 'Slot B rating' }),
+      ]);
+
+      expect(resA.status).toBe(201);
+      expect(resB.status).toBe(201);
+
+      const evals = await prisma.experimentEvaluation.findMany({
+        where: { experimentId: exp.id },
+        orderBy: { slot: 'asc' },
+      });
+
+      expect(evals).toHaveLength(2);
+      expect(evals[0].slot).toBe('A');
+      expect(evals[0].rating).toBe(4);
+      expect(evals[0].notes).toBe('Slot A rating');
+      expect(evals[1].slot).toBe('B');
+      expect(evals[1].rating).toBe(5);
+      expect(evals[1].notes).toBe('Slot B rating');
+    });
+
+    it('the same slot updated twice concurrently ends with one row', async () => {
+      const prisma = app.get(PrismaService);
+      const exp = await prisma.experiment.create({
+        data: {
+          ownerId: 'dev-user-001',
+          name: 'Same Slot Concurrent Experiment',
+          commonInput: '{}',
+          settings: {},
+        },
+      });
+
+      // Fire two concurrent updates to slot A
+      const [res1, res2] = await Promise.all([
+        request(app.getHttpServer())
+          .post(`/api/experiments/${exp.id}/rate`)
+          .set(authHeader)
+          .send({ slot: 'A', rating: 3, notes: 'First rating' }),
+        request(app.getHttpServer())
+          .post(`/api/experiments/${exp.id}/rate`)
+          .set(authHeader)
+          .send({ slot: 'A', rating: 5, notes: 'Second rating' }),
+      ]);
+
+      expect(res1.status).toBe(201);
+      expect(res2.status).toBe(201);
+
+      const evals = await prisma.experimentEvaluation.findMany({
+        where: { experimentId: exp.id, slot: 'A' },
+      });
+
+      // Exactly one row must exist due to @@unique([experimentId, slot])
+      expect(evals).toHaveLength(1);
+      expect([3, 5]).toContain(evals[0].rating);
+    });
+
+    it('migration moves existing settings-JSON ratings into the new table (EXP-02a & EXP-02b)', async () => {
+      const prisma = app.get(PrismaService);
+
+      // Seed legacy experiment with out-of-range ratings (0 and 7) and automated criteriaResults
+      const legacyExp = await prisma.experiment.create({
+        data: {
+          ownerId: 'dev-user-001',
+          name: 'Legacy Settings Experiment (0 and 7 ratings)',
+          commonInput: '{"query":"legacy"}',
+          settings: {
+            evaluations: {
+              A: {
+                manualRating: 7,
+                manualNotes: 'Legacy A feedback (rating 7)',
+                criteriaResults: [{ criterionId: 'crit-1', passed: true }],
+              },
+              B: {
+                manualRating: 0,
+                manualNotes: 'Legacy B feedback (rating 0)',
+                criteriaResults: [{ criterionId: 'crit-2', passed: false }],
+              },
+            },
+          },
+        },
+      });
+
+      // Helper to split SQL statements without breaking DO $$ ... $$ blocks
+      const splitSqlStatements = (sql: string): string[] => {
+        const statements: string[] = [];
+        let current = '';
+        let inDollarQuote = false;
+        for (let i = 0; i < sql.length; i++) {
+          const char = sql[i];
+          const nextChar = sql[i + 1];
+          if (char === '$' && nextChar === '$') {
+            inDollarQuote = !inDollarQuote;
+            current += '$$';
+            i++;
+            continue;
+          }
+          if (char === ';' && !inDollarQuote) {
+            const trimmed = current.trim();
+            if (trimmed.length > 0) statements.push(trimmed);
+            current = '';
+            continue;
+          }
+          current += char;
+        }
+        const trimmed = current.trim();
+        if (trimmed.length > 0) statements.push(trimmed);
+        return statements;
+      };
+
+      // Temporarily drop CHECK constraints if present so Migration 1 can backfill raw legacy values
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "experiment_evaluations" DROP CONSTRAINT IF EXISTS "experiment_evaluations_rating_check"',
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "experiment_evaluations" DROP CONSTRAINT IF EXISTS "experiment_evaluations_slot_check"',
+      );
+
+      // 1. Apply Migration 1 (20261026040000_exp_02_experiment_evaluations/migration.sql)
+      const migration1Path = path.join(
+        __dirname,
+        '../prisma/migrations/20261026040000_exp_02_experiment_evaluations/migration.sql',
+      );
+      const migration1Sql = fs.readFileSync(migration1Path, 'utf8');
+      for (const stmt of splitSqlStatements(migration1Sql)) {
+        await prisma.$executeRawUnsafe(stmt);
+      }
+
+      // Verify that after Migration 1: ratings 7 and 0 were copied, criteriaScores received automated results
+      const midEvals = await prisma.experimentEvaluation.findMany({
+        where: { experimentId: legacyExp.id },
+        orderBy: { slot: 'asc' },
+      });
+      expect(midEvals).toHaveLength(2);
+      expect(midEvals[0].rating).toBe(7);
+      expect(midEvals[0].criteriaScores).toEqual([{ criterionId: 'crit-1', passed: true }]);
+      expect(midEvals[1].rating).toBe(0);
+      expect(midEvals[1].criteriaScores).toEqual([{ criterionId: 'crit-2', passed: false }]);
+
+      // 2. Apply Migration 2 (20261026050000_exp_02b_evaluation_constraints/migration.sql)
+      const migration2Path = path.join(
+        __dirname,
+        '../prisma/migrations/20261026050000_exp_02b_evaluation_constraints/migration.sql',
+      );
+      const migration2Sql = fs.readFileSync(migration2Path, 'utf8');
+      for (const stmt of splitSqlStatements(migration2Sql)) {
+        await prisma.$executeRawUnsafe(stmt);
+      }
+
+      // Verify final migrated state after Migration 2:
+      // ratings 7 and 0 -> NULL with notes kept; criteriaScores -> NULL (manual scores only)
+      const finalEvals = await prisma.experimentEvaluation.findMany({
+        where: { experimentId: legacyExp.id },
+        orderBy: { slot: 'asc' },
+      });
+
+      expect(finalEvals).toHaveLength(2);
+      expect(finalEvals[0].slot).toBe('A');
+      expect(finalEvals[0].rating).toBeNull();
+      expect(finalEvals[0].notes).toBe('Legacy A feedback (rating 7)');
+      expect(finalEvals[0].criteriaScores).toBeNull();
+
+      expect(finalEvals[1].slot).toBe('B');
+      expect(finalEvals[1].rating).toBeNull();
+      expect(finalEvals[1].notes).toBe('Legacy B feedback (rating 0)');
+      expect(finalEvals[1].criteriaScores).toBeNull();
+
+      // Verify that GET /api/experiments/:id returns the evaluations seamlessly with automated criteriaResults from settings
+      const res = await request(app.getHttpServer())
+        .get(`/api/experiments/${legacyExp.id}`)
+        .set(authHeader)
+        .expect(200);
+
+      expect(res.body.evaluations.A.manualRating).toBeNull();
+      expect(res.body.evaluations.A.manualNotes).toBe('Legacy A feedback (rating 7)');
+      expect(res.body.evaluations.A.criteriaResults).toEqual([{ criterionId: 'crit-1', passed: true }]);
+      expect(res.body.evaluations.A.criteriaScores).toBeUndefined();
+
+      expect(res.body.evaluations.B.manualRating).toBeNull();
+      expect(res.body.evaluations.B.manualNotes).toBe('Legacy B feedback (rating 0)');
+      expect(res.body.evaluations.B.criteriaResults).toEqual([{ criterionId: 'crit-2', passed: false }]);
+      expect(res.body.evaluations.B.criteriaScores).toBeUndefined();
+
+      // Verify DB CHECK constraint rejects out-of-range rating insert (e.g. 6)
+      await expect(
+        prisma.$executeRawUnsafe(`
+          INSERT INTO "experiment_evaluations" ("id", "experimentId", "slot", "rating", "notes", "createdAt", "updatedAt")
+          VALUES ('check-fail-rating', '${legacyExp.id}', 'A', 6, 'Invalid rating', NOW(), NOW());
+        `)
+      ).rejects.toThrow();
+
+      // Verify DB CHECK constraint rejects invalid slot (e.g. 'C')
+      await expect(
+        prisma.$executeRawUnsafe(`
+          INSERT INTO "experiment_evaluations" ("id", "experimentId", "slot", "rating", "notes", "createdAt", "updatedAt")
+          VALUES ('check-fail-slot', '${legacyExp.id}', 'C', 3, 'Invalid slot', NOW(), NOW());
+        `)
+      ).rejects.toThrow();
+    });
+  });
+
 });
 
 

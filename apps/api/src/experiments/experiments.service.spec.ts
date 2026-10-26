@@ -678,6 +678,43 @@ describe('ExperimentsService', () => {
       });
     });
 
+    it('should preserve automated criteriaResults after a manual rating with criteriaScores (EXP-02a)', async () => {
+      const initialAutomatedResults = [
+        { criterionId: 'crit-auto-1', name: 'Contains PromptLab', type: 'contains_text', passed: true, notes: 'Contains "PromptLab"' },
+      ];
+
+      mockPrisma.experiment.findUnique.mockResolvedValueOnce({
+        id: 'exp-with-eval',
+        name: 'Automated + Manual Exp',
+        commonInput: '{"query": "test"}',
+        settings: {
+          evaluations: {
+            A: { criteriaResults: initialAutomatedResults },
+          },
+        },
+        evaluations: [
+          {
+            id: 'eval-row-1',
+            experimentId: 'exp-with-eval',
+            slot: 'A',
+            rating: 5,
+            notes: 'Human feedback',
+            criteriaScores: [{ criterionId: 'crit-manual-1', passed: true }],
+            updatedAt: new Date(),
+          },
+        ],
+        runs: [],
+      });
+
+      const found = await service.findById('exp-with-eval', 'dev-user-001');
+
+      // Automated criteriaResults must survive unchanged
+      expect(found.evaluations['A'].criteriaResults).toEqual(initialAutomatedResults);
+      expect(found.evaluations['A'].manualRating).toBe(5);
+      expect(found.evaluations['A'].manualNotes).toBe('Human feedback');
+      expect(found.evaluations['A'].criteriaScores).toEqual([{ criterionId: 'crit-manual-1', passed: true }]);
+    });
+
     it('should validate max_length expectedValue is a positive integer string', async () => {
       const validCrit = plainToInstance(EvaluationCriterionDto, {
         id: 'c-1',
