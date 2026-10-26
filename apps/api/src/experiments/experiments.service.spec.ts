@@ -7,6 +7,9 @@ import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { EvaluationCriterionDto } from './dto/run-comparison.dto';
 
 describe('ExperimentsService', () => {
   let service: ExperimentsService;
@@ -23,6 +26,12 @@ describe('ExperimentsService', () => {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
+      },
+      experimentEvaluation: {
+        upsert: jest.fn(),
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
       },
       promptVersion: {
         findUnique: jest.fn(),
@@ -147,6 +156,59 @@ describe('ExperimentsService', () => {
       expect(result.slotB.latencyMs).toBe(210);
 
       expect(mockPrisma.experiment.create).toHaveBeenCalled();
+    });
+
+    it('should honour saveExperiment=false and create no experiment row', async () => {
+      mockPrisma.promptVersion.findUnique
+        .mockResolvedValueOnce({
+          id: 'pv-1',
+          versionNumber: 1,
+          templateBody: 'Summarize concisely: {{text}}',
+          prompt: { id: 'p-1', name: 'Summarizer v1' },
+        })
+        .mockResolvedValueOnce({
+          id: 'pv-2',
+          versionNumber: 2,
+          templateBody: 'Provide a 3-bullet summary: {{text}}',
+          prompt: { id: 'p-1', name: 'Summarizer v2' },
+        });
+
+      mockProviders.executeChatCompletion
+        .mockResolvedValueOnce({
+          success: true,
+          model: 'gpt-4o-mini',
+          content: 'This is a concise summary.',
+          latencyMs: 150,
+          usage: { promptTokens: 20, completionTokens: 10, totalTokens: 30, source: 'provider-reported' },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          model: 'gpt-4o-mini',
+          content: '- Bullet 1\n- Bullet 2\n- Bullet 3',
+          latencyMs: 210,
+          usage: { promptTokens: 25, completionTokens: 18, totalTokens: 43, source: 'provider-reported' },
+        });
+
+      const result = await service.runComparison({
+        name: 'Unsaved comparison',
+        commonInput: { text: 'PromptLab testing' },
+        saveExperiment: false,
+        slotA: {
+          promptVersionId: 'pv-1',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+        },
+        slotB: {
+          promptVersionId: 'pv-2',
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+        },
+      }, 'dev-user-001');
+
+      expect(result.experimentId).toBeNull();
+      expect(result.slotA.output).toBe('This is a concise summary.');
+      expect(result.slotB.output).toContain('Bullet 1');
+      expect(mockPrisma.experiment.create).not.toHaveBeenCalled();
     });
 
     it('should handle partial failure: slot A fails while slot B succeeds', async () => {
@@ -494,19 +556,19 @@ describe('ExperimentsService', () => {
       expect(error).toBeInstanceOf(NotFoundException);
     });
 
-    it('should update manual rating and feedback notes for a slot', async () => {
+    it('should update manual rating and feedback notes for a slot via experimentEvaluation.upsert', async () => {
       mockPrisma.experiment.findUnique.mockResolvedValueOnce({
         id: 'exp-1',
-        settings: { evaluations: {} },
       });
 
-      mockPrisma.experiment.update.mockResolvedValueOnce({
-        id: 'exp-1',
-        settings: {
-          evaluations: {
-            A: { manualRating: 5, manualNotes: 'Excellent formatting' },
-          },
-        },
+      mockPrisma.experimentEvaluation.upsert.mockResolvedValueOnce({
+        id: 'eval-1',
+        experimentId: 'exp-1',
+        slot: 'A',
+        rating: 5,
+        notes: 'Excellent formatting',
+        criteriaScores: null,
+        updatedAt: new Date(),
       });
 
       const updated = await service.updateRating('exp-1', {
@@ -517,7 +579,132 @@ describe('ExperimentsService', () => {
 
       expect(updated.rating).toBe(5);
       expect(updated.slot).toBe('A');
-      expect(mockPrisma.experiment.update).toHaveBeenCalled();
+      expect(mockPrisma.experimentEvaluation.upsert).toHaveBeenCalledWith({
+        where: { experimentId_slot: { experimentId: 'exp-1', slot: 'A' } },
+        create: {
+          experimentId: 'exp-1',
+          slot: 'A',
+          rating: 5,
+          notes: 'Excellent formatting',
+          criteriaScores: undefined,
+        },
+        update: {
+          rating: 5,
+          notes: 'Excellent formatting',
+        },
+      });
+    });
+
+    it('should allow notes-only update leaving rating null', async () => {
+      mockPrisma.experiment.findUnique.mockResolvedValueOnce({
+        id: 'exp-1',
+      });
+
+      mockPrisma.experimentEvaluation.upsert.mockResolvedValueOnce({
+        id: 'eval-1',
+        experimentId: 'exp-1',
+        slot: 'A',
+        rating: null,
+        notes: 'Notes only without rating',
+        criteriaScores: null,
+        updatedAt: new Date(),
+      });
+
+      const updated = await service.updateRating('exp-1', {
+        slot: 'A',
+        notes: 'Notes only without rating',
+      }, 'dev-user-001');
+
+      expect(updated.rating).toBeNull();
+      expect(updated.notes).toBe('Notes only without rating');
+      expect(mockPrisma.experimentEvaluation.upsert).toHaveBeenCalledWith({
+        where: { experimentId_slot: { experimentId: 'exp-1', slot: 'A' } },
+        create: {
+          experimentId: 'exp-1',
+          slot: 'A',
+          rating: null,
+          notes: 'Notes only without rating',
+          criteriaScores: undefined,
+        },
+        update: {
+          notes: 'Notes only without rating',
+        },
+      });
+    });
+
+    it('should persist criteriaScores in updateRating', async () => {
+      mockPrisma.experiment.findUnique.mockResolvedValueOnce({
+        id: 'exp-1',
+      });
+
+      const criteriaScores = [
+        { criterionId: 'crit-1', passed: true },
+        { criterionId: 'crit-2', passed: false },
+      ];
+
+      mockPrisma.experimentEvaluation.upsert.mockResolvedValueOnce({
+        id: 'eval-1',
+        experimentId: 'exp-1',
+        slot: 'B',
+        rating: 4,
+        notes: 'Slot B evaluated',
+        criteriaScores,
+        updatedAt: new Date(),
+      });
+
+      const updated = await service.updateRating('exp-1', {
+        slot: 'B',
+        rating: 4,
+        notes: 'Slot B evaluated',
+        criteriaScores,
+      }, 'dev-user-001');
+
+      expect(updated.rating).toBe(4);
+      expect(updated.criteriaScores).toEqual(criteriaScores);
+      expect(mockPrisma.experimentEvaluation.upsert).toHaveBeenCalledWith({
+        where: { experimentId_slot: { experimentId: 'exp-1', slot: 'B' } },
+        create: {
+          experimentId: 'exp-1',
+          slot: 'B',
+          rating: 4,
+          notes: 'Slot B evaluated',
+          criteriaScores,
+        },
+        update: {
+          rating: 4,
+          notes: 'Slot B evaluated',
+          criteriaScores,
+        },
+      });
+    });
+
+    it('should validate max_length expectedValue is a positive integer string', async () => {
+      const validCrit = plainToInstance(EvaluationCriterionDto, {
+        id: 'c-1',
+        name: 'Max length check',
+        type: 'max_length',
+        expectedValue: '500',
+      });
+      const validErrors = await validate(validCrit);
+      expect(validErrors.length).toBe(0);
+
+      const invalidCritNonNumeric = plainToInstance(EvaluationCriterionDto, {
+        id: 'c-2',
+        name: 'Max length check',
+        type: 'max_length',
+        expectedValue: 'not-a-number',
+      });
+      const invalidErrorsNonNumeric = await validate(invalidCritNonNumeric);
+      expect(invalidErrorsNonNumeric.length).toBeGreaterThan(0);
+
+      const invalidCritZero = plainToInstance(EvaluationCriterionDto, {
+        id: 'c-3',
+        name: 'Max length check',
+        type: 'max_length',
+        expectedValue: '0',
+      });
+      const invalidErrorsZero = await validate(invalidCritZero);
+      expect(invalidErrorsZero.length).toBeGreaterThan(0);
     });
   });
 });

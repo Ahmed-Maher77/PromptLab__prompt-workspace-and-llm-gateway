@@ -46,7 +46,7 @@ export interface SlotRunResult {
 }
 
 export interface ComparisonResult {
-  experimentId: string;
+  experimentId: string | null;
   name: string;
   createdAt: Date;
   commonInput: Record<string, string>;
@@ -79,6 +79,7 @@ export class ExperimentsService {
     const experiments = await this.prisma.experiment.findMany({
       where: { ownerId },
       include: {
+        evaluations: true,
         runs: {
           include: {
             promptVersion: {
@@ -103,6 +104,18 @@ export class ExperimentsService {
       }
 
       const settings = (exp.settings as Record<string, any>) || {};
+      const evaluationsMap: Record<string, any> = {
+        ...(settings.evaluations || {}),
+      };
+      for (const ev of (exp as any).evaluations || []) {
+        evaluationsMap[ev.slot] = {
+          ...(evaluationsMap[ev.slot] || {}),
+          manualRating: ev.rating,
+          manualNotes: ev.notes ?? '',
+          criteriaScores: ev.criteriaScores ?? undefined,
+          updatedAt: ev.updatedAt,
+        };
+      }
 
       return {
         id: exp.id,
@@ -110,7 +123,7 @@ export class ExperimentsService {
         createdAt: exp.createdAt,
         commonInput: parsedInput,
         evaluationCriteria: settings.evaluationCriteria || [],
-        evaluations: settings.evaluations || {},
+        evaluations: evaluationsMap,
         runs: exp.runs.map((r) => ({
           id: r.id,
           slot: r.slot,
@@ -144,6 +157,7 @@ export class ExperimentsService {
         ownerId,
       },
       include: {
+        evaluations: true,
         runs: {
           include: {
             promptVersion: {
@@ -168,6 +182,18 @@ export class ExperimentsService {
     }
 
     const settings = (exp.settings as Record<string, any>) || {};
+    const evaluationsMap: Record<string, any> = {
+      ...(settings.evaluations || {}),
+    };
+    for (const ev of (exp as any).evaluations || []) {
+      evaluationsMap[ev.slot] = {
+        ...(evaluationsMap[ev.slot] || {}),
+        manualRating: ev.rating,
+        manualNotes: ev.notes ?? '',
+        criteriaScores: ev.criteriaScores ?? undefined,
+        updatedAt: ev.updatedAt,
+      };
+    }
 
     return {
       id: exp.id,
@@ -271,7 +297,28 @@ export class ExperimentsService {
             criteriaResults: [],
           };
 
-    // 3. Persist experiment and runs in PostgreSQL
+    // 3. Persist experiment, runs, and initial evaluations in PostgreSQL unless saveExperiment is false (EXP-02)
+    if (dto.saveExperiment === false) {
+      return {
+        experimentId: null,
+        name: dto.name || 'Prompt Comparison',
+        createdAt: new Date(),
+        commonInput: dto.commonInput,
+        slotA: {
+          ...runA,
+          promptId: resolvedSlotA.promptId,
+          promptName: resolvedSlotA.promptName,
+          versionNumber: resolvedSlotA.versionNumber,
+        },
+        slotB: {
+          ...runB,
+          promptId: resolvedSlotB.promptId,
+          promptName: resolvedSlotB.promptName,
+          versionNumber: resolvedSlotB.versionNumber,
+        },
+      };
+    }
+
     const settingsPayload = {
       evaluationCriteria: dto.evaluationCriteria || [],
       evaluations: {
@@ -318,9 +365,22 @@ export class ExperimentsService {
             },
           ],
         },
+        evaluations: {
+          create: [
+            {
+              slot: 'A',
+              criteriaScores: runA.criteriaResults as any,
+            },
+            {
+              slot: 'B',
+              criteriaScores: runB.criteriaResults as any,
+            },
+          ],
+        },
       },
       include: {
         runs: true,
+        evaluations: true,
       },
     });
 
@@ -543,7 +603,8 @@ export class ExperimentsService {
           break;
         }
         case 'max_length': {
-          const max = parseInt(c.expectedValue || '1000', 10);
+          const parsed = parseInt(c.expectedValue || '1000', 10);
+          const max = Number.isInteger(parsed) && parsed > 0 ? parsed : 1000;
           passed = output.length <= max;
           notes = passed ? `Length ${output.length} <= ${max}` : `Length ${output.length} exceeds max ${max}`;
           break;
@@ -568,6 +629,7 @@ export class ExperimentsService {
   /**
    * Updates manual evaluation rating and notes for an experiment slot.
    * Scoped to the authenticated owner.
+   * Single-statement atomic upsert into ExperimentEvaluation table (EXP-02).
    */
   async updateRating(id: string, dto: RateExperimentDto, ownerId: string) {
     const exp = await this.prisma.experiment.findFirst({
@@ -575,37 +637,41 @@ export class ExperimentsService {
         id,
         ownerId,
       },
+      select: { id: true },
     });
 
     if (!exp) {
       throw new NotFoundException(`Experiment with ID "${id}" was not found.`);
     }
 
-    const currentSettings = (exp.settings as Record<string, any>) || {};
-    const evaluations = currentSettings.evaluations || {};
-    evaluations[dto.slot] = {
-      ...(evaluations[dto.slot] || {}),
-      manualRating: dto.rating,
-      manualNotes: dto.notes || '',
-      ratedAt: new Date().toISOString(),
-    };
-
-    const updated = await this.prisma.experiment.update({
-      where: { id },
-      data: {
-        settings: {
-          ...currentSettings,
-          evaluations,
-        } as unknown as Prisma.InputJsonValue,
+    const evaluation = await this.prisma.experimentEvaluation.upsert({
+      where: {
+        experimentId_slot: {
+          experimentId: id,
+          slot: dto.slot,
+        },
+      },
+      create: {
+        experimentId: id,
+        slot: dto.slot,
+        rating: dto.rating ?? null,
+        notes: dto.notes ?? null,
+        criteriaScores: dto.criteriaScores ? (dto.criteriaScores as any) : undefined,
+      },
+      update: {
+        ...(dto.rating !== undefined ? { rating: dto.rating } : {}),
+        ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+        ...(dto.criteriaScores !== undefined ? { criteriaScores: dto.criteriaScores as any } : {}),
       },
     });
 
     return {
       experimentId: id,
-      slot: dto.slot,
-      rating: dto.rating,
-      notes: dto.notes,
-      evaluations: (updated.settings as any).evaluations,
+      slot: evaluation.slot,
+      rating: evaluation.rating,
+      notes: evaluation.notes,
+      criteriaScores: evaluation.criteriaScores,
+      updatedAt: evaluation.updatedAt,
     };
   }
 }
