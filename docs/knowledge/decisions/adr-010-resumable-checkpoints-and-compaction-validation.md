@@ -63,10 +63,10 @@ sequenceDiagram
     participant Context as assembleConversationContext()
 
     Note over Client, DB: applyCompaction with Concurrency Lock
-    Client->>Service: POST /conversations/:id/compaction/apply
+    Client->>Service: POST /conversations/:id/compact/apply
     Service->>DB: BEGIN TX
     Service->>DB: SELECT id FROM conversations WHERE id = :id FOR UPDATE
-    Note over DB: Row locked; concurrent compactions wait
+    Note over DB: Row locked, concurrent compactions wait
     Service->>DB: Fetch conversation, checkpoints, messages
     alt Range invalid (seq <= activeCheckpoint OR seq >= maxSeq)
         Service-->>Client: 400 Bad Request { code: 'INVALID_COMPACTION_RANGE' }
@@ -87,7 +87,7 @@ sequenceDiagram
     else Checkpoint valid
         Service->>DB: UPDATE conversations SET activeCheckpointId = :olderChkId
         Service->>Context: assembleConversationContext(:olderCheckpoint)
-        Note over Context: Checkpoint replaces seq <= older.compactedThroughSequence;<br/>turns with seq > older remain as retained messages
+        Note over Context: Checkpoint replaces seq <= older.compactedThroughSequence,<br/>turns with seq > older remain as retained messages
         Service-->>Client: 200 OK (resumed context preview)
     end
 ```
