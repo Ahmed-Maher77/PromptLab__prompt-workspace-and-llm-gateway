@@ -1,8 +1,18 @@
-import { Component, OnInit, OnDestroy, signal, computed, ChangeDetectionStrategy, inject } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  signal,
+  computed,
+  ChangeDetectionStrategy,
+  inject,
+  DestroyRef,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { Subject, Subscription, of } from 'rxjs';
+import { EMPTY, Subject, Subscription, of } from 'rxjs';
 import { debounceTime, switchMap, catchError } from 'rxjs/operators';
 import {
   LucidePlus,
@@ -26,6 +36,7 @@ import {
 import { PromptService, ModelMetadata } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
 import { isUnknownOutcomeError } from '../../utils/http-retry.util';
+import { toApiErrorMessage } from '../../utils/api-error.util';
 import { DialogDirective } from '../../shared/a11y/dialog.directive';
 import { ToastService } from '../../shared/feedback/toast.service';
 import { ConfirmService } from '../../shared/feedback/confirm.service';
@@ -111,11 +122,34 @@ export class ConversationsComponent implements OnInit, OnDestroy {
 
   private readonly toast = inject(ToastService);
   private readonly confirmService = inject(ConfirmService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /** Selection requests; switchMap keeps only the latest one's response. */
+  private readonly selectSubject = new Subject<{ id: string }>();
 
   constructor(
     private readonly conversationService: ConversationService,
     private readonly promptService: PromptService,
-  ) {}
+  ) {
+    this.selectSubject
+      .pipe(
+        switchMap(({ id }) =>
+          this.conversationService.getConversation(id).pipe(
+            catchError((err) => {
+              this.loadingDetail.set(false);
+              this.chatError.set(toApiErrorMessage(err, 'Failed to load conversation details.'));
+              return EMPTY;
+            }),
+          ),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((detail) => {
+        this.selectedConversation.set(detail);
+        this.loadingDetail.set(false);
+        this.refreshContext();
+      });
+  }
 
   ngOnInit(): void {
     this.loadModels();
@@ -181,17 +215,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
       this.resumeMessage.set(null);
     }
 
-    this.conversationService.getConversation(id).subscribe({
-      next: (detail) => {
-        this.selectedConversation.set(detail);
-        this.loadingDetail.set(false);
-        this.refreshContext();
-      },
-      error: (err) => {
-        this.loadingDetail.set(false);
-        this.chatError.set(err.error?.message || 'Failed to load conversation details.');
-      },
-    });
+    this.selectSubject.next({ id });
   }
 
   onModelChange(modelId: string): void {
@@ -228,7 +252,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.creatingConversation.set(false);
-          this.toast.error(err.error?.message || 'Failed to create conversation');
+          this.toast.error(toApiErrorMessage(err, 'Failed to create conversation'));
         },
       });
   }
@@ -314,7 +338,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
             "This message plus the pinned context exceeds the conversation's budget — compact history or shorten the message.",
           );
         } else {
-          this.chatError.set(err.error?.message || 'Failed to transmit message.');
+          this.chatError.set(toApiErrorMessage(err, 'Failed to transmit message.'));
         }
         // Keep the idempotency key only for unknown outcomes (network error, 502/503/504, 409 REQUEST_IN_PROGRESS).
         // Rotate it on every other error (reading `code` from problem-details body).
@@ -336,6 +360,9 @@ export class ConversationsComponent implements OnInit, OnDestroy {
     this.loadingContext.set(true);
     this.conversationService.inspectContext(conv.id).subscribe({
       next: (data) => {
+        if (this.selectedConversation()?.id !== conv.id) {
+          return; // A newer selection owns the context panel now.
+        }
         this.contextData.set(data);
         this.loadingContext.set(false);
       },
@@ -374,7 +401,9 @@ export class ConversationsComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.loadingPreview.set(false);
-        this.compactionError.set(err.error?.message || 'Failed to generate compaction preview.');
+        this.compactionError.set(
+          toApiErrorMessage(err, 'Failed to generate compaction preview.'),
+        );
       },
     });
   }
@@ -395,7 +424,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
       },
       error: (err) => {
         this.loadingPreview.set(false);
-        this.compactionError.set(err.error?.message || 'Invalid sequence target for compaction.');
+        this.compactionError.set(toApiErrorMessage(err, 'Invalid sequence target for compaction.'));
       },
     });
   }
@@ -426,7 +455,9 @@ export class ConversationsComponent implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.applyingCompaction.set(false);
-          this.compactionError.set(err.error?.message || 'Failed to apply compaction checkpoint.');
+          this.compactionError.set(
+            toApiErrorMessage(err, 'Failed to apply compaction checkpoint.'),
+          );
         },
       });
   }
@@ -456,7 +487,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
         this.selectConversation(conv.id, true);
       },
       error: (err) => {
-        this.toast.error(err.error?.message || 'Failed to resume from checkpoint');
+        this.toast.error(toApiErrorMessage(err, 'Failed to resume from checkpoint'));
       },
     });
   }

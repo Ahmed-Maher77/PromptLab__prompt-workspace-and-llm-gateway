@@ -1,12 +1,13 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { ObservabilityComponent } from './observability.component';
 import {
   ObservabilityService,
   ObservabilityStatus,
   TraceRecord,
 } from '../../services/observability.service';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { ConfirmService } from '../../shared/feedback/confirm.service';
+import { ToastService } from '../../shared/feedback/toast.service';
 
 describe('ObservabilityComponent', () => {
   let component: ObservabilityComponent;
@@ -219,4 +220,50 @@ describe('ObservabilityComponent', () => {
     await component.clearTraces();
     expect(mockObservabilityService.clearTraces).toHaveBeenCalled();
   });
+
+  it('applies only the latest traces response when filters change quickly', () => {
+    const first = new Subject<typeof mockTraces>();
+    const second = new Subject<typeof mockTraces>();
+    mockObservabilityService.getTraces.and.returnValues(first.asObservable(), second.asObservable());
+
+    component.statusFilter = 'error';
+    component.applyFilters();
+    component.statusFilter = 'success';
+    component.applyFilters();
+
+    second.next([mockTraces[0]]);
+    first.next(mockTraces);
+
+    expect(first.observed).toBeFalse();
+    expect(component.traces).toEqual([mockTraces[0]]);
+  });
+
+  it('shows an error toast when copying to the clipboard fails', fakeAsync(() => {
+    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+    const toast = TestBed.inject(ToastService);
+    spyOn(toast, 'error');
+
+    component.copyToClipboard('trace-1', 'id-1');
+    flushMicrotasks();
+
+    expect(toast.error).toHaveBeenCalledWith('Could not copy to the clipboard.');
+    expect(component.copiedId).toBeNull();
+  }));
+
+  it('marks an id as copied and clears it after the timeout', fakeAsync(() => {
+    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    component.copyToClipboard('trace-1', 'id-1');
+    flushMicrotasks();
+    expect(component.copiedId).toBe('id-1');
+    tick(2000);
+    expect(component.copiedId).toBeNull();
+  }));
+
+  it('clears the pending copied-badge timer when destroyed', fakeAsync(() => {
+    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    component.copyToClipboard('trace-1', 'id-1');
+    flushMicrotasks();
+    fixture.destroy();
+    // fakeAsync fails the test if a timer is still queued after this point.
+  }));
 });

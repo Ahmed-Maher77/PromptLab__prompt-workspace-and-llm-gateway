@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
 import { UsageComponent } from './usage.component';
 import {
   UsageService,
@@ -7,6 +7,7 @@ import {
   QuotaPolicy,
 } from '../../services/usage.service';
 import { of, throwError } from 'rxjs';
+import { ToastService } from '../../shared/feedback/toast.service';
 
 describe('UsageComponent', () => {
   let component: UsageComponent;
@@ -194,4 +195,16 @@ describe('UsageComponent', () => {
     expect(component.errorMessage).toContain('Failed to load quota status');
     expect(component.loading).toBe(false);
   });
+
+  it('shows an error toast when copying to the clipboard fails', fakeAsync(() => {
+    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+    const toast = TestBed.inject(ToastService);
+    spyOn(toast, 'error');
+
+    component.copyRequestId('req-1');
+    flushMicrotasks();
+
+    expect(toast.error).toHaveBeenCalledWith('Could not copy to the clipboard.');
+    expect(component.copiedId).toBeNull();
+  }));
 });

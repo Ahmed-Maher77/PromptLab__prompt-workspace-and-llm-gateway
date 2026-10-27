@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { ConversationsComponent } from './conversations.component';
 import {
@@ -11,7 +12,7 @@ import {
 } from '../../services/conversation.service';
 import { PromptService } from '../../services/prompt.service';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { ToastService } from '../../shared/feedback/toast.service';
 import { ConfirmService } from '../../shared/feedback/confirm.service';
 
@@ -616,5 +617,40 @@ describe('ConversationsComponent', () => {
     mockConversationService.deleteConversation.and.returnValue(of({ success: true, id: 'c-1' }));
     await component.deleteConversation('c-1', new Event('click'));
     expect(mockConversationService.deleteConversation).toHaveBeenCalledWith('c-1');
+  });
+
+  it('applies only the latest selection when responses arrive out of order', () => {
+    const first = new Subject<ConversationDetail>();
+    const second = new Subject<ConversationDetail>();
+    const detailC2: ConversationDetail = { ...mockDetailC1, id: 'c-2', title: 'Debugging Session' };
+    mockConversationService.getConversation.and.callFake((id: string) =>
+      id === 'c-1' ? first : second,
+    );
+    mockConversationService.inspectContext.calls.reset();
+
+    component.selectConversation('c-1');
+    component.selectConversation('c-2');
+
+    second.next(detailC2);
+    second.complete();
+    expect(component.selectedConversation()?.id).toBe('c-2');
+    expect(component.loadingDetail()).toBeFalse();
+
+    // The slower, older response is cancelled and must not overwrite the newer one.
+    first.next(mockDetailC1);
+    first.complete();
+    expect(component.selectedConversation()?.id).toBe('c-2');
+    expect(first.observed).toBeFalse();
+    expect(mockConversationService.inspectContext).toHaveBeenCalledTimes(1);
+    expect(mockConversationService.inspectContext).toHaveBeenCalledWith('c-2');
+  });
+
+  it('shows the server problem detail when loading a conversation fails', () => {
+    mockConversationService.getConversation.and.returnValue(
+      throwError(() => new HttpErrorResponse({ status: 500, error: { detail: 'Database is down' } })),
+    );
+    component.selectConversation('c-2');
+    expect(component.chatError()).toBe('Database is down');
+    expect(component.loadingDetail()).toBeFalse();
   });
 });
