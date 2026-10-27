@@ -25,6 +25,7 @@ export interface ConversationMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
   sequenceNumber: number;
+  status?: 'complete' | 'failed';
   inputTokens?: number | null;
   outputTokens?: number | null;
   tokenUsageSource?: 'estimated' | 'provider-reported' | null;
@@ -46,11 +47,13 @@ export interface ConversationDetail {
   title: string;
   provider: string;
   model: string;
+  contextBudget?: number | null;
   status: string;
   createdAt: string;
   updatedAt: string;
   messages: ConversationMessage[];
   checkpoints: ConversationCheckpoint[];
+  activeCheckpointId?: string | null;
   activeCheckpoint: ConversationCheckpoint | null;
 }
 
@@ -75,10 +78,12 @@ export interface ContextInspectionResult {
   provider: string;
   contextWindow: number | null;
   contextLimitStatus: 'known' | 'unknown';
+  requestedBudget?: number | null;
   inputBudget: number;
   reservedOutputTokens: number;
   totalEstimatedInputTokens: number;
   tokenUsageSource: 'estimated';
+  tokenEstimationMethod?: string;
   isCompacted: boolean;
   activeCheckpoint: {
     id: string;
@@ -90,8 +95,21 @@ export interface ContextInspectionResult {
   totalOriginalMessages: number;
   retainedMessagesCount: number;
   compactedMessagesCount: number;
+  truncatedMessagesCount: number;
   assembledMessages: AssembledContextMessage[];
   withinBudget: boolean;
+}
+
+export interface EstimateTokensRequest {
+  model: string;
+  provider?: string;
+  text?: string;
+  messages?: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+}
+
+export interface EstimateTokensResponse {
+  tokens: number;
+  method: string;
 }
 
 export interface CompactionPreviewResult {
@@ -105,6 +123,9 @@ export interface CompactionPreviewResult {
   proposedRetainedFacts: string[];
   providerReported: boolean;
   providerError: string | null;
+  /** 'fallback' when the model failed or its reply was unusable and a deterministic summary was built instead. */
+  summarySource?: 'model' | 'fallback';
+  fallbackReason?: 'provider_error' | 'invalid_model_output' | null;
 }
 
 export interface ApplyCompactionPayload {
@@ -210,5 +231,9 @@ export class ConversationService {
   resume(id: string, checkpointId?: string): Observable<ResumeResult> {
     const params = checkpointId ? `?checkpointId=${encodeURIComponent(checkpointId)}` : '';
     return this.http.post<ResumeResult>(`${this.baseUrl}/${id}/resume${params}`, {});
+  }
+
+  estimateTokens(payload: EstimateTokensRequest): Observable<EstimateTokensResponse> {
+    return this.http.post<EstimateTokensResponse>('/api/tokens/estimate', payload);
   }
 }

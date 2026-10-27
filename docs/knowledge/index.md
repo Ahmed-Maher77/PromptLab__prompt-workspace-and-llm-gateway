@@ -1,7 +1,6 @@
 ---
-okf_version: "0.2"
 title: "PromptLab Knowledge Base"
-description: "Open Knowledge Format (OKF) repository index for PromptLab — Prompt Engineering Workspace and LLM Gateway"
+description: "Documentation index for PromptLab — Prompt Engineering Workspace and LLM Gateway"
 status: active
 maintainer: "PromptLab Core Team"
 last_updated: "2026-10-20"
@@ -9,17 +8,17 @@ last_updated: "2026-10-20"
 
 # PromptLab Knowledge Base
 
-Welcome to the PromptLab Knowledge Base, structured in accordance with the **Open Knowledge Format (OKF v0.2)**. This repository provides structured, traversable documentation, architectural decision records, domain concept definitions, and operational runbooks for software engineers, automated tooling, and RAG architectures.
+This is the entry point to PromptLab's documentation: architecture, architecture decision records (ADRs), domain concepts, and operational runbooks. Every document has YAML front matter (type, title, status, date), so the set can also be indexed by tools.
 
 ---
 
-## Knowledge Bundle Navigation
+## Navigation
 
-This knowledge bundle uses **progressive disclosure**. Start with the curated section indices below to navigate directly to relevant domain knowledge:
+Start with the section indices below to go directly to relevant domain knowledge:
 
 ```
 docs/knowledge/
-├── index.md                 # Root OKF index (this file)
+├── index.md                 # Documentation index (this file)
 ├── log.md                   # Chronological evolution log
 ├── architecture/            # System topology, data models, and component boundaries
 │   ├── index.md
@@ -41,7 +40,10 @@ docs/knowledge/
 │   ├── adr-005-summarize-and-truncate-compaction.md
 │   ├── adr-006-privacy-redaction-engine.md
 │   ├── adr-007-read-only-system-settings.md
-│   └── adr-008-backward-compatible-pagination.md
+│   ├── adr-008-backward-compatible-pagination.md
+│   ├── adr-009-context-budget-sliding-window.md
+│   ├── adr-010-resumable-checkpoints-and-compaction-validation.md
+│   └── adr-011-typed-timeout-reconciliation-and-per-user-throttling.md
 └── operations/              # Operational runbooks, verification, and setup
     ├── index.md
     ├── local-development.md
@@ -55,11 +57,11 @@ docs/knowledge/
 
 | Section | Description | Entry Point |
 | :--- | :--- | :--- |
-| **Architecture** | Component boundaries, system interactions, network topology, and Prisma schema | [Architecture Index](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/architecture/index.md) |
-| **Concepts** | In-depth domain specifications (prompts, experiments, context compaction, quotas, tracing) | [Concepts Index](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/index.md) |
-| **Decisions (ADRs)** | Formal Architecture Decision Records documenting key technical and architectural choices | [Decisions Index](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/decisions/index.md) |
-| **Operations** | Local development setup, troubleshooting guides, and full verification test procedures | [Operations Index](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/operations/index.md) |
-| **Change Log** | Chronological log of project milestones, hardening steps, and knowledge updates | [Knowledge Log](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/log.md) |
+| **Architecture** | Component boundaries, system interactions, network topology, and Prisma schema | [Architecture Index](./architecture/index.md) |
+| **Concepts** | In-depth domain specifications (prompts, experiments, context compaction, quotas, tracing) | [Concepts Index](./concepts/index.md) |
+| **Decisions (ADRs)** | Formal Architecture Decision Records documenting key technical and architectural choices | [Decisions Index](./decisions/index.md) |
+| **Operations** | Local development setup, troubleshooting guides, and full verification test procedures | [Operations Index](./operations/index.md) |
+| **Change Log** | Chronological log of project milestones, hardening steps, and knowledge updates | [Knowledge Log](./log.md) |
 
 ---
 
@@ -67,5 +69,5 @@ docs/knowledge/
 
 When inspecting this repository:
 1. **Locate Intent:** Use this root `index.md` to identify the appropriate category before reading individual documents.
-2. **Consult ADRs:** Check [docs/knowledge/decisions/](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/decisions/index.md) to understand constraints and rationales behind existing patterns before proposing structural changes.
-3. **Domain Invariants:** Review [docs/knowledge/concepts/](file:///c:/Users/Ahmed.Maher/Downloads/PromptLab_POC_Docs/docs/knowledge/concepts/index.md) to preserve domain rules (e.g., immutable prompt versions, two-phase quota reservation, privacy redaction).
+2. **Consult ADRs:** Check [docs/knowledge/decisions/](./decisions/index.md) to understand constraints and rationales behind existing patterns before proposing structural changes.
+3. **Domain Invariants:** Review [docs/knowledge/concepts/](./concepts/index.md) to preserve domain rules (e.g., immutable prompt versions, two-phase quota reservation, privacy redaction).

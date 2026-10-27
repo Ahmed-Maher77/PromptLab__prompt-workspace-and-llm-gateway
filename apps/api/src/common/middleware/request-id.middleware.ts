@@ -12,7 +12,7 @@ declare global {
 const REQUEST_ID_REGEX = /^[A-Za-z0-9._-]{1,128}$/;
 
 /**
- * ERR-01a / Housekeeping: Middleware ensuring every incoming request has an x-request-id.
+ * Middleware ensuring every incoming request has an x-request-id.
  * Validates client-supplied x-request-id against ^[A-Za-z0-9._-]{1,128}$;
  * generates a new UUID if missing, invalid format, or exceeding 128 characters.
  * Attaches the id to req.id for downstream handlers and sets x-request-id on response.

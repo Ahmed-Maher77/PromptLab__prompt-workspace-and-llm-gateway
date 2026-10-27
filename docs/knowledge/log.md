@@ -4,15 +4,15 @@ This log chronologically records architectural milestones, specification evoluti
 
 ---
 
-## 2026-10-20 — Open Knowledge Format (OKF v0.2) Adoption & Final Delivery
-- **Scope:** Adopted Google Open Knowledge Format (OKF v0.2) to structure repository documentation into a traversable, machine-readable knowledge bundle.
+## 2026-10-20 — Documentation Knowledge Base & Final Delivery
+- **Scope:** Organised the repository documentation into a structured knowledge base with indexed sections and front matter on every document.
 - **Artifacts Created:**
   - Root `docs/knowledge/index.md` and `log.md`.
   - Architecture Decision Records (`adr-001` through `adr-008`) under `docs/knowledge/decisions/`.
   - Core domain concept specifications under `docs/knowledge/concepts/`.
   - Architecture topology and data model documentation under `docs/knowledge/architecture/`.
   - Operational runbooks and troubleshooting guides under `docs/knowledge/operations/`.
-  - Enhanced professional `README.md` reflecting the entire POC with direct knowledge base links.
+  - Updated `README.md` with links into the knowledge base.
 
 ## 2026-10-20 — Phase 6: Hardening, UI & Data Completeness
 - **Scope:** Hardening, security review, input validation, and final POC completion.

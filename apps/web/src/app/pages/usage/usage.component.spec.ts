@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
 import { UsageComponent } from './usage.component';
 import {
   UsageService,
@@ -7,6 +7,7 @@ import {
   QuotaPolicy,
 } from '../../services/usage.service';
 import { of, throwError } from 'rxjs';
+import { ToastService } from '../../shared/feedback/toast.service';
 
 describe('UsageComponent', () => {
   let component: UsageComponent;
@@ -28,8 +29,6 @@ describe('UsageComponent', () => {
     status: 'active',
     rateLimit: {
       limitPerMinute: 60,
-      currentMinuteRequests: 5,
-      remainingRequests: 55,
     },
     estimatedTotalCost: 0.1584,
   };
@@ -165,6 +164,24 @@ describe('UsageComponent', () => {
     expect(component.getContextLabel(mockLedger[2])).toBe('Conversation');
   });
 
+  it('should prefer the operation over request id parsing for the context label', () => {
+    expect(component.getContextLabel({ ...mockLedger[0], operation: 'compaction' })).toBe(
+      'Compaction',
+    );
+    expect(
+      component.getContextLabel({ ...mockLedger[2], conversationId: null, operation: 'gateway' }),
+    ).toBe('Gateway');
+  });
+
+  it('should filter timeout-ambiguous records', () => {
+    component.ledger = [
+      { ...mockLedger[0], status: 'timeout-ambiguous' },
+      { ...mockLedger[1], status: 'expired' },
+    ];
+    component.statusFilter = 'timeout-ambiguous';
+    expect(component.filteredLedger.length).toBe(1);
+  });
+
   it('should update quota policy when savePolicy is invoked', () => {
     component.editLimit = 500_000;
     component.editRateLimit = 30;
@@ -196,4 +213,16 @@ describe('UsageComponent', () => {
     expect(component.errorMessage).toContain('Failed to load quota status');
     expect(component.loading).toBe(false);
   });
+
+  it('shows an error toast when copying to the clipboard fails', fakeAsync(() => {
+    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+    const toast = TestBed.inject(ToastService);
+    spyOn(toast, 'error');
+
+    component.copyRequestId('req-1');
+    flushMicrotasks();
+
+    expect(toast.error).toHaveBeenCalledWith('Could not copy to the clipboard.');
+    expect(component.copiedId).toBeNull();
+  }));
 });

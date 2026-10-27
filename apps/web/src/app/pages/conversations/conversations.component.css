@@ -562,9 +562,31 @@
 .chk-card-top {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 4px;
+}
+
+.chk-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.active-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.active-indicator {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
+  display: inline-block;
+  padding: 4px 0;
 }
 
 .chk-range {
@@ -985,6 +1007,11 @@
   color: var(--color-danger);
 }
 
+.conversations-layout .failed-tag {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
 .conversations-layout .compacted-tag {
   background: var(--color-warning-bg);
   color: var(--color-warning);
@@ -1164,4 +1191,26 @@
   .conversations-page .chat-header-actions .btn { flex: 1 1 auto; }
   .conversations-page .context-meter-strip { padding: 8px 12px; }
   .conversations-page .meter-labels { flex-direction: column; gap: 3px; }
+}
+
+.truncation-alert {
+  margin: var(--space-2) var(--space-6);
+}
+
+.truncation-alert-text {
+  flex: 1;
+}
+
+.inspector-truncation-alert {
+  margin-bottom: var(--space-4);
+}
+
+
+button.conv-title {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }

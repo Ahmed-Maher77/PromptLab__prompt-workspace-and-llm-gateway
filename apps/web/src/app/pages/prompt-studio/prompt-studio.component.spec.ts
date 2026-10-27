@@ -1,8 +1,9 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { PromptStudioComponent } from './prompt-studio.component';
 import { PromptService } from '../../services/prompt.service';
 import { provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { Subject, of } from 'rxjs';
+import { PromptSummary } from '../../services/prompt.service';
 
 describe('PromptStudioComponent', () => {
   let component: PromptStudioComponent;
@@ -194,5 +195,69 @@ describe('PromptStudioComponent', () => {
     expect(component.availableModels()).toEqual([]);
     expect(component.gatewayConnected()).toBe(false);
     expect(component.selectedModel).toBe('');
+  });
+
+  describe('library search', () => {
+    beforeEach(() => {
+      mockPromptService.getPrompts.calls.reset();
+    });
+
+    it('debounces keystrokes into a single request', fakeAsync(() => {
+      for (const q of ['r', 're', 'rev']) {
+        component.searchQuery.set(q);
+        component.onSearchChange();
+        tick(100);
+      }
+      expect(mockPromptService.getPrompts).not.toHaveBeenCalled();
+
+      tick(250);
+      expect(mockPromptService.getPrompts).toHaveBeenCalledTimes(1);
+      expect(mockPromptService.getPrompts).toHaveBeenCalledWith({
+        search: 'rev',
+        technique: 'all',
+      });
+    }));
+
+    it('skips the request when search and technique did not change', fakeAsync(() => {
+      component.searchQuery.set('abc');
+      component.onSearchChange();
+      tick(250);
+      component.onSearchChange();
+      tick(250);
+      expect(mockPromptService.getPrompts).toHaveBeenCalledTimes(1);
+    }));
+
+    it('requests again when only the technique changes', fakeAsync(() => {
+      component.onTechniqueFilterChange('few-shot');
+      tick(250);
+      expect(mockPromptService.getPrompts).toHaveBeenCalledWith({
+        search: '',
+        technique: 'few-shot',
+      });
+    }));
+
+    it('cancels the previous in-flight request and ignores its response', fakeAsync(() => {
+      const slow = new Subject<PromptSummary[]>();
+      const fast = new Subject<PromptSummary[]>();
+      mockPromptService.getPrompts.and.returnValues(slow, fast);
+
+      component.searchQuery.set('a');
+      component.onSearchChange();
+      tick(250);
+      component.searchQuery.set('ab');
+      component.onSearchChange();
+      tick(250);
+
+      expect(slow.observed).toBeFalse();
+      fast.next([]);
+      slow.next([{ id: 'stale' } as PromptSummary]);
+      expect(component.prompts()).toEqual([]);
+      expect(component.loadingPrompts()).toBeFalse();
+    }));
+
+    it('loads immediately for non-search triggers', () => {
+      component.loadPrompts();
+      expect(mockPromptService.getPrompts).toHaveBeenCalledTimes(1);
+    });
   });
 });

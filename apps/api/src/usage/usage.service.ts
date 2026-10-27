@@ -10,7 +10,13 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsageRecord } from '@prisma/client';
-import { calculateCost } from '../experiments/cost-calculator';
+import { decimalToNumber, numberToDecimal } from '../common/utils/decimal.util';
+import {
+  fromApiTokenUsageSource,
+  toApiTokenUsageSource,
+  toApiUsageStatus,
+} from '../common/enums/usage.enums';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import {
   UpdateQuotaPolicyDto,
@@ -29,12 +35,10 @@ export const SWEEPER_CUTOFF_MARGIN_MS = 5_000;
 export class UsageService {
   private readonly logger = new Logger(UsageService.name);
 
-  // In-memory sliding window for rate limiting: userId -> timestamps array
-  private readonly rateLimitTracker = new Map<string, number[]>();
-
   constructor(
     private readonly prisma: PrismaService,
     @Inject(APP_CONFIG) private readonly appConfig: ValidatedEnvironment,
+    private readonly modelCatalog: ModelCatalogService,
   ) {}
 
   /**
@@ -76,7 +80,7 @@ export class UsageService {
   }
 
   /**
-   * USAGE-01: Admin updates quota policy for a target user, validating target user exists.
+   * Admin updates quota policy for a target user, validating target user exists.
    */
   async updatePolicyForTargetUser(dto: UpdateQuotaPolicyDto, targetUserId: string) {
     const user = await this.prisma.user.findUnique({
@@ -141,18 +145,6 @@ export class UsageService {
     const { periodStart, periodEnd } = this.getUtcMonthBounds();
     const policy = await this.getPolicy(userId);
 
-    // Close any older open periods
-    await this.prisma.quotaPeriod.updateMany({
-      where: {
-        userId,
-        periodEnd: { lte: new Date() },
-        status: 'active',
-      },
-      data: {
-        status: 'closed',
-      },
-    });
-
     try {
       return await this.prisma.quotaPeriod.upsert({
         where: {
@@ -189,100 +181,79 @@ export class UsageService {
   }
 
   /**
-   * Checks whether the user has exceeded their request-rate limit (requests per minute).
-   */
-  checkRateLimit(userId: string, rateLimit: number): void {
-    const now = Date.now();
-    const oneMinuteAgo = now - 60_000;
-
-    let timestamps = this.rateLimitTracker.get(userId) || [];
-    timestamps = timestamps.filter((t) => t > oneMinuteAgo);
-
-    if (timestamps.length >= rateLimit) {
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          error: 'RATE_LIMIT_EXCEEDED',
-          message: `Request rate limit of ${rateLimit} requests per minute exceeded. Please wait before retrying.`,
-          retryAfterSeconds: Math.ceil((timestamps[0] + 60_000 - now) / 1000),
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
-
-    timestamps.push(now);
-    this.rateLimitTracker.set(userId, timestamps);
-  }
-
-  /**
-   * Returns current minute rate limit status for a user.
-   */
-  getRateLimitStatus(userId: string, rateLimit: number) {
-    const now = Date.now();
-    const oneMinuteAgo = now - 60_000;
-    const timestamps = (this.rateLimitTracker.get(userId) || []).filter((t) => t > oneMinuteAgo);
-    return {
-      limitPerMinute: rateLimit,
-      currentMinuteRequests: timestamps.length,
-      remainingRequests: Math.max(0, rateLimit - timestamps.length),
-    };
-  }
-
-  /**
    * Returns comprehensive status for the active monthly quota period.
+   * Strictly read-only: performs zero database writes (no update, updateMany, upsert, or create).
    */
   async getStatus(userId: string): Promise<QuotaPeriodStatus> {
     const uid = userId;
-    const policy = await this.getPolicy(uid);
-    const period = await this.getCurrentPeriodRecord(uid);
+    const { periodStart, periodEnd } = this.getUtcMonthBounds();
 
-    const remainingTokens = Math.max(
-      0,
-      period.tokenLimit - (period.actualTokens + period.reservedTokens),
-    );
+    const [policy, period, costAggregate] = await Promise.all([
+      this.prisma.quotaPolicy.findUnique({
+        where: {
+          scope_scopeId: {
+            scope: 'user',
+            scopeId: uid,
+          },
+        },
+      }),
+      this.prisma.quotaPeriod.findUnique({
+        where: {
+          userId_periodStart: {
+            userId: uid,
+            periodStart,
+          },
+        },
+      }),
+      this.prisma.usageRecord.aggregate({
+        where: {
+          userId: uid,
+          createdAt: {
+            gte: periodStart,
+            lt: periodEnd,
+          },
+          status: 'reconciled',
+        },
+        _sum: {
+          estimatedCost: true,
+        },
+      }),
+    ]);
+
+    const effectiveTokenLimit = period?.tokenLimit ?? policy?.monthlyTokenLimit ?? 1_000_000;
+    const actualTokens = period?.actualTokens ?? 0;
+    const reservedTokens = period?.reservedTokens ?? 0;
+    const rateLimit = policy?.requestRateLimit ?? 60;
+
+    const remainingTokens = Math.max(0, effectiveTokenLimit - (actualTokens + reservedTokens));
     const percentUsed =
-      period.tokenLimit > 0
-        ? Math.min(100, Math.round((period.actualTokens / period.tokenLimit) * 1000) / 10)
+      effectiveTokenLimit > 0
+        ? Math.min(100, Math.round((actualTokens / effectiveTokenLimit) * 1000) / 10)
         : 0;
     const percentReserved =
-      period.tokenLimit > 0
-        ? Math.min(100, Math.round((period.reservedTokens / period.tokenLimit) * 1000) / 10)
+      effectiveTokenLimit > 0
+        ? Math.min(100, Math.round((reservedTokens / effectiveTokenLimit) * 1000) / 10)
         : 0;
 
-    // Calculate sum of estimated cost across reconciled usage records in this period
-    const costAggregate = await this.prisma.usageRecord.aggregate({
-      where: {
-        userId: uid,
-        createdAt: {
-          gte: period.periodStart,
-          lt: period.periodEnd,
-        },
-        status: 'reconciled',
-      },
-      _sum: {
-        estimatedCost: true,
-      },
-    });
-
-    const estimatedTotalCost =
-      costAggregate._sum.estimatedCost !== null
-        ? Math.round(costAggregate._sum.estimatedCost * 1_000_000) / 1_000_000
-        : 0;
+    const costSum = decimalToNumber(costAggregate._sum.estimatedCost);
+    const estimatedTotalCost = costSum !== null ? Math.round(costSum * 1_000_000) / 1_000_000 : 0;
 
     return {
       userId: uid,
-      periodId: period.id,
-      periodStart: (period.periodStart ? new Date(period.periodStart) : new Date()).toISOString(),
-      periodEnd: (period.periodEnd ? new Date(period.periodEnd) : new Date()).toISOString(),
-      resetDate: (period.periodEnd ? new Date(period.periodEnd) : new Date()).toISOString(),
-      tokenLimit: period.tokenLimit,
-      actualTokens: period.actualTokens,
-      reservedTokens: period.reservedTokens,
+      periodId: period?.id ?? 'pending',
+      periodStart: (period?.periodStart ? new Date(period.periodStart) : periodStart).toISOString(),
+      periodEnd: (period?.periodEnd ? new Date(period.periodEnd) : periodEnd).toISOString(),
+      resetDate: (period?.periodEnd ? new Date(period.periodEnd) : periodEnd).toISOString(),
+      tokenLimit: effectiveTokenLimit,
+      actualTokens,
+      reservedTokens,
       remainingTokens,
       percentUsed,
       percentReserved,
-      status: period.status,
-      rateLimit: this.getRateLimitStatus(uid, policy.requestRateLimit),
+      status: period?.status ?? 'active',
+      rateLimit: {
+        limitPerMinute: rateLimit,
+      },
       estimatedTotalCost,
     };
   }
@@ -311,11 +282,6 @@ export class UsageService {
       throw new BadRequestException('userId is required for reserveUsage');
     }
     const uid = dto.userId;
-    const policy = await this.getPolicy(uid);
-
-    // 1. Enforce rate limit (independent from monthly token quota)
-    this.checkRateLimit(uid, policy.requestRateLimit);
-
     const estimatedTokens = Math.max(1, dto.estimatedTokens || 1);
     const id = crypto.randomUUID();
 
@@ -329,11 +295,11 @@ export class UsageService {
         INSERT INTO "usage_records" (
           "id", "requestId", "userId", "conversationId", "provider", "model",
           "inputTokens", "outputTokens", "tokenUsageSource", "reservedTokens",
-          "status", "createdAt"
+          "status", "operation", "createdAt"
         ) VALUES (
           ${id}, ${dto.requestId}, ${uid}, ${dto.conversationId || null}, ${dto.provider}, ${dto.model},
-          ${0}, ${0}, ${'estimated'}, ${estimatedTokens},
-          ${'reserved'}, (NOW() AT TIME ZONE 'UTC')
+          ${0}, ${0}, 'estimated', ${estimatedTokens},
+          'reserved', ${dto.operation ?? null}::"UsageOperation", (NOW() AT TIME ZONE 'UTC')
         )
         ON CONFLICT ("userId", "requestId") DO NOTHING
         RETURNING *;
@@ -491,7 +457,11 @@ export class UsageService {
         const outputTokens = dto.usage?.completionTokens ?? 0;
         const totalTokens = dto.usage?.totalTokens ?? (inputTokens + outputTokens);
         const source = dto.usage?.source || 'provider-reported';
-        const cost = calculateCost(record.model, inputTokens, outputTokens);
+        let cost: number | null = dto.cost !== undefined ? dto.cost : null;
+        if (cost === null && dto.cost === undefined) {
+          const calculated = await this.modelCatalog.calculateCost(record.model, inputTokens, outputTokens);
+          cost = calculated.cost;
+        }
 
         // Update quota period: release reserved amount and add actual tokens
         if (period) {
@@ -513,8 +483,8 @@ export class UsageService {
           data: {
             inputTokens,
             outputTokens,
-            tokenUsageSource: source,
-            estimatedCost: cost,
+            tokenUsageSource: fromApiTokenUsageSource(source),
+            estimatedCost: numberToDecimal(cost),
             status: 'reconciled',
             responseBody: dto.responseBody !== undefined ? (dto.responseBody as any) : undefined,
             reconciledAt: new Date(),
@@ -524,27 +494,22 @@ export class UsageService {
         return { success: true, record: updatedRecord };
       } else {
         // Check for ambiguous timeout where upstream provider may have generated tokens
-        const isTimeout =
-          dto.errorType === 'TIMEOUT' ||
-          Boolean(
-            dto.error &&
-              (dto.error.toLowerCase().includes('timeout') ||
-                dto.error.toLowerCase().includes('timed out') ||
-                dto.error.toLowerCase().includes('ambiguous')),
-          );
+        // Typed timeout detection. Do NOT parse dto.error strings!
+        const isTimeout = dto.errorType === 'TIMEOUT';
 
         if (isTimeout) {
           // Conservative timeout recovery strategy:
-          // Retain estimated input tokens (50% of reservation), release unconsumed remainder,
-          // and record as 'timeout-ambiguous' with 'estimated-timeout' source.
-          const conservativeConsumed = Math.max(1, Math.floor(reservedAmount * 0.5));
+          // Charge configured ratio of reservation (QUOTA_TIMEOUT_CHARGE_RATIO, default 50%),
+          // release unconsumed remainder, and record as 'timeout-ambiguous' with 'estimated-timeout' source.
+          const ratio = this.appConfig.QUOTA_TIMEOUT_CHARGE_RATIO ?? 0.5;
+          const conservativeConsumed = Math.floor(reservedAmount * ratio);
 
           if (period) {
             await tx.quotaPeriod.update({
               where: { id: period.id },
               data: {
                 reservedTokens: { decrement: reservedAmount },
-                actualTokens: { increment: conservativeConsumed },
+                ...(conservativeConsumed > 0 ? { actualTokens: { increment: conservativeConsumed } } : {}),
               },
             });
           } else {
@@ -553,16 +518,17 @@ export class UsageService {
             );
           }
 
-          const cost = calculateCost(record.model, conservativeConsumed, 0);
+          const timeoutCostEst = await this.modelCatalog.calculateCost(record.model, conservativeConsumed, 0);
+          const cost = timeoutCostEst.cost;
 
           const updatedRecord = await tx.usageRecord.update({
             where: { id: record.id },
             data: {
               inputTokens: conservativeConsumed,
               outputTokens: 0,
-              tokenUsageSource: 'estimated-timeout',
-              estimatedCost: cost,
-              status: 'timeout-ambiguous',
+              tokenUsageSource: 'estimated_timeout',
+              estimatedCost: numberToDecimal(cost),
+              status: 'timeout_ambiguous',
               responseBody: dto.responseBody !== undefined ? (dto.responseBody as any) : { error: dto.error, errorType: dto.errorType },
               reconciledAt: new Date(),
             },
@@ -622,10 +588,11 @@ export class UsageService {
       inputTokens: r.inputTokens,
       outputTokens: r.outputTokens,
       totalTokens: r.inputTokens + r.outputTokens,
-      tokenUsageSource: r.tokenUsageSource,
+      tokenUsageSource: toApiTokenUsageSource(r.tokenUsageSource),
       reservedTokens: r.reservedTokens,
-      estimatedCost: r.estimatedCost,
-      status: r.status,
+      estimatedCost: decimalToNumber(r.estimatedCost),
+      status: toApiUsageStatus(r.status),
+      operation: r.operation,
       createdAt: r.createdAt,
       reconciledAt: r.reconciledAt,
     }));
@@ -646,9 +613,6 @@ export class UsageService {
       },
     });
 
-    // Reset rate limiter for this user
-    this.rateLimitTracker.delete(uid);
-
     return {
       success: true,
       message: `Active period ${period.id} tokens reset to 0 for demo/testing.`,
@@ -657,13 +621,33 @@ export class UsageService {
   }
 
   /**
-   * Scheduled background sweeper: finds and reclaims leaked reservations older than 2x gateway timeout plus margin.
+   * Closes quota periods whose periodEnd has passed and status is still 'active'.
+   * Safe across multi-instance clusters.
+   */
+  async closeExpiredQuotaPeriods(): Promise<{ count: number }> {
+    const result = await this.prisma.quotaPeriod.updateMany({
+      where: {
+        periodEnd: { lte: new Date() },
+        status: 'active',
+      },
+      data: {
+        status: 'closed',
+      },
+    });
+    return { count: result.count };
+  }
+
+  /**
+   * Scheduled background sweeper: closes expired quota periods, then finds and reclaims leaked reservations
+   * older than 2x gateway timeout plus margin.
    * Runs every minute. Safe across multi-instance clusters using row-level FOR UPDATE SKIP LOCKED.
    */
   @Cron(CronExpression.EVERY_MINUTE)
-  async handleSweepCron(): Promise<{ sweptCount: number }> {
+  async handleSweepCron(): Promise<{ sweptCount: number; closedPeriodsCount: number }> {
+    const closed = await this.closeExpiredQuotaPeriods();
     const maxAgeMs = this.appConfig.LLM_REQUEST_TIMEOUT_MS * 2 + SWEEPER_CUTOFF_MARGIN_MS;
-    return await this.sweepExpiredReservations(maxAgeMs);
+    const sweep = await this.sweepExpiredReservations(maxAgeMs);
+    return { sweptCount: sweep.sweptCount, closedPeriodsCount: closed.count };
   }
 
   /**
@@ -681,7 +665,7 @@ export class UsageService {
 
     return await this.prisma.$transaction(async (tx) => {
       // 1. Concurrency-safe selection using row-level FOR UPDATE SKIP LOCKED
-      // TIME-01: compare against UTC timestamp without session timezone distortion
+      // Compare against UTC timestamp without session timezone distortion
       const staleRecords = await tx.$queryRaw<Array<{
         id: string;
         userId: string;

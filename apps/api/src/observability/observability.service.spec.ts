@@ -3,6 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { ObservabilityService } from './observability.service';
 import { sanitizeTelemetry } from './redaction.util';
 import { AUTH_CONFIG } from '../common/config/env.validation';
+import { SpanStatusCode } from '@opentelemetry/api';
+import { ExportResultCode } from '@opentelemetry/core';
+import {
+  InMemorySpanExporter,
+  SimpleSpanProcessor,
+  SpanExporter,
+  SpanProcessor,
+} from '@opentelemetry/sdk-trace-base';
+import { buildExportProcessors, CryptoIdGenerator, langfuseOtlpUrl, otlpTracesUrl } from './otel-tracing';
 
 describe('ObservabilityService', () => {
   let service: ObservabilityService;
@@ -116,6 +125,47 @@ describe('ObservabilityService', () => {
     });
   });
 
+  describe('span closure on completion', () => {
+    it('closes and flags child spans left open when the trace completes', () => {
+      const trace = service.startTrace({
+        name: 'early-exit',
+        operation: 'playground.execute',
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        userId: 'user-1',
+      });
+      const closed = trace.startSpan('quota.reserve');
+      closed.end('ok');
+      trace.startSpan('litellm.chat_completion'); // never ended by the caller
+
+      const record = trace.complete({ status: 'error', errorCode: 'EXECUTION_EXCEPTION' });
+
+      for (const span of record.spans) {
+        expect(span.endTime).not.toBe('');
+        expect(span.durationMs).toBeGreaterThanOrEqual(0);
+      }
+      const open = record.spans.find((s) => s.name === 'litellm.chat_completion')!;
+      expect(open.status).toBe('error');
+      expect(open.attributes['span.closed_by_trace']).toBe(true);
+      const reserve = record.spans.find((s) => s.name === 'quota.reserve')!;
+      expect(reserve.status).toBe('ok');
+      expect(reserve.attributes['span.closed_by_trace']).toBeUndefined();
+    });
+
+    it('records rate_limited as the trace status', () => {
+      const trace = service.startTrace({
+        name: 'limited',
+        operation: 'playground.execute',
+        model: 'gpt-4o-mini',
+        provider: 'openai',
+        userId: 'user-1',
+      });
+      const record = trace.complete({ status: 'rate_limited', errorCode: 'RATE_LIMIT_EXCEEDED' });
+      expect(record.status).toBe('rate_limited');
+      expect(service.getTraces({ status: 'rate_limited' } as any).map((t: any) => t.id)).toContain(record.id);
+    });
+  });
+
   describe('disabled telemetry', () => {
     it('does not record traces when ENABLE_TELEMETRY is false', () => {
       authConfigMock.ENABLE_TELEMETRY = false;
@@ -132,7 +182,7 @@ describe('ObservabilityService', () => {
       expect(traces.length).toBe(0);
     });
 
-    it('respects validated authConfig.ENABLE_TELEMETRY (OBS-01)', () => {
+    it('respects validated authConfig.ENABLE_TELEMETRY', () => {
       const serviceWithConfig = new ObservabilityService(
         { ENABLE_TELEMETRY: false } as any,
         configServiceMock as any,
@@ -227,111 +277,143 @@ describe('ObservabilityService', () => {
     });
   });
 
-  describe('external collector resilience and formatting', () => {
-    it('formats valid OpenTelemetry OTLP JSON payload with stringified nano timestamps and typed attributes', async () => {
-      configServiceMock.get.mockImplementation((key: string) => {
-        if (key === 'ENABLE_TELEMETRY') return 'true';
-        if (key === 'OTEL_EXPORTER_OTLP_ENDPOINT') return 'http://127.0.0.1:4318/v1/traces';
-        return null;
+  describe('OpenTelemetry export', () => {
+    const buildService = (
+      processors: SpanProcessor[],
+      config: Record<string, unknown> = { ENABLE_TELEMETRY: true, APP_VERSION: '1.2.3' },
+    ) => new ObservabilityService(config as any, configServiceMock as any, processors);
+
+    it('exports the root and child spans with the IDs used in the traceparent', async () => {
+      const exporter = new InMemorySpanExporter();
+      const otelService = buildService([new SimpleSpanProcessor(exporter)]);
+
+      const trace = otelService.startTrace({
+        name: 'otel-test',
+        operation: 'playground.execute',
+        model: 'gpt-4o',
+        provider: 'openai',
+        userId: 'user-1',
       });
-
-      let capturedPayload: any = null;
-      const originalFetch = global.fetch;
-      global.fetch = jest.fn().mockImplementation((url, init) => {
-        if (typeof init?.body === 'string') {
-          capturedPayload = JSON.parse(init.body);
-        }
-        return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+      const span = trace.startSpan('quota.reserve', { count: 500, active: true, label: 'test-span', nested: { a: 1 } });
+      span.end('ok');
+      trace.complete({
+        status: 'success',
+        usage: { promptTokens: 12, completionTokens: 8, totalTokens: 20, source: 'provider-reported' },
+        cost: 0.0004,
       });
+      await otelService.flush();
 
-      try {
-        const trace = service.startTrace({
-          name: 'otlp-format-test',
-          operation: 'playground.execute',
-          model: 'gpt-4o',
-          provider: 'openai',
-          userId: 'dev-user-001',
-        });
+      const spans = exporter.getFinishedSpans();
+      expect(spans).toHaveLength(2);
+      const root = spans.find((s) => s.name === 'otel-test')!;
+      const child = spans.find((s) => s.name === 'quota.reserve')!;
 
-        const span = trace.startSpan('quota.reserve', {
-          count: 500,
-          active: true,
-          label: 'test-span',
-        });
-        span.end('ok');
+      expect(trace.traceparent).toBe(`00-${root.spanContext().traceId}-${root.spanContext().spanId}-01`);
+      expect(root.spanContext().traceId).toBe(trace.traceId);
+      expect(child.spanContext().traceId).toBe(trace.traceId);
+      expect(child.parentSpanContext?.spanId).toBe(trace.rootSpanId);
 
-        trace.complete({ status: 'success' });
-
-        expect(capturedPayload).toBeDefined();
-        const resourceSpan = capturedPayload.resourceSpans[0];
-        expect(resourceSpan.resource.attributes[0].key).toBe('service.name');
-        expect(resourceSpan.resource.attributes[0].value.stringValue).toBe('promptlab-gateway');
-
-        const spans = resourceSpan.scopeSpans[0].spans;
-        expect(spans.length).toBe(2);
-
-        // Verify root span
-        const root = spans[0];
-        expect(root.traceId).toBe(trace.traceId);
-        expect(root.spanId).toBe(trace.rootSpanId);
-        expect(typeof root.startTimeUnixNano).toBe('string');
-        expect(typeof root.endTimeUnixNano).toBe('string');
-        expect(root.parentSpanId).toBeUndefined();
-
-        // Verify child span
-        const child = spans[1];
-        expect(child.traceId).toBe(trace.traceId);
-        expect(child.parentSpanId).toBe(trace.rootSpanId);
-        expect(child.name).toBe('quota.reserve');
-        expect(child.status.code).toBe(1);
-
-        // Verify proto3 typed attribute values
-        const countAttr = child.attributes.find((a: any) => a.key === 'count');
-        expect(countAttr.value.intValue).toBe('500');
-
-        const activeAttr = child.attributes.find((a: any) => a.key === 'active');
-        expect(activeAttr.value.boolValue).toBe(true);
-
-        const labelAttr = child.attributes.find((a: any) => a.key === 'label');
-        expect(labelAttr.value.stringValue).toBe('test-span');
-      } finally {
-        global.fetch = originalFetch;
-      }
+      expect(child.attributes).toMatchObject({ count: 500, active: true, label: 'test-span', nested: '{"a":1}' });
+      expect(child.status.code).toBe(SpanStatusCode.OK);
+      expect(root.attributes).toMatchObject({
+        'gen_ai.request.model': 'gpt-4o',
+        'gen_ai.system': 'openai',
+        'gen_ai.usage.input_tokens': 12,
+        'gen_ai.usage.output_tokens': 8,
+        'llm.cost.estimated': 0.0004,
+        'user.id': 'user-1',
+        'trace.status': 'success',
+      });
+      expect(root.resource.attributes).toMatchObject({ 'service.name': 'promptlab-api', 'service.version': '1.2.3' });
     });
 
-    it('handles OTLP and Langfuse endpoint network errors gracefully without throwing', async () => {
-      configServiceMock.get.mockImplementation((key: string) => {
-        if (key === 'ENABLE_TELEMETRY') return 'true';
-        if (key === 'OTEL_EXPORTER_OTLP_ENDPOINT') return 'http://127.0.0.1:4318/v1/traces';
-        if (key === 'LANGFUSE_PUBLIC_KEY') return 'pk-lf-test';
-        if (key === 'LANGFUSE_SECRET_KEY') return 'sk-lf-test';
-        if (key === 'LANGFUSE_BASEURL') return 'http://127.0.0.1:3000';
-        return null;
+    it('redacts secrets before they reach the exporter', async () => {
+      const exporter = new InMemorySpanExporter();
+      const otelService = buildService([new SimpleSpanProcessor(exporter)]);
+
+      const trace = otelService.startTrace({
+        name: 'redaction',
+        operation: 'playground.execute',
+        model: 'gpt-4o',
+        provider: 'openai',
+        metadata: { apiKey: 'sk-live-1234567890abcdef' },
       });
+      trace.complete({ status: 'error', errorMessage: 'upstream said Bearer abc.def.ghi and sk-abcdefghijklmnop' });
+      await otelService.flush();
 
-      // Mock global fetch to simulate network error or timeout
-      const originalFetch = global.fetch;
-      global.fetch = jest.fn().mockRejectedValue(new Error('Connection refused to telemetry collector'));
+      const [root] = exporter.getFinishedSpans();
+      expect(root.attributes.apiKey).toBe('[REDACTED]');
+      expect(root.attributes['error.message']).toBe('upstream said [REDACTED_BEARER] and [REDACTED_API_KEY]');
+      expect(root.status.code).toBe(SpanStatusCode.ERROR);
+    });
 
-      try {
-        const trace = service.startTrace({
-          name: 'resilience-test',
-          operation: 'playground.execute',
-          model: 'gpt-4o',
-          provider: 'openai',
-        });
+    it('exports a child span left open, flagged as closed by the trace', async () => {
+      const exporter = new InMemorySpanExporter();
+      const otelService = buildService([new SimpleSpanProcessor(exporter)]);
 
-        // Completing must not throw an exception even if fetch fails
-        expect(() => {
-          trace.complete({ status: 'success' });
-        }).not.toThrow();
+      const trace = otelService.startTrace({ name: 'open', operation: 'conversation.turn', model: 'm', provider: 'p' });
+      trace.startSpan('litellm.chat_completion');
+      trace.complete({ status: 'error' });
+      await otelService.flush();
 
-        // Trace must still be stored in local buffer
-        const stored = service.getTrace(trace.traceId);
-        expect(stored).toBeDefined();
-      } finally {
-        global.fetch = originalFetch;
+      const child = exporter.getFinishedSpans().find((s) => s.name === 'litellm.chat_completion')!;
+      expect(child.attributes['span.closed_by_trace']).toBe(true);
+      expect(child.status.code).toBe(SpanStatusCode.ERROR);
+    });
+
+    it('never throws on the request path when the exporter fails', async () => {
+      const failing: SpanExporter = {
+        export: (_spans, done) => done({ code: ExportResultCode.FAILED, error: new Error('collector down') }),
+        shutdown: () => Promise.resolve(),
+      };
+      const otelService = buildService([new SimpleSpanProcessor(failing)]);
+
+      const trace = otelService.startTrace({ name: 'resilience', operation: 'playground.execute', model: 'm', provider: 'p' });
+      expect(() => trace.complete({ status: 'success' })).not.toThrow();
+      await expect(otelService.flush()).resolves.toBeUndefined();
+      expect(otelService.getTrace(trace.traceId)).toBeDefined();
+    });
+
+    it('flushes queued spans on application shutdown', async () => {
+      const processor = new SimpleSpanProcessor(new InMemorySpanExporter());
+      const shutdown = jest.spyOn(processor, 'shutdown');
+      await buildService([processor]).onApplicationShutdown();
+      expect(shutdown).toHaveBeenCalled();
+    });
+  });
+
+  describe('export targets', () => {
+    it('creates one batching exporter per configured backend', () => {
+      expect(buildExportProcessors({})).toHaveLength(0);
+      expect(buildExportProcessors({ otlpEndpoint: 'http://collector:4318' })).toHaveLength(1);
+      expect(
+        buildExportProcessors({
+          otlpEndpoint: 'http://collector:4318',
+          langfuse: { baseUrl: 'http://langfuse:3000', publicKey: 'pk', secretKey: 'sk' },
+        }),
+      ).toHaveLength(2);
+    });
+
+    it('normalises the OTLP and Langfuse URLs', () => {
+      expect(otlpTracesUrl('http://collector:4318')).toBe('http://collector:4318/v1/traces');
+      expect(otlpTracesUrl('http://collector:4318/')).toBe('http://collector:4318/v1/traces');
+      expect(otlpTracesUrl('http://collector:4318/v1/traces')).toBe('http://collector:4318/v1/traces');
+      expect(langfuseOtlpUrl('https://cloud.langfuse.com/')).toBe('https://cloud.langfuse.com/api/public/otel/v1/traces');
+    });
+
+    it('uses the documented Langfuse default when no host is configured', () => {
+      expect(service.getLangfuseConfig().baseUrl).toBe('http://localhost:3001');
+    });
+
+    it('generates crypto-random, non-zero W3C IDs', () => {
+      const ids = new CryptoIdGenerator();
+      const traceIds = new Set(Array.from({ length: 200 }, () => ids.generateTraceId()));
+      expect(traceIds.size).toBe(200);
+      for (const id of traceIds) {
+        expect(id).toMatch(/^[0-9a-f]{32}$/);
+        expect(id).not.toBe('0'.repeat(32));
       }
+      expect(ids.generateSpanId()).toMatch(/^[0-9a-f]{16}$/);
     });
   });
 });

@@ -1,3 +1,4 @@
+import { UsageOperation } from '@prisma/client';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class UpdateQuotaPolicyDto {
@@ -21,9 +22,18 @@ export class ReserveUsageDto {
   provider!: string;
   estimatedTokens!: number;
   conversationId?: string;
+  operation?: UsageOperation;
 }
 
 import { StoredLlmResponse } from '../usage.types';
+
+export type ReconcileErrorType =
+  | 'TIMEOUT'
+  | 'RATE_LIMITED'
+  | 'AUTH_ERROR'
+  | 'INVALID_REQUEST'
+  | 'PROVIDER_ERROR'
+  | string;
 
 export class ReconcileUsageDto {
   requestId!: string;
@@ -37,7 +47,9 @@ export class ReconcileUsageDto {
   };
   latencyMs?: number;
   error?: string;
-  errorType?: 'TIMEOUT' | 'RATE_LIMITED' | 'AUTH_ERROR' | 'INVALID_REQUEST' | 'PROVIDER_ERROR' | string;
+  errorType?: ReconcileErrorType;
+  cost?: number | null;
+  costSource?: 'provider-reported' | 'catalog-estimate';
   responseBody?: StoredLlmResponse;
 }
 

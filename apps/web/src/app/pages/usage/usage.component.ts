@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, DestroyRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -11,8 +11,21 @@ import {
   UsageService,
   QuotaPeriodStatus,
   UsageRecordItem,
+  UsageOperation,
+  UsageRecordStatus,
   QuotaPolicy,
 } from '../../services/usage.service';
+import { ConfirmService } from '../../shared/feedback/confirm.service';
+import { ToastService } from '../../shared/feedback/toast.service';
+import { toApiErrorMessage } from '../../utils/api-error.util';
+
+const CONTEXT_LABELS: Record<UsageOperation, string> = {
+  playground: 'Playground',
+  comparison: 'Comparison',
+  conversation: 'Conversation',
+  compaction: 'Compaction',
+  gateway: 'Gateway',
+};
 
 @Component({
   selector: 'app-usage',
@@ -27,6 +40,7 @@ import {
   ],
   templateUrl: './usage.component.html',
   styleUrls: ['./usage.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class UsageComponent implements OnInit {
   status: QuotaPeriodStatus | null = null;
@@ -44,10 +58,24 @@ export class UsageComponent implements OnInit {
   editRateLimit = 60;
 
   // Filter
-  statusFilter: 'all' | 'reconciled' | 'reserved' | 'failed' = 'all';
+  statusFilter: 'all' | UsageRecordStatus = 'all';
   copiedId: string | null = null;
 
-  constructor(private readonly usageService: UsageService) {}
+  private readonly confirmService = inject(ConfirmService);
+  private readonly toast = inject(ToastService);
+  private readonly timers = new Set<ReturnType<typeof setTimeout>>();
+
+  constructor(private readonly usageService: UsageService) {
+    inject(DestroyRef).onDestroy(() => this.timers.forEach((t) => clearTimeout(t)));
+  }
+
+  private later(fn: () => void, ms: number): void {
+    const timer = setTimeout(() => {
+      this.timers.delete(timer);
+      fn();
+    }, ms);
+    this.timers.add(timer);
+  }
 
   ngOnInit(): void {
     this.loadAll();
@@ -65,7 +93,7 @@ export class UsageComponent implements OnInit {
         this.loading = false;
       },
       error: (err) => {
-        this.errorMessage = `Failed to load quota status: ${err.message || 'Server error'}`;
+        this.errorMessage = `Failed to load quota status: ${toApiErrorMessage(err, 'Server error')}`;
         this.loading = false;
       },
     });
@@ -110,12 +138,12 @@ export class UsageComponent implements OnInit {
         next: () => {
           this.savingPolicy = false;
           this.successMessage = 'Quota policy updated successfully.';
-          setTimeout(() => (this.successMessage = null), 4000);
+          this.later(() => (this.successMessage = null), 4000);
           this.loadAll();
         },
         error: (err) => {
           this.savingPolicy = false;
-          this.errorMessage = `Failed to update policy: ${err.message || 'Server error'}`;
+          this.errorMessage = `Failed to update policy: ${toApiErrorMessage(err, 'Server error')}`;
         },
       });
   }
@@ -131,8 +159,13 @@ export class UsageComponent implements OnInit {
     this.savePolicy();
   }
 
-  resetDemoUsage(): void {
-    if (!confirm('Reset current month token usage and active reservations to 0 for demo/testing?')) {
+  async resetDemoUsage(): Promise<void> {
+    const confirmed = await this.confirmService.confirm({
+      title: 'Reset demo usage',
+      message: 'Reset current month token usage and active reservations to 0 for demo/testing?',
+      confirmLabel: 'Reset usage',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -144,26 +177,30 @@ export class UsageComponent implements OnInit {
       next: (res) => {
         this.resetting = false;
         this.successMessage = res.message || 'Current period tokens reset successfully.';
-        setTimeout(() => (this.successMessage = null), 4000);
+        this.later(() => (this.successMessage = null), 4000);
         this.loadAll();
       },
       error: (err) => {
         this.resetting = false;
-        this.errorMessage = `Failed to reset demo usage: ${err.message || 'Server error'}`;
+        this.errorMessage = `Failed to reset demo usage: ${toApiErrorMessage(err, 'Server error')}`;
       },
     });
   }
 
   copyRequestId(id: string): void {
-    navigator.clipboard.writeText(id).then(() => {
-      this.copiedId = id;
-      setTimeout(() => {
-        if (this.copiedId === id) this.copiedId = null;
-      }, 2000);
-    });
+    navigator.clipboard
+      .writeText(id)
+      .then(() => {
+        this.copiedId = id;
+        this.later(() => {
+          if (this.copiedId === id) this.copiedId = null;
+        }, 2000);
+      })
+      .catch(() => this.toast.error('Could not copy to the clipboard.'));
   }
 
   getContextLabel(record: UsageRecordItem): string {
+    if (record.operation) return CONTEXT_LABELS[record.operation];
     if (record.conversationId) return 'Conversation';
     if (record.requestId.startsWith('req-exp')) return 'Comparison';
     if (record.requestId.startsWith('req-play')) return 'Playground';

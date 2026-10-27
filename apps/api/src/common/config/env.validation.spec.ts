@@ -5,7 +5,7 @@ import {
   KNOWN_EXAMPLE_SECRETS,
 } from './env.validation';
 
-describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
+describe('validateEnvironment (secure by default)', () => {
   const origEnv = process.env;
 
   beforeEach(() => {
@@ -42,6 +42,8 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     expect(config.IS_DEV_OR_TEST).toBe(true);
     expect(config.AUTH_DEV_TOKENS_ENABLED).toBe(false);
     expect(config.LLM_REQUEST_TIMEOUT_MS).toBe(30000);
+    expect(config.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0.5);
+    expect(config.MODEL_CATALOG_TTL_MS).toBe(300000);
   });
 
   it('parses custom PORT, CORS origins, and custom LLM_REQUEST_TIMEOUT_MS', () => {
@@ -92,7 +94,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     );
   });
 
-  describe('SEC-01a-2: Fail-closed when NODE_ENV is unset or not in allow-list', () => {
+  describe('Fail-closed when NODE_ENV is unset or not in allow-list', () => {
     it('treats unset NODE_ENV as production and refuses startup without real auth', () => {
       expect(() =>
         validateEnvironment({
@@ -117,7 +119,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('SEC-01a-2: Known example secrets rejection in production-like environments', () => {
+  describe('Known example secrets rejection in production-like environments', () => {
     const baseProdEnv = {
       DATABASE_URL: 'postgresql://localhost:5432/promptlab',
       NODE_ENV: 'production',
@@ -156,7 +158,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('SEC-01a-2: Production key strength, malformed entries, and duplicates', () => {
+  describe('Production key strength, malformed entries, and duplicates', () => {
     const baseProdEnv = {
       DATABASE_URL: 'postgresql://localhost:5432/promptlab',
       NODE_ENV: 'production',
@@ -234,7 +236,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('SEC-01a-2: Dev tokens configuration', () => {
+  describe('Dev tokens configuration', () => {
     it('disables dev tokens when AUTH_DEV_TOKENS_ENABLED is false in development', () => {
       const config = validateEnvironment({
         NODE_ENV: 'development',
@@ -273,7 +275,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('TRUST_PROXY validation (SEC-04b)', () => {
+  describe('TRUST_PROXY validation', () => {
     it('defaults TRUST_PROXY to false when unset or empty', () => {
       const config = validateEnvironment({
         NODE_ENV: 'development',
@@ -348,7 +350,7 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
     });
   });
 
-  describe('ENABLE_TELEMETRY validation (OBS-01)', () => {
+  describe('ENABLE_TELEMETRY validation', () => {
     it('defaults ENABLE_TELEMETRY to true when unset', () => {
       const config = validateEnvironment({
         NODE_ENV: 'development',
@@ -382,6 +384,152 @@ describe('validateEnvironment (SEC-01a-2 Secure-by-default)', () => {
         TELEMETRY_ENABLED: 'false',
       });
       expect(config.ENABLE_TELEMETRY).toBe(false);
+    });
+  });
+
+  describe('QUOTA_TIMEOUT_CHARGE_RATIO validation', () => {
+    it('defaults QUOTA_TIMEOUT_CHARGE_RATIO to 0.5 when unset', () => {
+      const config = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+      });
+      expect(config.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0.5);
+    });
+
+    it('accepts valid floating-point numbers between 0.0 and 1.0', () => {
+      const c0 = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        QUOTA_TIMEOUT_CHARGE_RATIO: '0',
+      });
+      expect(c0.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0);
+
+      const c25 = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        QUOTA_TIMEOUT_CHARGE_RATIO: '0.25',
+      });
+      expect(c25.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(0.25);
+
+      const c1 = validateEnvironment({
+        NODE_ENV: 'development',
+        DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        QUOTA_TIMEOUT_CHARGE_RATIO: '1.0',
+      });
+      expect(c1.QUOTA_TIMEOUT_CHARGE_RATIO).toBe(1.0);
+    });
+
+    it('throws on non-numeric or out-of-range ratio values', () => {
+      expect(() =>
+        validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          QUOTA_TIMEOUT_CHARGE_RATIO: '-0.1',
+        }),
+      ).toThrow(/Invalid QUOTA_TIMEOUT_CHARGE_RATIO/);
+
+      expect(() =>
+        validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          QUOTA_TIMEOUT_CHARGE_RATIO: '1.5',
+        }),
+      ).toThrow(/Invalid QUOTA_TIMEOUT_CHARGE_RATIO/);
+
+      expect(() =>
+        validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          QUOTA_TIMEOUT_CHARGE_RATIO: 'invalid-ratio',
+        }),
+      ).toThrow(/Invalid QUOTA_TIMEOUT_CHARGE_RATIO/);
+    });
+
+    describe('MODEL_CATALOG_TTL_MS & LITELLM_BASE_URL', () => {
+      it('parses custom positive integer MODEL_CATALOG_TTL_MS', () => {
+        const config = validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          MODEL_CATALOG_TTL_MS: '60000',
+        });
+        expect(config.MODEL_CATALOG_TTL_MS).toBe(60000);
+      });
+
+      it('throws on negative, zero, or non-numeric MODEL_CATALOG_TTL_MS', () => {
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_TTL_MS: '-5000',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_TTL_MS/);
+
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_TTL_MS: '0',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_TTL_MS/);
+
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_TTL_MS: 'not-a-number',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_TTL_MS/);
+      });
+
+      it('defaults MODEL_CATALOG_FAILURE_BACKOFF_MS to 30000 and parses valid positive integers', () => {
+        const configDefault = validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+        });
+        expect(configDefault.MODEL_CATALOG_FAILURE_BACKOFF_MS).toBe(30000);
+
+        const configCustom = validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          MODEL_CATALOG_FAILURE_BACKOFF_MS: '15000',
+        });
+        expect(configCustom.MODEL_CATALOG_FAILURE_BACKOFF_MS).toBe(15000);
+      });
+
+      it('rejects invalid MODEL_CATALOG_FAILURE_BACKOFF_MS values', () => {
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_FAILURE_BACKOFF_MS: '-5000',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_FAILURE_BACKOFF_MS/);
+
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_FAILURE_BACKOFF_MS: '0',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_FAILURE_BACKOFF_MS/);
+
+        expect(() =>
+          validateEnvironment({
+            NODE_ENV: 'development',
+            DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+            MODEL_CATALOG_FAILURE_BACKOFF_MS: 'not-a-number',
+          }),
+        ).toThrow(/Invalid MODEL_CATALOG_FAILURE_BACKOFF_MS/);
+      });
+
+      it('supports LITELLM_BASE_URL as fallback for LITELLM_GATEWAY_URL', () => {
+        const config = validateEnvironment({
+          NODE_ENV: 'development',
+          DATABASE_URL: 'postgresql://localhost:5432/promptlab',
+          LITELLM_BASE_URL: 'http://base-gateway.internal:4000',
+        });
+        expect(config.LITELLM_GATEWAY_URL).toBe('http://base-gateway.internal:4000');
+      });
     });
   });
 });

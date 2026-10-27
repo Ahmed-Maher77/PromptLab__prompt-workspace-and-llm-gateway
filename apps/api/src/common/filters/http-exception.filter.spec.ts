@@ -1,8 +1,8 @@
-import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, HttpException, HttpStatus, ConflictException } from '@nestjs/common';
 import { AllExceptionsFilter } from './http-exception.filter';
 import { Prisma } from '@prisma/client';
 
-describe('AllExceptionsFilter (ERR-01)', () => {
+describe('AllExceptionsFilter', () => {
   let filter: AllExceptionsFilter;
   let mockResponse: {
     status: jest.Mock;
@@ -223,7 +223,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
       expect(loggerErrorSpy).toHaveBeenCalled();
     });
 
-    it('maps PrismaClientValidationError to 400 Bad Request (ERR-01a)', () => {
+    it('maps PrismaClientValidationError to 400 Bad Request', () => {
       const validationError = new Prisma.PrismaClientValidationError(
         'Invalid `prisma.user.create()` invocation: missing required argument email.',
         { clientVersion: '6.4.1' },
@@ -240,7 +240,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
     });
   });
 
-  describe('RFC 9457 Content-Type and Throttler Retry-After preservation (ERR-01a)', () => {
+  describe('RFC 9457 Content-Type and Throttler Retry-After preservation', () => {
     it('sets Content-Type to application/problem+json on every error response', () => {
       const exception = new HttpException('Bad Request', HttpStatus.BAD_REQUEST);
       filter.catch(exception, mockHost);
@@ -265,7 +265,7 @@ describe('AllExceptionsFilter (ERR-01)', () => {
   });
 
   describe('Request ID handling', () => {
-    it('reuses req.id set by RequestIdMiddleware (ERR-01a)', () => {
+    it('reuses req.id set by RequestIdMiddleware', () => {
       (mockRequest as any).id = 'req-from-middleware-123';
 
       const exception = new HttpException('Bad Request', HttpStatus.BAD_REQUEST);
@@ -296,6 +296,84 @@ describe('AllExceptionsFilter (ERR-01)', () => {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
       );
       expect(mockResponse.setHeader).toHaveBeenCalledWith('x-request-id', body.requestId);
+    });
+  });
+
+  describe('Machine-readable error codes', () => {
+    it('uses UPPER_SNAKE message as code when Nest standard object has error: "Conflict" but message: "REQUEST_IN_PROGRESS"', () => {
+      const exception = new ConflictException('REQUEST_IN_PROGRESS');
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.status).toBe(HttpStatus.CONFLICT);
+      expect(body.message).toBe('REQUEST_IN_PROGRESS');
+      expect(body.code).toBe('REQUEST_IN_PROGRESS');
+    });
+
+    it('uses UPPER_SNAKE message as code for raw string HttpException', () => {
+      const exception = new HttpException('IDEMPOTENCY_RESULT_UNAVAILABLE', HttpStatus.CONFLICT);
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.status).toBe(HttpStatus.CONFLICT);
+      expect(body.message).toBe('IDEMPOTENCY_RESULT_UNAVAILABLE');
+      expect(body.code).toBe('IDEMPOTENCY_RESULT_UNAVAILABLE');
+    });
+
+    it('preserves explicit code from object response', () => {
+      const exception = new ConflictException({
+        message: 'Key already used',
+        code: 'IDEMPOTENCY_KEY_REUSED',
+      });
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.status).toBe(HttpStatus.CONFLICT);
+      expect(body.message).toBe('Key already used');
+      expect(body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    });
+
+    it('falls back to generic error string when message is a human sentence', () => {
+      const exception = new ConflictException('A duplicate resource already exists in database');
+      filter.catch(exception, mockHost);
+
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(body.code).toBe('Conflict');
+      expect(body.message).toBe('A duplicate resource already exists in database');
+    });
+  });
+
+  describe('RFC 9457 reserved members', () => {
+    it('keeps numeric status and core members when the exception body carries its own status/type/title', () => {
+      // Shape thrown by @nestjs/terminus when a readiness check fails.
+      const exception = new HttpException(
+        {
+          status: 'error',
+          type: 'not-a-uri',
+          title: 'overridden',
+          info: { database: { status: 'up' } },
+          error: { gateway: { status: 'down' } },
+          details: { database: { status: 'up' }, gateway: { status: 'down' } },
+        },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+
+      filter.catch(exception, mockHost);
+
+      const body = mockResponse.json.mock.calls[0][0];
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.SERVICE_UNAVAILABLE);
+      expect(body.status).toBe(HttpStatus.SERVICE_UNAVAILABLE);
+      expect(body.type).toBe('not-a-uri'); // `type` is deliberately honoured when it is a string (existing contract)
+      expect(body.title).toBe('Service Unavailable');
+      expect(body.instance).toBe('/api/conversations');
+      // Extension members survive.
+      expect(body.info).toEqual({ database: { status: 'up' } });
+      expect(body.error).toEqual({ gateway: { status: 'down' } });
+      expect(body.details.gateway.status).toBe('down');
     });
   });
 });

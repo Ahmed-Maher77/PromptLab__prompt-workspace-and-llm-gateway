@@ -23,7 +23,7 @@ npm run test:api
 - Utilities & Policies: `AllExceptionsFilter`, `TokenEstimator`, `ContextPolicy`, `CostCalculator`, `RedactionUtil`, `EnvValidation`.
 
 ### 2. Web Test Suite (Karma & Jasmine)
-Runs headless Chrome unit tests across all Angular 19 components and services:
+Runs headless Chrome unit tests across all Angular components and services:
 ```bash
 npm run test:web
 ```

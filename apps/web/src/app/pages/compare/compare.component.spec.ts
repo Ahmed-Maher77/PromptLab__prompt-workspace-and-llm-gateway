@@ -7,7 +7,8 @@ import {
 } from '../../services/experiment.service';
 import { PromptService } from '../../services/prompt.service';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
+import { ToastService } from '../../shared/feedback/toast.service';
 
 describe('CompareComponent', () => {
   let component: CompareComponent;
@@ -408,6 +409,18 @@ describe('CompareComponent', () => {
     expect(mockExperimentService.rateSlot).toHaveBeenCalledWith('exp-123', 'B', 5, 'Excellent structured output');
   });
 
+  it('shows a toast when a saved comparison fails to load', () => {
+    const toast = TestBed.inject(ToastService);
+    spyOn(toast, 'error');
+    mockExperimentService.getExperiment.and.returnValue(
+      throwError(() => ({ status: 404, error: { detail: 'Experiment not found' } })),
+    );
+
+    component.loadSavedExperiment('missing');
+
+    expect(toast.error).toHaveBeenCalledWith('Experiment not found');
+  });
+
   it('should toggle history drawer and view past experiments', () => {
     expect(component.showHistoryDrawer()).toBeFalse();
     component.toggleHistoryDrawer();
@@ -419,5 +432,57 @@ describe('CompareComponent', () => {
     expect(component.showHistoryDrawer()).toBeFalse();
     expect(component.slotARating).toBe(4);
     expect(component.slotBRating).toBe(5);
+  });
+
+  it('should send no rating (undefined) on notes-only save without fabricating rating 3', () => {
+    component.comparisonResult.set(mockSuccessComparisonResult);
+    component.slotARating = 0;
+    component.slotANotes = 'Notes without rating';
+
+    component.saveSlotNotes('A');
+
+    expect(mockExperimentService.rateSlot).toHaveBeenCalledWith(
+      'exp-123',
+      'A',
+      undefined,
+      'Notes without rating',
+    );
+  });
+
+  it('should display "not rated" when rating is 0 or null', () => {
+    component.comparisonResult.set(mockSuccessComparisonResult);
+    component.slotARating = 0;
+    component.slotBRating = 0;
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const notRatedSpans = compiled.querySelectorAll('.rating-status-text');
+    expect(notRatedSpans.length).toBe(2);
+    expect(notRatedSpans[0].textContent).toContain('not rated');
+    expect(notRatedSpans[1].textContent).toContain('not rated');
+
+    component.slotARating = 4;
+    fixture.detectChanges();
+    const updatedSpans = compiled.querySelectorAll('.rating-status-text');
+    expect(updatedSpans.length).toBe(1);
+  });
+
+  it('applies only the latest saved experiment when responses arrive out of order', () => {
+    const first = new Subject<SavedExperimentSummary>();
+    const second = new Subject<SavedExperimentSummary>();
+    let base!: SavedExperimentSummary;
+    mockExperimentService.getExperiment('any').subscribe((e) => (base = e));
+    mockExperimentService.getExperiment.and.callFake((id: string) =>
+      id === 'exp-1' ? first : second,
+    );
+
+    component.loadSavedExperiment('exp-1');
+    component.loadSavedExperiment('exp-2');
+
+    second.next({ ...base, id: 'exp-2', name: 'Newer' });
+    first.next({ ...base, id: 'exp-1', name: 'Older' });
+
+    expect(component.experimentName).toBe('Newer');
+    expect(component.comparisonResult()?.experimentId).toBe('exp-2');
   });
 });

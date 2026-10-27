@@ -15,7 +15,7 @@ import { UsageController } from '../../usage/usage.controller';
 import { ObservabilityController } from '../../observability/observability.controller';
 import { validateEnvironment } from '../config/env.validation';
 
-describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants', () => {
+describe('Authentication & Authorization Security Invariants', () => {
   let reflector: Reflector;
   let jwtService: JwtService;
   let rolesGuard: RolesGuard;
@@ -77,12 +77,36 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
     } as unknown as ExecutionContext;
   }
 
-  describe('AuthGuard (SEC-01a-2 Security Rejections)', () => {
+  describe('AuthGuard (security rejections)', () => {
     it('allows public routes decorated with @Public() without any credentials', async () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
       const guard = createAuthGuard();
       const ctx = createMockContext();
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    });
+
+    it('attaches the user on a public route when a valid credential is sent', async () => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+      const guard = createAuthGuard();
+      const ctx = createMockContext({ authorization: 'Bearer dev-admin-token' });
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+      const req = ctx.switchToHttp().getRequest();
+      expect(req.user).toMatchObject({ id: 'dev-user-001', role: 'admin' });
+    });
+
+    it('ignores an invalid credential on a public route instead of rejecting', async () => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+      const guard = createAuthGuard();
+      const ctx = createMockContext({ authorization: 'Bearer not-a-real-token' });
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+      expect(ctx.switchToHttp().getRequest().user).toBeUndefined();
+    });
+
+    it('still rejects an invalid credential on a protected route', async () => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+      const guard = createAuthGuard();
+      const ctx = createMockContext({ authorization: 'Bearer not-a-real-token' });
+      await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
     });
 
     it('rejects unauthenticated requests with HTTP 401 UnauthorizedException', async () => {
@@ -172,7 +196,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('rejects JWT with exp one year ahead and NO iat claim with HTTP 401 (SEC-01a-3)', async () => {
+    it('rejects JWT with exp one year ahead and NO iat claim with HTTP 401', async () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
       const guard = createAuthGuard();
       const oneYearAhead = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
@@ -186,7 +210,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('rejects JWT with iat in the future beyond 60s clock skew with HTTP 401 (SEC-01a-3)', async () => {
+    it('rejects JWT with iat in the future beyond 60s clock skew with HTTP 401', async () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
       const guard = createAuthGuard();
       const now = Math.floor(Date.now() / 1000);
@@ -371,6 +395,8 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
         mockPrisma,
         {} as any,
         {} as any,
+        {} as any,
+        {} as any,
       );
 
       // User A (user-A) requests conversation conv-123 owned by User B (user-B)
@@ -418,7 +444,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
     });
   });
 
-  describe('Demo Endpoint Gating (SEC-01a-2 Allow-list Enforcement)', () => {
+  describe('Demo Endpoint Gating (allow-list enforcement)', () => {
     it('rejects POST /usage/reset when NODE_ENV is unset even if ENABLE_DEMO_ENDPOINTS is true', async () => {
       delete process.env.NODE_ENV;
       process.env.ENABLE_DEMO_ENDPOINTS = 'true';
@@ -475,7 +501,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
     });
   });
 
-  describe('User Auto-Provisioning on Authentication (SEC-01e)', () => {
+  describe('User Auto-Provisioning on Authentication', () => {
     it('upserts authenticated user into database on first request and caches it for subsequent calls', async () => {
       const mockPrisma = {
         user: {
@@ -512,7 +538,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       expect(mockPrisma.user.upsert).toHaveBeenCalledTimes(1);
     });
 
-    it('rejects with ConflictException (409) when upsert encounters P2002 email unique constraint conflict (SEC-01f)', async () => {
+    it('rejects with ConflictException (409) when upsert encounters P2002 email unique constraint conflict', async () => {
       const p2002Error = new Error('Unique constraint failed on the fields: (`email`)') as any;
       p2002Error.code = 'P2002';
 
@@ -531,7 +557,7 @@ describe('SEC-01 / SEC-01a-2: Authentication & Authorization Security Invariants
       );
     });
 
-    it('re-syncs user after TTL expires (SEC-01f)', async () => {
+    it('re-syncs user after TTL expires', async () => {
       const mockPrisma = {
         user: {
           upsert: jest.fn().mockResolvedValue({ id: 'user-002' }),

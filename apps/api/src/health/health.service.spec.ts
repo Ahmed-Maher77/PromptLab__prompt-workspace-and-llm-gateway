@@ -3,11 +3,13 @@ import { HealthService } from './health.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { APP_CONFIG } from '../common/config/env.validation';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 
 describe('HealthService', () => {
   let service: HealthService;
   let mockPrismaService: { checkHealth: jest.Mock };
   let mockConfigService: { get: jest.Mock };
+  let mockModelCatalog: { getConfiguredProviders: jest.Mock };
   let mockAppConfig: { LITELLM_GATEWAY_URL: string; NODE_ENV: string; APP_VERSION: string };
 
   beforeEach(async () => {
@@ -28,9 +30,12 @@ describe('HealthService', () => {
       get: jest.fn((key: string, defaultValue?: string) => {
         if (key === 'LITELLM_PROXY_URL') return 'http://localhost:4000';
         if (key === 'NODE_ENV') return 'test';
-        if (key === 'OPENAI_API_KEY') return 'sk-test-key';
         return defaultValue;
       }),
+    };
+
+    mockModelCatalog = {
+      getConfiguredProviders: jest.fn().mockResolvedValue(['openai']),
     };
 
     // Mock global fetch to return 200 without network access
@@ -49,6 +54,10 @@ describe('HealthService', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: ModelCatalogService,
+          useValue: mockModelCatalog,
         },
         {
           provide: APP_CONFIG,
@@ -78,11 +87,7 @@ describe('HealthService', () => {
   });
 
   it('should mark provider readiness as missing_provider_credentials when no keys are set', async () => {
-    mockConfigService.get.mockImplementation((key: string, defaultValue?: string) => {
-      if (key === 'LITELLM_PROXY_URL') return 'http://localhost:4000';
-      if (key === 'NODE_ENV') return 'test';
-      return defaultValue;
-    });
+    mockModelCatalog.getConfiguredProviders.mockResolvedValueOnce([]);
 
     const health = await service.getHealth();
     expect(health.services.gateway.providerReadiness.status).toBe('missing_provider_credentials');
@@ -121,5 +126,72 @@ describe('HealthService', () => {
 
     const health = await service.getHealth();
     expect(health.services.gateway.url).toBe('http://127.0.0.1:4000');
+  });
+
+  describe('toPublicHealth', () => {
+    it('drops the url, environment, providers and error strings', async () => {
+      mockPrismaService.checkHealth.mockResolvedValueOnce({
+        status: 'disconnected',
+        latencyMs: 12,
+        error: 'Database connection or query failed',
+      });
+
+      const full = await service.getHealth();
+      const pub = service.toPublicHealth(full);
+
+      expect(Object.keys(pub).sort()).toEqual(
+        ['services', 'status', 'timestamp', 'uptimeSeconds', 'version'].sort(),
+      );
+      expect(pub.services.database).toEqual({ status: 'disconnected', latencyMs: 12 });
+      expect(Object.keys(pub.services.gateway).sort()).toEqual(['latencyMs', 'serviceAvailability']);
+      expect(JSON.stringify(pub)).not.toMatch(/localhost|openai|Database connection or query/);
+    });
+  });
+
+  describe('checkGatewayLiveness', () => {
+    it('gives each probe its own fresh timeout signal', async () => {
+      const signals: AbortSignal[] = [];
+      global.fetch = jest.fn().mockImplementation((_url: string, init?: RequestInit) => {
+        signals.push(init!.signal as AbortSignal);
+        return Promise.reject(new Error('down'));
+      });
+
+      const result = await service.checkGatewayLiveness('http://gateway.test:4000');
+
+      expect(result.serviceAvailability).toBe('unreachable');
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(signals).toHaveLength(2);
+      expect(signals[0]).not.toBe(signals[1]);
+      // The fallback must not start out aborted (the old implementation reused an aborted controller).
+      expect(signals[1].aborted).toBe(false);
+    });
+
+    it('falls back to /health when /health/liveliness fails', async () => {
+      global.fetch = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('liveliness timed out'))
+        .mockResolvedValueOnce({ ok: true, status: 200 } as Response);
+
+      const result = await service.checkGatewayLiveness('http://gateway.test:4000/');
+
+      expect(result.serviceAvailability).toBe('available');
+      expect((global.fetch as jest.Mock).mock.calls.map((c) => c[0])).toEqual([
+        'http://gateway.test:4000/health/liveliness',
+        'http://gateway.test:4000/health',
+      ]);
+    });
+
+    it('treats 401 from the gateway as available (the process answered)', async () => {
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 } as Response);
+      await expect(service.checkGatewayLiveness('http://gateway.test:4000')).resolves.toMatchObject({
+        serviceAvailability: 'available',
+      });
+    });
+
+    it('reports not_configured without calling fetch when no URL is set', async () => {
+      global.fetch = jest.fn();
+      await expect(service.checkGatewayLiveness('')).resolves.toEqual({ serviceAvailability: 'not_configured' });
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
   });
 });

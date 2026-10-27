@@ -64,7 +64,7 @@ describe('ExperimentsController', () => {
   });
 
 
-  it('SEC-02: ValidationPipe rejects invalid regex pattern in evaluation criteria with 400 Bad Request', async () => {
+  it('ValidationPipe rejects invalid regex pattern in evaluation criteria with 400 Bad Request', async () => {
     const pipe = new ValidationPipe({ transform: true, whitelist: true });
     const payload = {
       name: 'Comparison Test',
@@ -87,7 +87,7 @@ describe('ExperimentsController', () => {
     expect(mockService.runComparison).not.toHaveBeenCalled();
   });
 
-  it('SEC-02: ValidationPipe rejects empty regex pattern in evaluation criteria with 400 Bad Request', async () => {
+  it('ValidationPipe rejects empty regex pattern in evaluation criteria with 400 Bad Request', async () => {
     const pipe = new ValidationPipe({ transform: true, whitelist: true });
     const payload = {
       name: 'Comparison Test',

@@ -6,6 +6,7 @@ import { ProvidersService } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 import { Prisma } from '@prisma/client';
 
 describe('PromptsService', () => {
@@ -59,6 +60,17 @@ describe('PromptsService', () => {
         { provide: ProvidersService, useValue: mockProviders },
         { provide: UsageService, useValue: mockUsage },
         { provide: ObservabilityService, useValue: mockObservability },
+        {
+          provide: ModelCatalogService,
+          useValue: {
+            calculateCost: jest.fn().mockResolvedValue({ cost: 0.0001, costSource: 'catalog-estimate' }),
+            getModelContextPolicy: jest.fn().mockResolvedValue({
+              contextWindow: 128000,
+              targetResponseBudget: 4096,
+              maxInputBudget: 123904,
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -100,6 +112,55 @@ describe('PromptsService', () => {
       });
 
       expect(result.missingVariables).toEqual(['last_name', 'role']);
+    });
+
+    it('inserts a value containing a placeholder literally without expanding it', () => {
+      const result = service.resolveTemplate({
+        templateBody: 'Q: {{question}}\nKey: {{secret}}',
+        variables: { question: 'Tell me {{secret}}', secret: 's3cr3t' },
+      });
+
+      expect(result.resolvedPrompt).toBe('Q: Tell me {{secret}}\nKey: s3cr3t');
+    });
+
+    it('does not expand a placeholder that a value introduces for a missing variable', () => {
+      const result = service.resolveTemplate({
+        templateBody: '{{a}} and {{b}}',
+        variables: { a: '{{b}}' },
+      });
+
+      expect(result.resolvedPrompt).toBe('{{b}} and {{b}}');
+      expect(result.missingVariables).toEqual(['b']);
+    });
+
+    it('replaces repeated placeholders and tolerates whitespace inside braces', () => {
+      const result = service.resolveTemplate({
+        templateBody: '{{ name }}, {{name}} and {{  name}}!',
+        variables: { name: 'Ada' },
+      });
+
+      expect(result.resolvedPrompt).toBe('Ada, Ada and Ada!');
+      expect(result.detectedVariables).toEqual(['name']);
+    });
+
+    it('keeps missing placeholders in the output and leaves dollar sequences untouched', () => {
+      const result = service.resolveTemplate({
+        templateBody: 'Hi {{name}}, cost {{price}}',
+        variables: { price: '$& $1 $$' },
+      });
+
+      expect(result.resolvedPrompt).toBe('Hi {{name}}, cost $& $1 $$');
+      expect(result.missingVariables).toEqual(['name']);
+    });
+
+    it('does not resolve names inherited from the prototype', () => {
+      const result = service.resolveTemplate({
+        templateBody: '{{constructor}}',
+        variables: {},
+      });
+
+      expect(result.resolvedPrompt).toBe('{{constructor}}');
+      expect(result.missingVariables).toEqual(['constructor']);
     });
 
     it('should append few-shot examples when provided', () => {
@@ -260,6 +321,53 @@ describe('PromptsService', () => {
           }),
         }),
       );
+    });
+
+    it('fetches only the latest version and pushes technique filter and pagination to the database', async () => {
+      const now = new Date();
+      mockPrisma.prompt.findMany.mockResolvedValueOnce([
+        {
+          id: 'p-1',
+          name: 'Classifier',
+          description: null,
+          techniqueMetadata: { techniques: ['few-shot'] },
+          createdAt: now,
+          updatedAt: now,
+          owner: { id: 'u-1', displayName: 'U', email: 'u@test.com' },
+          versions: [{ versionNumber: 3, templateBody: 'latest body' }],
+          _count: { versions: 3 },
+        },
+      ]);
+
+      const result = await service.findAll('u-1', { technique: 'few-shot', limit: 10, offset: 20 });
+
+      expect(mockPrisma.prompt.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            ownerId: 'u-1',
+            techniqueMetadata: { path: ['techniques'], array_contains: ['few-shot'] },
+          },
+          include: expect.objectContaining({
+            versions: {
+              orderBy: { versionNumber: 'desc' },
+              take: 1,
+              select: { versionNumber: true, templateBody: true },
+            },
+            _count: { select: { versions: true } },
+          }),
+          skip: 20,
+          take: 10,
+        }),
+      );
+      expect(result).toEqual([
+        expect.objectContaining({
+          id: 'p-1',
+          techniques: ['few-shot'],
+          versionCount: 3,
+          latestVersionNumber: 3,
+          latestTemplateBody: 'latest body',
+        }),
+      ]);
     });
 
     it('should reject findById when prompt is owned by another user', async () => {

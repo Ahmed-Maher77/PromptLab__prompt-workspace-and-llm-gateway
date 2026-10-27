@@ -2,11 +2,15 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, of } from 'rxjs';
 
+/**
+ * Admins receive the full payload; everyone else gets a reduced one, so the fields
+ * that are only present for admins are optional.
+ */
 export interface HealthResponse {
   status: 'ok' | 'degraded';
   timestamp: string;
   uptimeSeconds: number;
-  environment: string;
+  environment?: string;
   version: string;
   services: {
     database: {
@@ -15,10 +19,10 @@ export interface HealthResponse {
       error?: string;
     };
     gateway: {
-      url: string;
+      url?: string;
       serviceAvailability: 'available' | 'unreachable' | 'not_configured';
       latencyMs?: number;
-      providerReadiness: {
+      providerReadiness?: {
         status: 'ready' | 'missing_provider_credentials';
         configuredProviders: string[];
       };

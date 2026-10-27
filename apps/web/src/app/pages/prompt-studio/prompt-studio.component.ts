@@ -1,4 +1,15 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  signal,
+  computed,
+  ChangeDetectionStrategy,
+  inject,
+  DestroyRef,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { EMPTY, Subject, merge } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, switchMap, tap } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -23,8 +34,12 @@ import {
   FewShotExample,
 } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
+import { isUnknownOutcomeError } from '../../utils/http-retry.util';
+import { toApiErrorMessage } from '../../utils/api-error.util';
 
 export type StudioViewMode = 'library' | 'editor';
+import { DialogDirective } from '../../shared/a11y/dialog.directive';
+import { ToastService } from '../../shared/feedback/toast.service';
 
 @Component({
   selector: 'app-prompt-studio',
@@ -41,9 +56,11 @@ export type StudioViewMode = 'library' | 'editor';
     LucideTriangleAlert,
     LucidePlay,
     LucideX,
+    DialogDirective,
   ],
   templateUrl: './prompt-studio.component.html',
   styleUrls: ['./prompt-studio.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class PromptStudioComponent implements OnInit {
   // Navigation / View State
@@ -117,11 +134,52 @@ export class PromptStudioComponent implements OnInit {
     return Math.max(1, Math.ceil(length / 4));
   });
 
+  private readonly toast = inject(ToastService);
+
+  private readonly destroyRef = inject(DestroyRef);
+  /** Immediate reloads (initial load, after create/version, back to library). */
+  private readonly immediateLoad$ = new Subject<void>();
+  /** Search / technique changes, debounced before they reach the API. */
+  private readonly filterChange$ = new Subject<{ search: string; technique: string }>();
+
   constructor(
     private readonly promptService: PromptService,
     private readonly route: ActivatedRoute,
     private readonly router: Router,
-  ) {}
+  ) {
+    const debouncedFilters$ = this.filterChange$.pipe(
+      debounceTime(250),
+      distinctUntilChanged((a, b) => a.search === b.search && a.technique === b.technique),
+    );
+    merge(this.immediateLoad$, debouncedFilters$)
+      .pipe(
+        tap(() => {
+          this.loadingPrompts.set(true);
+          this.promptsError.set(null);
+        }),
+        switchMap(() =>
+          this.promptService
+            .getPrompts({
+              search: this.searchQuery(),
+              technique: this.selectedTechniqueFilter(),
+            })
+            .pipe(
+              catchError(() => {
+                this.promptsError.set(
+                  'Failed to load prompts from API. Please check backend connection.',
+                );
+                this.loadingPrompts.set(false);
+                return EMPTY;
+              }),
+            ),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((data) => {
+        this.prompts.set(data);
+        this.loadingPrompts.set(false);
+      });
+  }
 
   ngOnInit(): void {
     this.loadModels();
@@ -160,33 +218,23 @@ export class PromptStudioComponent implements OnInit {
   }
 
   loadPrompts(): void {
-    this.loadingPrompts.set(true);
-    this.promptsError.set(null);
-
-    this.promptService
-      .getPrompts({
-        search: this.searchQuery(),
-        technique: this.selectedTechniqueFilter(),
-      })
-      .subscribe({
-        next: (data) => {
-          this.prompts.set(data);
-          this.loadingPrompts.set(false);
-        },
-        error: (err) => {
-          this.promptsError.set('Failed to load prompts from API. Please check backend connection.');
-          this.loadingPrompts.set(false);
-        },
-      });
+    this.immediateLoad$.next();
   }
 
   onSearchChange(): void {
-    this.loadPrompts();
+    this.emitFilterChange();
   }
 
   onTechniqueFilterChange(technique: string): void {
     this.selectedTechniqueFilter.set(technique);
-    this.loadPrompts();
+    this.emitFilterChange();
+  }
+
+  private emitFilterChange(): void {
+    this.filterChange$.next({
+      search: this.searchQuery(),
+      technique: this.selectedTechniqueFilter(),
+    });
   }
 
   createNewPromptDraft(): void {
@@ -343,11 +391,11 @@ export class PromptStudioComponent implements OnInit {
 
   saveAsNewVersion(): void {
     if (!this.promptName.trim()) {
-      alert('Prompt Name is required.');
+      this.toast.error('Prompt Name is required.');
       return;
     }
     if (!this.templateBody.trim()) {
-      alert('Template Body cannot be empty.');
+      this.toast.error('Template Body cannot be empty.');
       return;
     }
 
@@ -386,7 +434,7 @@ export class PromptStudioComponent implements OnInit {
             this.loadPrompts();
           },
           error: (err) => {
-            alert('Failed to save version: ' + (err.error?.message || err.message));
+            this.toast.error(toApiErrorMessage(err, 'Failed to save version.'));
             this.savingVersion.set(false);
           },
         });
@@ -411,7 +459,7 @@ export class PromptStudioComponent implements OnInit {
             this.loadPrompts();
           },
           error: (err) => {
-            alert('Failed to create prompt: ' + (err.error?.message || err.message));
+            this.toast.error(toApiErrorMessage(err, 'Failed to create prompt.'));
             this.savingVersion.set(false);
           },
         });
@@ -471,8 +519,12 @@ export class PromptStudioComponent implements OnInit {
         },
         error: (err) => {
           this.runningPlayground.set(false);
-          this.runError.set(err.error?.message || 'Execution failed while communicating with the gateway.');
-          // Key preserved for retry
+          this.runError.set(
+            toApiErrorMessage(err, 'Execution failed while communicating with the gateway.'),
+          );
+          if (!isUnknownOutcomeError(err)) {
+            this.currentRunPlaygroundKey = null;
+          }
         },
       });
   }

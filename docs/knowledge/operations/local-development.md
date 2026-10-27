@@ -40,7 +40,9 @@ Generate Prisma client and apply versioned migrations to PostgreSQL:
 ```bash
 npm run prisma:generate
 npm run prisma:push # runs prisma migrate deploy
+npm run seed        # optional: default developer user + reference prompt templates
 ```
+The seed is idempotent: running it again skips prompts that already exist. The API itself no longer writes demo data on startup.
 
 ## Step 4: Start LiteLLM Gateway
 In a terminal, start the gateway:

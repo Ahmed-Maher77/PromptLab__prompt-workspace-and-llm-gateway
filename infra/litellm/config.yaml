@@ -4,6 +4,10 @@ model_list:
     litellm_params:
       model: openai/gpt-4o-mini
       api_key: os.environ/OPENAI_API_KEY
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
   - model_name: claude-3-5-sonnet
     litellm_params:
       model: anthropic/claude-3-5-sonnet-20241022
@@ -11,8 +15,32 @@ model_list:
 
 litellm_settings:
   drop_params: true
-  request_timeout: 60
+  # ADR-015: per-attempt timeout in seconds. Must stay below the API's
+  # LLM_REQUEST_TIMEOUT_MS (default 30 s) so the gateway gives up first and returns a clean
+  # timeout error; otherwise the API aborts while LiteLLM is still working and the call is
+  # recorded as an ambiguous (partially charged) timeout.
+  request_timeout: 25
   telemetry: false
+
+router_settings:
+  # Resilience lives in the gateway, not in Nest. Retry only failures that come back
+  # fast and are worth retrying; never retry timeouts (a second 25 s attempt would outlive the
+  # API's 30 s budget) or errors a retry cannot fix.
+  num_retries: 2
+  retry_policy:
+    RateLimitErrorRetries: 2 # exponential backoff (LiteLLM default for RateLimitError)
+    ServiceUnavailableErrorRetries: 2
+    InternalServerErrorRetries: 1
+    TimeoutErrorRetries: 0
+    AuthenticationErrorRetries: 0
+    BadRequestErrorRetries: 0
+    NotFoundErrorRetries: 0
+    ContentPolicyViolationErrorRetries: 0
+  # Take a failing deployment out of rotation briefly instead of hammering it.
+  allowed_fails: 3
+  cooldown_time: 30
+  # Cross-model fallbacks are intentionally not configured: a silent switch to another model
+  # changes price, behaviour and token accounting under the user's feet (see ADR-015).
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

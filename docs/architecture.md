@@ -21,7 +21,7 @@ graph TD
 ## 2. Component Architecture
 
 ### Frontend (`apps/web`)
-- **Framework:** Angular 19 (TypeScript, standalone components).
+- **Framework:** Angular 22 (TypeScript 6.0, standalone components, built-in control flow).
 - **Styling:** Vanilla CSS design system adhering to `DESIGN_SYSTEM.md` using central CSS custom property design tokens (neutral palette, 4px grid, accessible focus states, no gimmicks/gradients).
 - **Core Views:**
   - Prompt Studio (Library, Editor, Version History, Playground)

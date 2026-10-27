@@ -194,8 +194,35 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  background-color: var(--color-text-subtle);
+  box-shadow: 0 0 0 3px var(--color-surface-muted);
+}
+
+.status-pulse-dot.online {
   background-color: var(--color-success);
   box-shadow: 0 0 0 3px var(--color-success-bg);
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+.status-pulse-dot.unreachable {
+  background-color: var(--color-danger);
+  box-shadow: none;
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--color-success-bg);
+  }
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-pulse-dot.online {
+    animation: none;
+  }
 }
 
 .footer-status-text {

@@ -1,3 +1,9 @@
+import {
+  ApiTokenUsageSource,
+  ApiUsageOperation,
+  ApiUsageStatus,
+} from '../common/enums/usage.enums';
+
 export interface QuotaPeriodStatus {
   userId: string;
   periodId: string;
@@ -13,8 +19,6 @@ export interface QuotaPeriodStatus {
   status: string;
   rateLimit: {
     limitPerMinute: number;
-    currentMinuteRequests: number;
-    remainingRequests: number;
   };
   estimatedTotalCost: number;
 }
@@ -29,10 +33,11 @@ export interface UsageRecordItem {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-  tokenUsageSource: string;
+  tokenUsageSource: ApiTokenUsageSource;
   reservedTokens: number;
   estimatedCost: number | null;
-  status: string;
+  status: ApiUsageStatus;
+  operation: ApiUsageOperation | null;
   createdAt: Date;
   reconciledAt: Date | null;
 }
@@ -41,7 +46,7 @@ import { UsageRecord } from '@prisma/client';
 
 export interface StoredLlmResponse {
   success: boolean;
-  content: string;
+  content?: string;
   model: string;
   latencyMs: number;
   usage?: {
@@ -51,6 +56,8 @@ export interface StoredLlmResponse {
     source: 'provider-reported' | 'estimated';
   };
   cost?: number | null;
+  costSource?: 'provider-reported' | 'catalog-estimate';
+  upstreamStatus?: number;
   traceId?: string;
   requestId?: string;
   error?: string;

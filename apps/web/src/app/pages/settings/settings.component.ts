@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   LucideRefreshCw,
@@ -15,6 +15,7 @@ import {
   LucideUser,
   LucideGlobe,
 } from '@lucide/angular';
+import { toApiErrorMessage } from '../../utils/api-error.util';
 import { SettingsService, SystemSettings } from '../../services/settings.service';
 
 @Component({
@@ -37,6 +38,7 @@ import { SettingsService, SystemSettings } from '../../services/settings.service
   ],
   templateUrl: './settings.component.html',
   styleUrl: './settings.component.css',
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class SettingsComponent implements OnInit {
   settings: SystemSettings | null = null;
@@ -59,9 +61,10 @@ export class SettingsComponent implements OnInit {
         this.loading = false;
       },
       error: (err) => {
-        this.errorMessage =
-          err?.error?.message ||
-          'Failed to retrieve system settings. Please ensure the backend API is running.';
+        this.errorMessage = toApiErrorMessage(
+          err,
+          'Failed to retrieve system settings. Please ensure the backend API is running.',
+        );
         this.loading = false;
       },
     });

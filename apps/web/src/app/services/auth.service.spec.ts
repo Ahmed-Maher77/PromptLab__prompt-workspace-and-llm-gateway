@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { AuthService, TOKEN_STORAGE_KEY } from './auth.service';
 
-describe('AuthService (SEC-01b)', () => {
+describe('AuthService', () => {
   let service: AuthService;
 
   beforeEach(() => {

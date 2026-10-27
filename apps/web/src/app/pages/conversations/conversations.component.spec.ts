@@ -1,4 +1,5 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { ConversationsComponent } from './conversations.component';
 import {
   ConversationService,
@@ -11,7 +12,9 @@ import {
 } from '../../services/conversation.service';
 import { PromptService } from '../../services/prompt.service';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
+import { ToastService } from '../../shared/feedback/toast.service';
+import { ConfirmService } from '../../shared/feedback/confirm.service';
 
 describe('ConversationsComponent', () => {
   let component: ConversationsComponent;
@@ -137,6 +140,7 @@ describe('ConversationsComponent', () => {
     totalOriginalMessages: 4,
     retainedMessagesCount: 1,
     compactedMessagesCount: 2,
+    truncatedMessagesCount: 0,
     assembledMessages: [
       {
         role: 'system',
@@ -161,6 +165,7 @@ describe('ConversationsComponent', () => {
       },
     ],
     withinBudget: true,
+    tokenEstimationMethod: 'tiktoken:o200k_base',
   };
 
   const mockCompactionPreview: CompactionPreviewResult = {
@@ -187,6 +192,7 @@ describe('ConversationsComponent', () => {
       'previewCompaction',
       'applyCompaction',
       'resume',
+      'estimateTokens',
     ]);
 
     mockPromptService = jasmine.createSpyObj('PromptService', ['getModels']);
@@ -205,6 +211,9 @@ describe('ConversationsComponent', () => {
     mockConversationService.getConversation.and.returnValue(of(mockDetailC1));
     mockConversationService.inspectContext.and.returnValue(of(mockInspectionC1));
     mockConversationService.previewCompaction.and.returnValue(of(mockCompactionPreview));
+    mockConversationService.estimateTokens.and.returnValue(
+      of({ tokens: 3, method: 'tiktoken:o200k_base' }),
+    );
 
     await TestBed.configureTestingModule({
       imports: [ConversationsComponent],
@@ -281,7 +290,7 @@ describe('ConversationsComponent', () => {
     expect(component.currentSendMessageKey).toBeNull();
   });
 
-  it('preserves idempotency key across retries on error until input changes (QUOTA-05b)', () => {
+  it('preserves idempotency key across retries on error until input changes', () => {
     component.selectedConversation.set({
       id: 'c-1',
       title: 'Active Conv',
@@ -320,15 +329,104 @@ describe('ConversationsComponent', () => {
     expect(component.currentSendMessageKey).toBeNull();
   });
 
-  it('updates token estimate reactively when messageInput changes (FE-01)', () => {
-    expect(component.currentInputTokensEstimate()).toBe(0);
+  it('preserves key on 409 REQUEST_IN_PROGRESS but rotates key on 409 IDEMPOTENCY_RESULT_UNAVAILABLE', () => {
+    component.selectedConversation.set({
+      id: 'c-1',
+      title: 'Active Conv',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      status: 'active',
+      createdAt: '2026-10-19T00:00:00Z',
+      updatedAt: '2026-10-19T00:00:00Z',
+      messages: [],
+      checkpoints: [],
+      activeCheckpoint: null,
+    });
 
-    component.messageInput.set('Hello world');
-    expect(component.currentInputTokensEstimate()).toBe(3);
+    // 1. 409 REQUEST_IN_PROGRESS (unknown outcome -> keep key)
+    mockConversationService.sendMessage.and.returnValue(
+      throwError(() => ({
+        status: 409,
+        error: { code: 'REQUEST_IN_PROGRESS', message: 'In flight' },
+      })),
+    );
 
-    component.messageInput.set('');
-    expect(component.currentInputTokensEstimate()).toBe(0);
+    component.messageInput.set('Check in flight');
+    component.sendMessage();
+    expect(component.currentSendMessageKey).toBeTruthy();
+
+    // 2. 409 IDEMPOTENCY_RESULT_UNAVAILABLE (definitive outcome -> rotate/clear key)
+    mockConversationService.sendMessage.and.returnValue(
+      throwError(() => ({
+        status: 409,
+        error: { code: 'IDEMPOTENCY_RESULT_UNAVAILABLE', message: 'Result unavailable' },
+      })),
+    );
+
+    component.sendMessage();
+    expect(component.currentSendMessageKey).toBeNull();
   });
+
+  it('maps 409 CONTEXT_BUDGET_EXCEEDED to a friendly error message and rotates key', () => {
+    component.selectedConversation.set({
+      id: 'c-1',
+      title: 'Active Conv',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      status: 'active',
+      createdAt: '2026-10-19T00:00:00Z',
+      updatedAt: '2026-10-19T00:00:00Z',
+      messages: [],
+      checkpoints: [],
+      activeCheckpoint: null,
+    });
+
+    mockConversationService.sendMessage.and.returnValue(
+      throwError(() => ({
+        status: 409,
+        error: { code: 'CONTEXT_BUDGET_EXCEEDED', message: 'CONTEXT_BUDGET_EXCEEDED' },
+      })),
+    );
+
+    component.messageInput.set('Massive message');
+    component.sendMessage();
+
+    expect(component.chatError()).toBe(
+      "This message plus the pinned context exceeds the conversation's budget — compact history or shorten the message.",
+    );
+    expect(component.currentSendMessageKey).toBeNull();
+  });
+
+  it('calls debounced estimate endpoint and updates token estimate and method', fakeAsync(() => {
+    expect(component.currentInputTokensEstimate()).toBe(0);
+    expect(component.isEstimateApproximate()).toBeFalse();
+
+    component.onMessageInputChange('Hello world');
+    tick(350);
+
+    expect(mockConversationService.estimateTokens).toHaveBeenCalledWith(
+      jasmine.objectContaining({ text: 'Hello world' }),
+    );
+    expect(component.currentInputTokensEstimate()).toBe(3);
+    expect(component.inputTokensMethod()).toBe('tiktoken:o200k_base');
+    expect(component.isEstimateApproximate()).toBeFalse();
+
+    mockConversationService.estimateTokens.and.returnValue(
+      of({ tokens: 18, method: 'approximate:o200k_base' }),
+    );
+    component.onMessageInputChange('Some text for claude');
+    tick(350);
+
+    expect(component.currentInputTokensEstimate()).toBe(18);
+    expect(component.inputTokensMethod()).toBe('approximate:o200k_base');
+    expect(component.isEstimateApproximate()).toBeTrue();
+
+    mockConversationService.estimateTokens.calls.reset();
+    component.onMessageInputChange('');
+    expect(component.currentInputTokensEstimate()).toBe(0);
+    expect(component.inputTokensMethod()).toBeNull();
+    expect(mockConversationService.estimateTokens).not.toHaveBeenCalled();
+  }));
 
   it('should handle provider errors explicitly when message fails without fabricating responses', () => {
     const mockFailResponse: SendMessageResponse = {
@@ -364,6 +462,28 @@ describe('ConversationsComponent', () => {
     expect(component.compactPreview()?.tokenSavings).toBe(15);
     expect(component.editableSummary).toBe('Discussion regarding event broker choices.');
     expect(component.editableFactsText).toContain('Selected Kafka');
+  });
+
+  it('shows a notice when the preview summary was built by the fallback', () => {
+    mockConversationService.previewCompaction.and.returnValue(
+      of({ ...mockCompactionPreview, summarySource: 'fallback', fallbackReason: 'invalid_model_output' }),
+    );
+    component.openCompactModal();
+    fixture.detectChanges();
+
+    const notice: HTMLElement | null = fixture.nativeElement.querySelector('[role="status"].alert-warning');
+    expect(notice?.textContent).toContain('The model reply could not be used');
+  });
+
+  it('shows no fallback notice for a model-generated summary', () => {
+    mockConversationService.previewCompaction.and.returnValue(
+      of({ ...mockCompactionPreview, summarySource: 'model', fallbackReason: null }),
+    );
+    component.openCompactModal();
+    fixture.detectChanges();
+
+    const text: string = fixture.nativeElement.textContent;
+    expect(text).not.toContain('summary was built automatically');
   });
 
   it('should apply compaction and update checkpoint while preserving all original messages', () => {
@@ -406,6 +526,38 @@ describe('ConversationsComponent', () => {
     expect(component.resumeMessage()).toContain('All 4 original messages remain safely stored in PostgreSQL');
   });
 
+  it('should not display resume confirmation banner if resume API fails', () => {
+    const toast = TestBed.inject(ToastService);
+    spyOn(toast, 'error');
+    mockConversationService.resume.and.returnValue(
+      throwError(() => ({ error: { message: 'Checkpoint not found' } })),
+    );
+
+    component.resumeMessage.set(null);
+    component.resumeCheckpoint('chk-missing');
+
+    expect(mockConversationService.resume).toHaveBeenCalledWith('c-1', 'chk-missing');
+    expect(component.resumeMessage()).toBeNull();
+    expect(toast.error).toHaveBeenCalledWith('Checkpoint not found');
+  });
+
+  it('marks active checkpoint in checkpoint drawer and displays active indicator', () => {
+    component.showHistoryDrawer.set(true);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const activeCard = compiled.querySelector('.checkpoint-card.active-chk');
+    expect(activeCard).toBeTruthy();
+
+    const activeBadge = compiled.querySelector('.active-badge');
+    expect(activeBadge).toBeTruthy();
+    expect(activeBadge?.textContent).toContain('Active');
+
+    const activeIndicator = compiled.querySelector('.active-indicator');
+    expect(activeIndicator).toBeTruthy();
+    expect(activeIndicator?.textContent).toContain('Currently active in context');
+  });
+
   it('should create a new conversation with custom title and initial system prompt', () => {
     mockConversationService.createConversation.and.returnValue(
       of({
@@ -432,5 +584,73 @@ describe('ConversationsComponent', () => {
       systemPrompt: 'You are a REST API architect.',
     });
     expect(component.showNewModal()).toBeFalse();
+  });
+
+  it('exposes dialog semantics on the new conversation modal', () => {
+    component.openNewModal();
+    fixture.detectChanges();
+
+    const panel = (fixture.nativeElement as HTMLElement).querySelector('.modal-card');
+    expect(panel?.getAttribute('role')).toBe('dialog');
+    expect(panel?.getAttribute('aria-modal')).toBe('true');
+    const labelId = panel?.getAttribute('aria-labelledby') as string;
+    expect(document.getElementById(labelId)?.textContent).toContain('Create New Conversation');
+  });
+
+  it('closes the new conversation modal on Escape', () => {
+    component.openNewModal();
+    fixture.detectChanges();
+
+    const panel = (fixture.nativeElement as HTMLElement).querySelector('.modal-card') as HTMLElement;
+    panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(component.showNewModal()).toBeFalse();
+  });
+
+  it('does not delete a conversation when the confirmation is declined', async () => {
+    spyOn(TestBed.inject(ConfirmService), 'confirm').and.resolveTo(false);
+    await component.deleteConversation('c-1', new Event('click'));
+    expect(mockConversationService.deleteConversation).not.toHaveBeenCalled();
+  });
+
+  it('deletes a conversation after the confirmation is accepted', async () => {
+    spyOn(TestBed.inject(ConfirmService), 'confirm').and.resolveTo(true);
+    mockConversationService.deleteConversation.and.returnValue(of({ success: true, id: 'c-1' }));
+    await component.deleteConversation('c-1', new Event('click'));
+    expect(mockConversationService.deleteConversation).toHaveBeenCalledWith('c-1');
+  });
+
+  it('applies only the latest selection when responses arrive out of order', () => {
+    const first = new Subject<ConversationDetail>();
+    const second = new Subject<ConversationDetail>();
+    const detailC2: ConversationDetail = { ...mockDetailC1, id: 'c-2', title: 'Debugging Session' };
+    mockConversationService.getConversation.and.callFake((id: string) =>
+      id === 'c-1' ? first : second,
+    );
+    mockConversationService.inspectContext.calls.reset();
+
+    component.selectConversation('c-1');
+    component.selectConversation('c-2');
+
+    second.next(detailC2);
+    second.complete();
+    expect(component.selectedConversation()?.id).toBe('c-2');
+    expect(component.loadingDetail()).toBeFalse();
+
+    // The slower, older response is cancelled and must not overwrite the newer one.
+    first.next(mockDetailC1);
+    first.complete();
+    expect(component.selectedConversation()?.id).toBe('c-2');
+    expect(first.observed).toBeFalse();
+    expect(mockConversationService.inspectContext).toHaveBeenCalledTimes(1);
+    expect(mockConversationService.inspectContext).toHaveBeenCalledWith('c-2');
+  });
+
+  it('shows the server problem detail when loading a conversation fails', () => {
+    mockConversationService.getConversation.and.returnValue(
+      throwError(() => new HttpErrorResponse({ status: 500, error: { detail: 'Database is down' } })),
+    );
+    component.selectConversation('c-2');
+    expect(component.chatError()).toBe('Database is down');
+    expect(component.loadingDetail()).toBeFalse();
   });
 });

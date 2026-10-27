@@ -64,6 +64,9 @@ export interface ValidatedEnvironment {
   ENABLE_DEMO_ENDPOINTS: boolean;
   TRUST_PROXY: string | number | false;
   LLM_REQUEST_TIMEOUT_MS: number;
+  QUOTA_TIMEOUT_CHARGE_RATIO: number;
+  MODEL_CATALOG_TTL_MS: number;
+  MODEL_CATALOG_FAILURE_BACKOFF_MS: number;
   OTEL_EXPORTER_OTLP_ENDPOINT?: string;
   LANGFUSE_HOST?: string;
   LANGFUSE_BASEURL?: string;
@@ -135,7 +138,7 @@ export function parseApiKeys(
 
 /**
  * Validates required and optional runtime environment variables at application startup.
- * SEC-01a-2: Treats any environment other than 'development' or 'test' (including unset)
+ * Treats any environment other than 'development' or 'test' (including unset)
  * as production-like for all security guarantees (fail-safe default).
  */
 export function validateEnvironment(
@@ -155,7 +158,7 @@ export function validateEnvironment(
     );
   }
 
-  // SEC-01a-2: Allow-list for development and test. Everything else is treated as production.
+  // Allow-list for development and test. Everything else is treated as production.
   const rawNodeEnv = env.NODE_ENV?.trim();
   const isDevOrTest = rawNodeEnv === 'development' || rawNodeEnv === 'test';
   const isProductionLike = !isDevOrTest;
@@ -174,7 +177,7 @@ export function validateEnvironment(
     }
   }
 
-  // SEC-01a-2: Production startup validation for authentication
+  // Production startup validation for authentication
   const parsedApiKeys = parseApiKeys(env.AUTH_API_KEYS, isProductionLike);
   const jwtSecret = env.AUTH_JWT_SECRET?.trim();
   const hasApiKeys = parsedApiKeys.length > 0;
@@ -210,7 +213,7 @@ export function validateEnvironment(
         .filter(Boolean)
     : rawCors.trim();
 
-  // SEC-01a-2: Dev tokens work ONLY when isDevOrTest AND AUTH_DEV_TOKENS_ENABLED is strictly 'true'
+  // Dev tokens work ONLY when isDevOrTest AND AUTH_DEV_TOKENS_ENABLED is strictly 'true'
   const authDevTokensEnabled =
     isDevOrTest && env.AUTH_DEV_TOKENS_ENABLED === 'true';
 
@@ -240,6 +243,42 @@ export function validateEnvironment(
   const llmRequestTimeoutMs =
     !isNaN(rawLlmTimeout) && rawLlmTimeout > 0 ? rawLlmTimeout : 30000;
 
+  const rawRatio = env.QUOTA_TIMEOUT_CHARGE_RATIO;
+  let quotaTimeoutChargeRatio = 0.5;
+  if (rawRatio !== undefined && rawRatio !== null && String(rawRatio).trim() !== '') {
+    const parsedRatio = parseFloat(String(rawRatio));
+    if (isNaN(parsedRatio) || parsedRatio < 0 || parsedRatio > 1) {
+      throw new Error(
+        `[Startup Error] Invalid QUOTA_TIMEOUT_CHARGE_RATIO: "${rawRatio}". Must be a number between 0.0 and 1.0 inclusive.`,
+      );
+    }
+    quotaTimeoutChargeRatio = parsedRatio;
+  }
+
+  const rawCatalogTtl = env.MODEL_CATALOG_TTL_MS;
+  let modelCatalogTtlMs = 300000;
+  if (rawCatalogTtl !== undefined && rawCatalogTtl !== null && String(rawCatalogTtl).trim() !== '') {
+    const parsedTtl = parseInt(String(rawCatalogTtl), 10);
+    if (isNaN(parsedTtl) || parsedTtl <= 0) {
+      throw new Error(
+        `[Startup Error] Invalid MODEL_CATALOG_TTL_MS: "${rawCatalogTtl}". Must be a positive integer.`,
+      );
+    }
+    modelCatalogTtlMs = parsedTtl;
+  }
+
+  const rawCatalogBackoff = env.MODEL_CATALOG_FAILURE_BACKOFF_MS;
+  let modelCatalogFailureBackoffMs = 30000;
+  if (rawCatalogBackoff !== undefined && rawCatalogBackoff !== null && String(rawCatalogBackoff).trim() !== '') {
+    const parsedBackoff = parseInt(String(rawCatalogBackoff), 10);
+    if (isNaN(parsedBackoff) || parsedBackoff <= 0) {
+      throw new Error(
+        `[Startup Error] Invalid MODEL_CATALOG_FAILURE_BACKOFF_MS: "${rawCatalogBackoff}". Must be a positive integer.`,
+      );
+    }
+    modelCatalogFailureBackoffMs = parsedBackoff;
+  }
+
   return {
     APP_VERSION: packageVersion,
     DATABASE_URL: env.DATABASE_URL!,
@@ -247,6 +286,7 @@ export function validateEnvironment(
     CORS_ORIGIN: corsOrigins,
     LITELLM_GATEWAY_URL:
       env.LITELLM_GATEWAY_URL ||
+      env.LITELLM_BASE_URL ||
       env.LITELLM_PROXY_URL ||
       DEFAULT_LITELLM_GATEWAY_URL,
     LITELLM_MASTER_KEY: masterKey ?? DEV_MASTER_KEY,
@@ -278,6 +318,9 @@ export function validateEnvironment(
       return raw;
     })(),
     LLM_REQUEST_TIMEOUT_MS: llmRequestTimeoutMs,
+    QUOTA_TIMEOUT_CHARGE_RATIO: quotaTimeoutChargeRatio,
+    MODEL_CATALOG_TTL_MS: modelCatalogTtlMs,
+    MODEL_CATALOG_FAILURE_BACKOFF_MS: modelCatalogFailureBackoffMs,
     OTEL_EXPORTER_OTLP_ENDPOINT: env.OTEL_EXPORTER_OTLP_ENDPOINT,
     LANGFUSE_HOST: env.LANGFUSE_HOST || env.LANGFUSE_BASEURL,
     LANGFUSE_BASEURL: env.LANGFUSE_BASEURL || env.LANGFUSE_HOST,

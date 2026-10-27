@@ -3,521 +3,820 @@
   <header class="studio-header">
     <div class="header-left">
       <div class="breadcrumbs">
-        <h1 class="breadcrumb-current library-title" *ngIf="viewMode() === 'library'">Prompt Studio</h1>
-        <button type="button" class="breadcrumb-item interactive" *ngIf="viewMode() === 'editor'" (click)="backToLibrary()" aria-label="Back to prompt library">
-          Prompt Studio
-        </button>
-        <span class="breadcrumb-sep" *ngIf="viewMode() === 'editor'">/</span>
-        <h1 class="breadcrumb-current editor-title" *ngIf="viewMode() === 'editor'">
-          {{ promptName || 'Untitled Prompt' }}
-        </h1>
+        @if (viewMode() === "library") {
+          <h1 class="breadcrumb-current library-title">Prompt Studio</h1>
+        }
+        @if (viewMode() === "editor") {
+          <button
+            type="button"
+            class="breadcrumb-item interactive"
+            (click)="backToLibrary()"
+            aria-label="Back to prompt library"
+          >
+            Prompt Studio
+          </button>
+        }
+        @if (viewMode() === "editor") {
+          <span class="breadcrumb-sep">/</span>
+        }
+        @if (viewMode() === "editor") {
+          <h1 class="breadcrumb-current editor-title">
+            {{ promptName || "Untitled Prompt" }}
+          </h1>
+        }
       </div>
       <p class="header-sub">
-        {{ viewMode() === 'library' ? 'Manage prompt templates, compose techniques, and execute playground runs.' : 'Author templates, manage immutable versions, and test live completions.' }}
+        {{
+          viewMode() === "library"
+            ? "Manage prompt templates, compose techniques, and execute playground runs."
+            : "Author templates, manage immutable versions, and test live completions."
+        }}
       </p>
     </div>
 
     <div class="header-actions">
       <!-- Library Actions -->
-      <button
-        *ngIf="viewMode() === 'library'"
-        class="btn btn-primary"
-        (click)="createNewPromptDraft()"
-        id="btn-create-prompt"
-      >
-        <svg lucidePlus [size]="14"></svg>
-        New Prompt
-      </button>
+      @if (viewMode() === "library") {
+        <button
+          class="btn btn-primary"
+          (click)="createNewPromptDraft()"
+          id="btn-create-prompt"
+        >
+          <svg aria-hidden="true" lucidePlus [size]="14"></svg>
+          New Prompt
+        </button>
+      }
 
       <!-- Editor Actions -->
-      <ng-container *ngIf="viewMode() === 'editor'">
-        <button class="btn btn-secondary" (click)="backToLibrary()" id="btn-back-library">
+      @if (viewMode() === "editor") {
+        <button
+          class="btn btn-secondary"
+          (click)="backToLibrary()"
+          id="btn-back-library"
+        >
           Library
         </button>
-        <button
-          *ngIf="activePrompt()"
-          class="btn btn-secondary"
-          (click)="toggleVersionHistory()"
-          id="btn-version-history"
-        >
-          <svg lucideClock [size]="14"></svg>
-          History ({{ activePrompt()?.versions?.length || 1 }})
-        </button>
+        @if (activePrompt()) {
+          <button
+            class="btn btn-secondary"
+            (click)="toggleVersionHistory()"
+            id="btn-version-history"
+          >
+            <svg aria-hidden="true" lucideClock [size]="14"></svg>
+            History ({{ activePrompt()?.versions?.length || 1 }})
+          </button>
+        }
         <button
           class="btn btn-primary"
           (click)="saveAsNewVersion()"
-          [disabled]="savingVersion() || loadingPrompt() || (!!selectedPromptId() && !activePrompt())"
+          [disabled]="
+            savingVersion() ||
+            loadingPrompt() ||
+            (!!selectedPromptId() && !activePrompt())
+          "
           id="btn-save-version"
         >
-          <span *ngIf="savingVersion()" class="spinner-sm"></span>
-          {{ selectedPromptId() ? 'Save as Version ' + ((activePrompt()?.versions?.[0]?.versionNumber || selectedVersionNumber()) + 1) : 'Save Prompt (v1)' }}
+          @if (savingVersion()) {
+            <span class="spinner-sm"></span>
+          }
+          {{
+            selectedPromptId()
+              ? "Save as Version " +
+                ((activePrompt()?.versions?.[0]?.versionNumber ||
+                  selectedVersionNumber()) +
+                  1)
+              : "Save Prompt (v1)"
+          }}
         </button>
-      </ng-container>
+      }
     </div>
   </header>
 
   <!-- ======================== VIEW 1: PROMPT LIBRARY ======================== -->
-  <section *ngIf="viewMode() === 'library'" class="library-view">
-    <!-- Filter and Search Toolbar -->
-    <div class="library-toolbar">
-      <div class="search-box">
-        <svg lucideSearch [size]="14" class="search-icon"></svg>
-        <label class="visually-hidden" for="input-prompt-search">Search prompt templates</label>
-        <input
-          type="text"
-          class="form-control search-input"
-          placeholder="Search prompts by name or description..."
-          [ngModel]="searchQuery()"
-          (ngModelChange)="searchQuery.set($event); onSearchChange()"
-          id="input-prompt-search"
-        />
-      </div>
-
-      <div class="technique-filters" role="group" aria-label="Filter prompts by technique">
-        <span class="filter-label">Technique:</span>
-        <button
-          class="filter-chip"
-          [class.active]="selectedTechniqueFilter() === 'all'"
-          [attr.aria-pressed]="selectedTechniqueFilter() === 'all'"
-          (click)="onTechniqueFilterChange('all')"
+  @if (viewMode() === "library") {
+    <section class="library-view">
+      <!-- Filter and Search Toolbar -->
+      <div class="library-toolbar">
+        <div class="search-box">
+          <svg aria-hidden="true" lucideSearch [size]="14" class="search-icon"></svg>
+          <label class="visually-hidden" for="input-prompt-search"
+            >Search prompt templates</label
+          >
+          <input
+            type="text"
+            class="form-control search-input"
+            placeholder="Search prompts by name or description..."
+            [ngModel]="searchQuery()"
+            (ngModelChange)="searchQuery.set($event); onSearchChange()"
+            id="input-prompt-search"
+          />
+        </div>
+        <div
+          class="technique-filters"
+          role="group"
+          aria-label="Filter prompts by technique"
         >
-          All
-        </button>
-        <button
-          *ngFor="let tech of availableTechniques"
-          class="filter-chip"
-          [class.active]="selectedTechniqueFilter() === tech"
-          [attr.aria-pressed]="selectedTechniqueFilter() === tech"
-          (click)="onTechniqueFilterChange(tech)"
-        >
-          {{ tech }}
-        </button>
+          <span class="filter-label">Technique:</span>
+          <button
+            class="filter-chip"
+            [class.active]="selectedTechniqueFilter() === 'all'"
+            [attr.aria-pressed]="selectedTechniqueFilter() === 'all'"
+            (click)="onTechniqueFilterChange('all')"
+          >
+            All
+          </button>
+          @for (tech of availableTechniques; track tech) {
+            <button
+              class="filter-chip"
+              [class.active]="selectedTechniqueFilter() === tech"
+              [attr.aria-pressed]="selectedTechniqueFilter() === tech"
+              (click)="onTechniqueFilterChange(tech)"
+            >
+              {{ tech }}
+            </button>
+          }
+        </div>
       </div>
-    </div>
-
-    <!-- Error State -->
-    <div *ngIf="promptsError()" class="alert alert-danger" role="alert">
-      <svg lucideCircleAlert [size]="16"></svg>
-      <span>{{ promptsError() }}</span>
-    </div>
-
-    <!-- Loading State -->
-    <div *ngIf="loadingPrompts()" class="loading-state" role="status">
-      <div class="spinner"></div>
-      <p>Loading prompt templates...</p>
-    </div>
-
-    <!-- Empty State -->
-    <div *ngIf="!loadingPrompts() && prompts().length === 0 && !promptsError()" class="empty-state">
-      <div class="empty-icon">
-        <svg lucideFileText [size]="32"></svg>
-      </div>
-      <h3>{{ searchQuery() || selectedTechniqueFilter() !== 'all' ? 'No matching prompts' : 'No prompt templates yet' }}</h3>
-      <p>{{ searchQuery() || selectedTechniqueFilter() !== 'all' ? 'Try changing the search or technique filter.' : 'Create a prompt template with reusable variables and technique metadata.' }}</p>
-      <button class="btn btn-primary" (click)="createNewPromptDraft()">
-        Create New Prompt
-      </button>
-    </div>
-
-    <!-- Prompts Data Table -->
-    <div *ngIf="!loadingPrompts() && prompts().length > 0" class="table-container">
-      <table class="data-table" id="table-prompts">
-        <thead>
-          <tr>
-            <th style="width: 30%;">Name & Description</th>
-            <th style="width: 25%;">Techniques</th>
-            <th style="width: 12%;">Version</th>
-            <th style="width: 18%;">Last Updated</th>
-            <th style="width: 15%; text-align: right;">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let p of prompts()">
-            <td>
-              <div class="prompt-title">{{ p.name }}</div>
-              <div class="prompt-desc">{{ p.description || 'No description provided.' }}</div>
-            </td>
-            <td>
-              <div class="techniques-badges">
-                <span *ngFor="let t of p.techniques" class="badge badge-info">
-                  {{ t }}
-                </span>
-                <span *ngIf="p.techniques.length === 0" class="text-muted text-xs">None</span>
-              </div>
-            </td>
-            <td>
-              <span class="version-tag">v{{ p.latestVersionNumber }}</span>
-              <span class="sub-version-count" *ngIf="p.versionCount > 1">({{ p.versionCount }} revs)</span>
-            </td>
-            <td>
-              <span class="date-text">{{ p.updatedAt | date:'mediumDate' }}</span>
-            </td>
-            <td style="text-align: right;">
-              <button
-                class="btn btn-secondary btn-sm"
-                (click)="openPromptEditor(p.id)"
-                [attr.aria-label]="'Open ' + p.name"
-              >
-                Open
-              </button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
+      <!-- Error State -->
+      @if (promptsError()) {
+        <div class="alert alert-danger" role="alert">
+          <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
+          <span>{{ promptsError() }}</span>
+        </div>
+      }
+      <!-- Loading State -->
+      @if (loadingPrompts()) {
+        <div class="loading-state" role="status">
+          <div class="spinner"></div>
+          <p>Loading prompt templates...</p>
+        </div>
+      }
+      <!-- Empty State -->
+      @if (!loadingPrompts() && prompts().length === 0 && !promptsError()) {
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg aria-hidden="true" lucideFileText [size]="32"></svg>
+          </div>
+          <h3>
+            {{
+              searchQuery() || selectedTechniqueFilter() !== "all"
+                ? "No matching prompts"
+                : "No prompt templates yet"
+            }}
+          </h3>
+          <p>
+            {{
+              searchQuery() || selectedTechniqueFilter() !== "all"
+                ? "Try changing the search or technique filter."
+                : "Create a prompt template with reusable variables and technique metadata."
+            }}
+          </p>
+          <button class="btn btn-primary" (click)="createNewPromptDraft()">
+            Create New Prompt
+          </button>
+        </div>
+      }
+      <!-- Prompts Data Table -->
+      @if (!loadingPrompts() && prompts().length > 0) {
+        <div class="table-container">
+          <table class="data-table" id="table-prompts">
+            <thead>
+              <tr>
+                <th style="width: 30%">Name & Description</th>
+                <th style="width: 25%">Techniques</th>
+                <th style="width: 12%">Version</th>
+                <th style="width: 18%">Last Updated</th>
+                <th style="width: 15%; text-align: right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (p of prompts(); track p) {
+                <tr>
+                  <td>
+                    <div class="prompt-title">{{ p.name }}</div>
+                    <div class="prompt-desc">
+                      {{ p.description || "No description provided." }}
+                    </div>
+                  </td>
+                  <td>
+                    <div class="techniques-badges">
+                      @for (t of p.techniques; track t) {
+                        <span class="badge badge-info">
+                          {{ t }}
+                        </span>
+                      }
+                      @if (p.techniques.length === 0) {
+                        <span class="text-muted text-xs">None</span>
+                      }
+                    </div>
+                  </td>
+                  <td>
+                    <span class="version-tag"
+                      >v{{ p.latestVersionNumber }}</span
+                    >
+                    @if (p.versionCount > 1) {
+                      <span class="sub-version-count"
+                        >({{ p.versionCount }} revs)</span
+                      >
+                    }
+                  </td>
+                  <td>
+                    <span class="date-text">{{
+                      p.updatedAt | date: "mediumDate"
+                    }}</span>
+                  </td>
+                  <td style="text-align: right">
+                    <button
+                      class="btn btn-secondary btn-sm"
+                      (click)="openPromptEditor(p.id)"
+                      [attr.aria-label]="'Open ' + p.name"
+                    >
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+  }
 
   <!-- ======================== VIEW 2: PROMPT EDITOR & PLAYGROUND ======================== -->
-  <section *ngIf="viewMode() === 'editor'" class="editor-view">
-    <div *ngIf="loadingPrompt()" class="loading-state editor-loading" role="status">
-      <div class="spinner"></div>
-      <p>Loading prompt and version history…</p>
-    </div>
-
-    <!-- Version Bar & Metadata Strip -->
-    <div class="editor-top-bar" *ngIf="!loadingPrompt()">
-      <div class="meta-inputs">
-        <div class="form-group meta-title-group">
-          <label class="form-label" for="input-prompt-name">Template name</label>
-          <input
-            type="text"
-            class="form-control"
-            [(ngModel)]="promptName"
-            placeholder="e.g. Customer Support Classifier"
-            id="input-prompt-name"
-          />
+  @if (viewMode() === "editor") {
+    <section class="editor-view">
+      @if (loadingPrompt()) {
+        <div class="loading-state editor-loading" role="status">
+          <div class="spinner"></div>
+          <p>Loading prompt and version history…</p>
         </div>
-
-        <div class="form-group meta-desc-group">
-          <label class="form-label" for="input-prompt-description">Description</label>
-          <input
-            type="text"
-            class="form-control"
-            [(ngModel)]="promptDescription"
-            placeholder="Short description of task and expected output"
-            id="input-prompt-description"
-          />
-        </div>
-      </div>
-
-      <!-- Version Selector -->
-      <div class="version-selector-deck" *ngIf="activePrompt()">
-        <label class="form-label" for="select-prompt-version">Selected version</label>
-        <select
-          class="form-control select-version"
-          [ngModel]="selectedVersionNumber()"
-          (ngModelChange)="loadVersion($event)"
-          id="select-prompt-version"
-        >
-          <option *ngFor="let v of activePrompt()?.versions" [value]="v.versionNumber">
-            Version {{ v.versionNumber }} {{ v.versionNumber === activePrompt()?.versions?.[0]?.versionNumber ? '(Latest)' : '' }}
-          </option>
-        </select>
-      </div>
-    </div>
-
-    <!-- Composable Technique Tag Selector -->
-    <div class="techniques-selector-bar" *ngIf="!loadingPrompt()">
-      <div class="technique-label-group">
-        <span class="selector-label">Techniques</span>
-        <span class="text-muted text-xs">Choose all that apply</span>
-      </div>
-      <div class="technique-chips">
-        <button
-          *ngFor="let tech of availableTechniques"
-          type="button"
-          class="chip-button"
-          [class.selected]="isTechniqueSelected(tech)"
-          [attr.aria-pressed]="isTechniqueSelected(tech)"
-          (click)="toggleTechnique(tech)"
-        >
-          <span class="chip-check" *ngIf="isTechniqueSelected(tech)">✓</span>
-          {{ tech }}
-        </button>
-      </div>
-    </div>
-
-    <!-- Two-Column Engineering Workspace -->
-    <div class="workspace-grid" *ngIf="!loadingPrompt()">
-      <!-- LEFT COLUMN: Prompt Template Authoring -->
-      <div class="workspace-col authoring-col">
-        <div class="panel">
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <div>
-                <h2 class="panel-title">Template body</h2>
-                <span class="text-muted text-xs">Use <code class="inline-code">{{ '{{variable_name}}' }}</code> for dynamic inputs</span>
-              </div>
+      }
+      <!-- Version Bar & Metadata Strip -->
+      @if (!loadingPrompt()) {
+        <div class="editor-top-bar">
+          <div class="meta-inputs">
+            <div class="form-group meta-title-group">
+              <label class="form-label" for="input-prompt-name"
+                >Template name</label
+              >
+              <input
+                type="text"
+                class="form-control"
+                [(ngModel)]="promptName"
+                placeholder="e.g. Customer Support Classifier"
+                id="input-prompt-name"
+              />
             </div>
-            <div class="panel-stats">
-              <span class="metric-pill">~{{ estimatedTemplateTokens() }} est. tokens</span>
-              <span class="metric-pill">{{ templateBody.length }} chars</span>
+            <div class="form-group meta-desc-group">
+              <label class="form-label" for="input-prompt-description"
+                >Description</label
+              >
+              <input
+                type="text"
+                class="form-control"
+                [(ngModel)]="promptDescription"
+                placeholder="Short description of task and expected output"
+                id="input-prompt-description"
+              />
             </div>
           </div>
-
-          <div class="panel-body">
-            <!-- Template Editor Textarea (Preserves whitespace strictly) -->
-            <textarea
-              class="template-editor font-mono"
-              aria-label="Prompt template body"
-              rows="12"
-              [(ngModel)]="templateBody"
-              (ngModelChange)="onTemplateChange()"
-              placeholder="Enter your prompt template here. Whitespace, indentation, and newlines will be preserved exactly..."
-              spellcheck="false"
-              id="textarea-template-body"
-            ></textarea>
-
-            <!-- Detected Variables Interactive Tags -->
-            <div class="detected-vars-strip" *ngIf="detectedVariables().length > 0">
-              <span class="vars-label">Detected Variables:</span>
-              <span *ngFor="let v of detectedVariables()" class="variable-tag">
-                {{ '{{' + v + '}}' }}
-              </span>
+          <!-- Version Selector -->
+          @if (activePrompt()) {
+            <div class="version-selector-deck">
+              <label class="form-label" for="select-prompt-version"
+                >Selected version</label
+              >
+              <select
+                class="form-control select-version"
+                [ngModel]="selectedVersionNumber()"
+                (ngModelChange)="loadVersion($event)"
+                id="select-prompt-version"
+              >
+                @for (v of activePrompt()?.versions; track v) {
+                  <option [value]="v.versionNumber">
+                    Version {{ v.versionNumber }}
+                    {{
+                      v.versionNumber ===
+                      activePrompt()?.versions?.[0]?.versionNumber
+                        ? "(Latest)"
+                        : ""
+                    }}
+                  </option>
+                }
+              </select>
             </div>
-
-            <!-- Variables Deck -->
-            <div class="variables-deck" *ngIf="detectedVariables().length > 0">
-              <div class="deck-header">
-                <span class="deck-title">Template Variables & Sample Values</span>
-                <span class="text-xs text-muted">Values used for preview and execution</span>
-              </div>
-
-              <div class="variable-inputs-grid">
-                <div *ngFor="let varName of detectedVariables()" class="variable-field">
-                  <div class="var-field-header">
-                    <label class="font-mono var-label" [attr.for]="'input-var-' + varName">{{ '{{' + varName + '}}' }}</label>
-                    <span
-                      class="var-status"
-                      [class.var-valid]="variableValues[varName] && variableValues[varName].trim().length > 0"
-                      [class.var-missing]="!variableValues[varName] || !variableValues[varName].trim()"
+          }
+        </div>
+      }
+      <!-- Composable Technique Tag Selector -->
+      @if (!loadingPrompt()) {
+        <div class="techniques-selector-bar">
+          <div class="technique-label-group">
+            <span class="selector-label">Techniques</span>
+            <span class="text-muted text-xs">Choose all that apply</span>
+          </div>
+          <div class="technique-chips">
+            @for (tech of availableTechniques; track tech) {
+              <button
+                type="button"
+                class="chip-button"
+                [class.selected]="isTechniqueSelected(tech)"
+                [attr.aria-pressed]="isTechniqueSelected(tech)"
+                (click)="toggleTechnique(tech)"
+              >
+                @if (isTechniqueSelected(tech)) {
+                  <span class="chip-check">✓</span>
+                }
+                {{ tech }}
+              </button>
+            }
+          </div>
+        </div>
+      }
+      <!-- Two-Column Engineering Workspace -->
+      @if (!loadingPrompt()) {
+        <div class="workspace-grid">
+          <!-- LEFT COLUMN: Prompt Template Authoring -->
+          <div class="workspace-col authoring-col">
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <div>
+                    <h2 class="panel-title">Template body</h2>
+                    <span class="text-muted text-xs"
+                      >Use
+                      <code class="inline-code">{{ '{{variable_name}}' }}</code>
+                      for dynamic inputs</span
                     >
-                      {{ variableValues[varName] && variableValues[varName].trim().length > 0 ? 'Ready' : 'Required' }}
-                    </span>
                   </div>
-                  <input
-                    type="text"
-                    class="form-control form-control-sm font-mono"
-                    [(ngModel)]="variableValues[varName]"
-                    (ngModelChange)="onVariableValueChange()"
-                    placeholder="Enter test value for {{ varName }}..."
-                    [id]="'input-var-' + varName"
-                  />
+                </div>
+                <div class="panel-stats">
+                  <span class="metric-pill"
+                    >~{{ estimatedTemplateTokens() }} est. tokens</span
+                  >
+                  <span class="metric-pill"
+                    >{{ templateBody.length }} chars</span
+                  >
+                </div>
+              </div>
+              <div class="panel-body">
+                <!-- Template Editor Textarea (Preserves whitespace strictly) -->
+                <textarea
+                  class="template-editor font-mono"
+                  aria-label="Prompt template body"
+                  rows="12"
+                  [(ngModel)]="templateBody"
+                  (ngModelChange)="onTemplateChange()"
+                  placeholder="Enter your prompt template here. Whitespace, indentation, and newlines will be preserved exactly..."
+                  spellcheck="false"
+                  id="textarea-template-body"
+                ></textarea>
+                <!-- Detected Variables Interactive Tags -->
+                @if (detectedVariables().length > 0) {
+                  <div class="detected-vars-strip">
+                    <span class="vars-label">Detected Variables:</span>
+                    @for (v of detectedVariables(); track v) {
+                      <span class="variable-tag"> {{ '{{' + v + '}}' }} </span>
+                    }
+                  </div>
+                }
+                <!-- Variables Deck -->
+                @if (detectedVariables().length > 0) {
+                  <div class="variables-deck">
+                    <div class="deck-header">
+                      <span class="deck-title"
+                        >Template Variables & Sample Values</span
+                      >
+                      <span class="text-xs text-muted"
+                        >Values used for preview and execution</span
+                      >
+                    </div>
+                    <div class="variable-inputs-grid">
+                      @for (varName of detectedVariables(); track varName) {
+                        <div class="variable-field">
+                          <div class="var-field-header">
+                            <label
+                              class="font-mono var-label"
+                              [attr.for]="'input-var-' + varName"
+                              >{{ '{{' + varName + '}}' }}</label
+                            >
+                            <span
+                              class="var-status"
+                              [class.var-valid]="
+                                variableValues[varName] &&
+                                variableValues[varName].trim().length > 0
+                              "
+                              [class.var-missing]="
+                                !variableValues[varName] ||
+                                !variableValues[varName].trim()
+                              "
+                            >
+                              {{
+                                variableValues[varName] &&
+                                variableValues[varName].trim().length > 0
+                                  ? "Ready"
+                                  : "Required"
+                              }}
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            class="form-control form-control-sm font-mono"
+                            [(ngModel)]="variableValues[varName]"
+                            (ngModelChange)="onVariableValueChange()"
+                            placeholder="Enter test value for {{ varName }}..."
+                            [id]="'input-var-' + varName"
+                          />
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+                <!-- Optional examples stay out of the way until expanded. -->
+                <div class="examples-deck">
+                  <div class="examples-controls">
+                    <details
+                      class="examples-disclosure"
+                      [open]="fewShotExamples.length > 0"
+                    >
+                      <summary>
+                        <span class="deck-title">Examples</span>
+                        <span class="text-xs text-muted">{{
+                          fewShotExamples.length
+                            ? fewShotExamples.length + " configured"
+                            : "Optional"
+                        }}</span>
+                      </summary>
+                      @if (fewShotExamples.length > 0) {
+                        <div class="examples-list">
+                          @for (
+                            ex of fewShotExamples;
+                            track ex;
+                            let idx = $index
+                          ) {
+                            <div class="example-card">
+                              <div class="example-card-header">
+                                <span class="example-index"
+                                  >Example {{ idx + 1 }}</span
+                                >
+                                <button
+                                  type="button"
+                                  class="btn-text-danger"
+                                  (click)="removeFewShotExample(idx)"
+                                  [attr.aria-label]="
+                                    'Remove example ' + (idx + 1)
+                                  "
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                              <div class="example-field">
+                                <label
+                                  class="example-label"
+                                  [attr.for]="'example-input-' + idx"
+                                  >Input</label
+                                >
+                                <textarea
+                                  class="form-control form-control-sm font-mono"
+                                  [id]="'example-input-' + idx"
+                                  rows="2"
+                                  [(ngModel)]="ex.input"
+                                  (ngModelChange)="updatePreview()"
+                                  placeholder="Sample user input..."
+                                ></textarea>
+                              </div>
+                              <div class="example-field">
+                                <label
+                                  class="example-label"
+                                  [attr.for]="'example-output-' + idx"
+                                  >Expected output</label
+                                >
+                                <textarea
+                                  class="form-control form-control-sm font-mono"
+                                  [id]="'example-output-' + idx"
+                                  rows="2"
+                                  [(ngModel)]="ex.output"
+                                  (ngModelChange)="updatePreview()"
+                                  placeholder="Expected demonstration output..."
+                                ></textarea>
+                              </div>
+                            </div>
+                          }
+                        </div>
+                      }
+                    </details>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      (click)="addFewShotExample()"
+                      id="btn-add-example"
+                    >
+                      Add example
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <!-- Optional examples stay out of the way until expanded. -->
-            <div class="examples-deck">
-              <div class="examples-controls">
-                <details class="examples-disclosure" [open]="fewShotExamples.length > 0">
-                  <summary>
-                    <span class="deck-title">Examples</span>
-                    <span class="text-xs text-muted">{{ fewShotExamples.length ? fewShotExamples.length + ' configured' : 'Optional' }}</span>
+          </div>
+          <!-- RIGHT COLUMN: Resolved Preview & Playground Execution -->
+          <div class="workspace-col execution-col">
+            <!-- Panel 1: Resolved Prompt Preview -->
+            <div class="panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <h2 class="panel-title">Resolved prompt</h2>
+                  <span class="badge badge-neutral">Live Assembly</span>
+                </div>
+                @if (preview()) {
+                  <div class="panel-stats">
+                    <span class="metric-pill"
+                      >~{{ preview()?.estimatedTokens }} est. tokens</span
+                    >
+                    <span class="metric-pill"
+                      >{{ preview()?.characterCount }} chars</span
+                    >
+                  </div>
+                }
+              </div>
+              <div class="panel-body">
+                <!-- Missing Variable Warning -->
+                @if (preview() && preview()!.missingVariables.length > 0) {
+                  <div class="alert alert-warning">
+                    <svg aria-hidden="true" lucideTriangleAlert [size]="14"></svg>
+                    <span
+                      >Missing test values for:
+                      <strong>{{
+                        preview()!.missingVariables.join(", ")
+                      }}</strong
+                      >. Fill variables on the left to preview complete
+                      prompt.</span
+                    >
+                  </div>
+                }
+                <!-- Preview Content (Strictly preserves whitespace) -->
+                <div class="preview-box font-mono" id="preview-resolved-prompt">
+                  {{ preview()?.resolvedPrompt || templateBody }}
+                </div>
+              </div>
+            </div>
+            <!-- Panel 2: Playground Execution -->
+            <div class="panel playground-panel">
+              <div class="panel-header">
+                <div class="panel-title-group">
+                  <h2 class="panel-title">Test run</h2>
+                  <span class="badge badge-neutral">Via LiteLLM Proxy</span>
+                </div>
+                <!-- Run Button -->
+                <button
+                  class="btn btn-primary"
+                  (click)="runPlayground()"
+                  [disabled]="
+                    runningPlayground() ||
+                    !templateBody.trim() ||
+                    !selectedModel
+                  "
+                  id="btn-run-prompt"
+                >
+                  @if (runningPlayground()) {
+                    <span class="spinner-sm"></span>
+                  }
+                  @if (!runningPlayground()) {
+                    <svg aria-hidden="true" lucidePlay [size]="14"></svg>
+                  }
+                  {{ runningPlayground() ? "Executing..." : "Run Prompt" }}
+                </button>
+              </div>
+              <div class="panel-body">
+                <details class="parameters-deck settings-disclosure">
+                  <summary class="deck-header">
+                    <span class="deck-title">Run settings</span>
+                    <span class="text-xs text-muted"
+                      >{{ selectedModel || "No model selected" }} ·
+                      {{ temperature }} temp · {{ maxTokens }} max tokens</span
+                    >
                   </summary>
-                  <div *ngIf="fewShotExamples.length > 0" class="examples-list">
-                    <div *ngFor="let ex of fewShotExamples; let idx = index" class="example-card">
-                      <div class="example-card-header">
-                        <span class="example-index">Example {{ idx + 1 }}</span>
-                        <button type="button" class="btn-text-danger" (click)="removeFewShotExample(idx)" [attr.aria-label]="'Remove example ' + (idx + 1)">
-                          Remove
-                        </button>
-                      </div>
-                      <div class="example-field">
-                        <label class="example-label" [attr.for]="'example-input-' + idx">Input</label>
-                        <textarea class="form-control form-control-sm font-mono" [id]="'example-input-' + idx" rows="2" [(ngModel)]="ex.input" (ngModelChange)="updatePreview()" placeholder="Sample user input..."></textarea>
-                      </div>
-                      <div class="example-field">
-                        <label class="example-label" [attr.for]="'example-output-' + idx">Expected output</label>
-                        <textarea class="form-control form-control-sm font-mono" [id]="'example-output-' + idx" rows="2" [(ngModel)]="ex.output" (ngModelChange)="updatePreview()" placeholder="Expected demonstration output..."></textarea>
-                      </div>
+                  <div class="params-row">
+                    <div class="form-group param-model">
+                      <label class="form-label" for="select-model">Model</label>
+                      <select
+                        class="form-control form-control-sm"
+                        [(ngModel)]="selectedModel"
+                        id="select-model"
+                        [disabled]="availableModels().length === 0"
+                      >
+                        @if (availableModels().length === 0) {
+                          <option value="" disabled>
+                            {{
+                              gatewayConnected()
+                                ? "No models configured in gateway"
+                                : "Gateway disconnected — no models"
+                            }}
+                          </option>
+                        }
+                        @for (m of availableModels(); track m) {
+                          <option [value]="m.id">
+                            {{ m.name }} ({{ m.provider }})
+                          </option>
+                        }
+                      </select>
+                    </div>
+                    <div class="form-group param-temp">
+                      <label class="form-label" for="input-temperature"
+                        >Temperature: {{ temperature }}</label
+                      >
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.05"
+                        id="input-temperature"
+                        [(ngModel)]="temperature"
+                        class="range-slider"
+                      />
+                    </div>
+                    <div class="form-group param-tokens">
+                      <label class="form-label" for="input-max-tokens"
+                        >Max tokens</label
+                      >
+                      <input
+                        type="number"
+                        class="form-control form-control-sm"
+                        id="input-max-tokens"
+                        [(ngModel)]="maxTokens"
+                        min="64"
+                        max="8192"
+                        step="64"
+                      />
                     </div>
                   </div>
                 </details>
-                <button type="button" class="btn btn-secondary btn-sm" (click)="addFewShotExample()" id="btn-add-example">
-                  Add example
-                </button>
+                <!-- Gateway Unreachable Warning -->
+                @if (!gatewayConnected()) {
+                  <div class="alert alert-warning">
+                    <svg aria-hidden="true" lucideTriangleAlert [size]="14"></svg>
+                    <span
+                      >LiteLLM Gateway service is not connected at
+                      http://127.0.0.1:4000. Start the gateway to enable live
+                      runs.</span
+                    >
+                  </div>
+                }
+                <!-- Execution Error Alert -->
+                @if (runError()) {
+                  <div
+                    class="alert alert-danger"
+                    id="alert-run-error"
+                    role="alert"
+                  >
+                    <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
+                    <div class="error-details">
+                      <div class="error-msg">{{ runError() }}</div>
+                      @if (runResult()?.configurationHint) {
+                        <div class="error-hint">
+                          {{ runResult()?.configurationHint }}
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+                <!-- Execution Result -->
+                @if (runResult() && runResult()!.success) {
+                  <div class="result-container">
+                    <!-- Execution Metrics Bar -->
+                    <div class="metrics-bar">
+                      <div class="metric-item">
+                        <span class="metric-label">Latency:</span>
+                        <span class="metric-value font-mono"
+                          >{{ runResult()!.latencyMs }} ms</span
+                        >
+                      </div>
+                      @if (runResult()!.usage) {
+                        <div class="metric-item">
+                          <span class="metric-label">Tokens:</span>
+                          <span class="metric-value font-mono">
+                            {{ runResult()!.usage?.promptTokens }} in /
+                            {{ runResult()!.usage?.completionTokens }} out ({{
+                              runResult()!.usage?.totalTokens
+                            }}
+                            total)
+                          </span>
+                          <span
+                            class="badge"
+                            [class.badge-success]="
+                              runResult()!.usage?.source === 'provider-reported'
+                            "
+                            [class.badge-neutral]="
+                              runResult()!.usage?.source === 'estimated'
+                            "
+                          >
+                            {{
+                              runResult()!.usage?.source === "provider-reported"
+                                ? "Provider reported"
+                                : "Estimated"
+                            }}
+                          </span>
+                        </div>
+                      }
+                      <div class="metric-item">
+                        <span class="metric-label">Model:</span>
+                        <span class="metric-value font-mono">{{
+                          runResult()!.model
+                        }}</span>
+                      </div>
+                    </div>
+                    <!-- Output Box (Strictly preserves formatting and whitespace) -->
+                    <div
+                      class="output-box font-mono"
+                      id="output-completion-content"
+                      aria-live="polite"
+                    >
+                      {{ runResult()!.content }}
+                    </div>
+                  </div>
+                }
+                <!-- Idle Placeholder -->
+                @if (!runResult() && !runError() && !runningPlayground()) {
+                  <div class="idle-state">
+                    <svg aria-hidden="true" lucidePlay [size]="24"></svg>
+                    <p>
+                      Click "Run Prompt" to execute this template against
+                      <strong>{{ selectedModel }}</strong> through LiteLLM.
+                    </p>
+                  </div>
+                }
               </div>
-            </div>
-
-          </div>
-        </div>
-      </div>
-
-      <!-- RIGHT COLUMN: Resolved Preview & Playground Execution -->
-      <div class="workspace-col execution-col">
-        <!-- Panel 1: Resolved Prompt Preview -->
-        <div class="panel">
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <h2 class="panel-title">Resolved prompt</h2>
-              <span class="badge badge-neutral">Live Assembly</span>
-            </div>
-            <div class="panel-stats" *ngIf="preview()">
-              <span class="metric-pill">~{{ preview()?.estimatedTokens }} est. tokens</span>
-              <span class="metric-pill">{{ preview()?.characterCount }} chars</span>
-            </div>
-          </div>
-
-          <div class="panel-body">
-            <!-- Missing Variable Warning -->
-            <div *ngIf="preview() && preview()!.missingVariables.length > 0" class="alert alert-warning">
-              <svg lucideTriangleAlert [size]="14"></svg>
-              <span>Missing test values for: <strong>{{ preview()!.missingVariables.join(', ') }}</strong>. Fill variables on the left to preview complete prompt.</span>
-            </div>
-
-            <!-- Preview Content (Strictly preserves whitespace) -->
-            <div class="preview-box font-mono" id="preview-resolved-prompt">
-              {{ preview()?.resolvedPrompt || templateBody }}
-            </div>
-          </div>
-        </div>
-
-        <!-- Panel 2: Playground Execution -->
-        <div class="panel playground-panel">
-          <div class="panel-header">
-            <div class="panel-title-group">
-              <h2 class="panel-title">Test run</h2>
-              <span class="badge badge-neutral">Via LiteLLM Proxy</span>
-            </div>
-
-            <!-- Run Button -->
-            <button
-              class="btn btn-primary"
-              (click)="runPlayground()"
-              [disabled]="runningPlayground() || !templateBody.trim() || !selectedModel"
-              id="btn-run-prompt"
-            >
-              <span *ngIf="runningPlayground()" class="spinner-sm"></span>
-              <svg *ngIf="!runningPlayground()" lucidePlay [size]="14"></svg>
-              {{ runningPlayground() ? 'Executing...' : 'Run Prompt' }}
-            </button>
-          </div>
-
-          <div class="panel-body">
-            <details class="parameters-deck settings-disclosure">
-              <summary class="deck-header">
-                <span class="deck-title">Run settings</span>
-                <span class="text-xs text-muted">{{ selectedModel || 'No model selected' }} · {{ temperature }} temp · {{ maxTokens }} max tokens</span>
-              </summary>
-              <div class="params-row">
-                <div class="form-group param-model">
-                  <label class="form-label" for="select-model">Model</label>
-                  <select class="form-control form-control-sm" [(ngModel)]="selectedModel" id="select-model" [disabled]="availableModels().length === 0">
-                    <option value="" disabled *ngIf="availableModels().length === 0">
-                      {{ gatewayConnected() ? 'No models configured in gateway' : 'Gateway disconnected — no models' }}
-                    </option>
-                    <option *ngFor="let m of availableModels()" [value]="m.id">
-                      {{ m.name }} ({{ m.provider }})
-                    </option>
-                  </select>
-                </div>
-
-                <div class="form-group param-temp">
-                  <label class="form-label" for="input-temperature">Temperature: {{ temperature }}</label>
-                  <input type="range" min="0" max="1" step="0.05" id="input-temperature" [(ngModel)]="temperature" class="range-slider" />
-                </div>
-
-                <div class="form-group param-tokens">
-                  <label class="form-label" for="input-max-tokens">Max tokens</label>
-                  <input type="number" class="form-control form-control-sm" id="input-max-tokens" [(ngModel)]="maxTokens" min="64" max="8192" step="64" />
-                </div>
-              </div>
-            </details>
-
-            <!-- Gateway Unreachable Warning -->
-            <div *ngIf="!gatewayConnected()" class="alert alert-warning">
-              <svg lucideTriangleAlert [size]="14"></svg>
-              <span>LiteLLM Gateway service is not connected at http://127.0.0.1:4000. Start the gateway to enable live runs.</span>
-            </div>
-
-            <!-- Execution Error Alert -->
-            <div *ngIf="runError()" class="alert alert-danger" id="alert-run-error" role="alert">
-              <svg lucideCircleAlert [size]="16"></svg>
-              <div class="error-details">
-                <div class="error-msg">{{ runError() }}</div>
-                <div *ngIf="runResult()?.configurationHint" class="error-hint">
-                  {{ runResult()?.configurationHint }}
-                </div>
-              </div>
-            </div>
-
-            <!-- Execution Result -->
-            <div *ngIf="runResult() && runResult()!.success" class="result-container">
-              <!-- Execution Metrics Bar -->
-              <div class="metrics-bar">
-                <div class="metric-item">
-                  <span class="metric-label">Latency:</span>
-                  <span class="metric-value font-mono">{{ runResult()!.latencyMs }} ms</span>
-                </div>
-                <div class="metric-item" *ngIf="runResult()!.usage">
-                  <span class="metric-label">Tokens:</span>
-                  <span class="metric-value font-mono">
-                    {{ runResult()!.usage?.promptTokens }} in / {{ runResult()!.usage?.completionTokens }} out ({{ runResult()!.usage?.totalTokens }} total)
-                  </span>
-                  <span class="badge" [class.badge-success]="runResult()!.usage?.source === 'provider-reported'" [class.badge-neutral]="runResult()!.usage?.source === 'estimated'">
-                    {{ runResult()!.usage?.source === 'provider-reported' ? 'Provider reported' : 'Estimated' }}
-                  </span>
-                </div>
-                <div class="metric-item">
-                  <span class="metric-label">Model:</span>
-                  <span class="metric-value font-mono">{{ runResult()!.model }}</span>
-                </div>
-              </div>
-
-              <!-- Output Box (Strictly preserves formatting and whitespace) -->
-              <div class="output-box font-mono" id="output-completion-content" aria-live="polite">
-                {{ runResult()!.content }}
-              </div>
-            </div>
-
-            <!-- Idle Placeholder -->
-            <div *ngIf="!runResult() && !runError() && !runningPlayground()" class="idle-state">
-              <svg lucidePlay [size]="24"></svg>
-              <p>Click "Run Prompt" to execute this template against <strong>{{ selectedModel }}</strong> through LiteLLM.</p>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-  </section>
+      }
+    </section>
+  }
 
   <!-- ======================== VERSION HISTORY DRAWER ======================== -->
-  <div class="history-drawer-backdrop" *ngIf="showVersionHistory()" (click)="toggleVersionHistory()">
-    <div class="history-drawer" role="dialog" aria-modal="true" aria-labelledby="history-drawer-title" (click)="$event.stopPropagation()">
-      <div class="drawer-header">
-        <h2 class="drawer-title" id="history-drawer-title">Version history</h2>
-        <button class="btn btn-ghost btn-sm" (click)="toggleVersionHistory()"><svg lucideX [size]="14"></svg></button>
-      </div>
-
-      <div class="drawer-body">
-        <div class="version-timeline">
-          <div
-            *ngFor="let v of activePrompt()?.versions"
-            class="timeline-item"
-            [class.active]="v.versionNumber === selectedVersionNumber()"
-            [attr.aria-pressed]="v.versionNumber === selectedVersionNumber()"
-            [attr.aria-label]="'Load version ' + v.versionNumber"
-            role="button"
-            tabindex="0"
-            (click)="loadVersion(v.versionNumber); toggleVersionHistory()"
-            (keydown.enter)="loadVersion(v.versionNumber); toggleVersionHistory()"
-            (keydown.space)="$event.preventDefault(); loadVersion(v.versionNumber); toggleVersionHistory()"
+  @if (showVersionHistory()) {
+    <div class="history-drawer-backdrop" (click)="toggleVersionHistory()">
+      <div
+        class="history-drawer"
+        appDialog="history-drawer-title"
+        (dialogClose)="toggleVersionHistory()"
+        (click)="$event.stopPropagation()"
+      >
+        <div class="drawer-header">
+          <h2 class="drawer-title" id="history-drawer-title">
+            Version history
+          </h2>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            aria-label="Close version history"
+            (click)="toggleVersionHistory()"
           >
-            <div class="timeline-dot"></div>
-            <div class="timeline-content">
-              <div class="version-row">
-                <span class="version-badge">Version {{ v.versionNumber }}</span>
-                <span class="version-date">{{ v.createdAt | date:'short' }}</span>
+            <svg aria-hidden="true" lucideX [size]="14"></svg>
+          </button>
+        </div>
+        <div class="drawer-body">
+          <div class="version-timeline">
+            @for (v of activePrompt()?.versions; track v) {
+              <div
+                class="timeline-item"
+                [class.active]="v.versionNumber === selectedVersionNumber()"
+                [attr.aria-pressed]="
+                  v.versionNumber === selectedVersionNumber()
+                "
+                [attr.aria-label]="'Load version ' + v.versionNumber"
+                role="button"
+                tabindex="0"
+                (click)="loadVersion(v.versionNumber); toggleVersionHistory()"
+                (keydown.enter)="
+                  loadVersion(v.versionNumber); toggleVersionHistory()
+                "
+                (keydown.space)="
+                  $event.preventDefault();
+                  loadVersion(v.versionNumber);
+                  toggleVersionHistory()
+                "
+              >
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">
+                  <div class="version-row">
+                    <span class="version-badge"
+                      >Version {{ v.versionNumber }}</span
+                    >
+                    <span class="version-date">{{
+                      v.createdAt | date: "short"
+                    }}</span>
+                  </div>
+                  <div class="version-meta">Created by {{ v.createdBy }}</div>
+                  <div class="version-snippet font-mono">
+                    {{ v.templateBody | slice: 0 : 120 }}...
+                  </div>
+                </div>
               </div>
-              <div class="version-meta">Created by {{ v.createdBy }}</div>
-              <div class="version-snippet font-mono">
-                {{ v.templateBody | slice:0:120 }}...
-              </div>
-            </div>
+            }
           </div>
         </div>
       </div>
     </div>
-  </div>
+  }
 </div>

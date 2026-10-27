@@ -11,14 +11,12 @@
       "prefix": "app",
       "architect": {
         "build": {
-          "builder": "@angular-devkit/build-angular:application",
+          "builder": "@angular/build:application",
           "options": {
             "outputPath": "dist/web",
             "index": "src/index.html",
             "browser": "src/main.ts",
-            "polyfills": [
-              "zone.js"
-            ],
+            "polyfills": ["zone.js"],
             "tsConfig": "tsconfig.app.json",
             "assets": [
               {
@@ -27,12 +25,34 @@
               }
             ],
             "styles": [
+              "@fontsource/inter/latin-400.css",
+              "@fontsource/inter/latin-ext-400.css",
+              "@fontsource/inter/latin-500.css",
+              "@fontsource/inter/latin-ext-500.css",
+              "@fontsource/inter/latin-600.css",
+              "@fontsource/inter/latin-ext-600.css",
+              "@fontsource/inter/latin-700.css",
+              "@fontsource/inter/latin-ext-700.css",
+              "@fontsource/jetbrains-mono/latin-400.css",
+              "@fontsource/jetbrains-mono/latin-ext-400.css",
+              "@fontsource/jetbrains-mono/latin-500.css",
+              "@fontsource/jetbrains-mono/latin-ext-500.css",
+              "@fontsource/jetbrains-mono/latin-600.css",
+              "@fontsource/jetbrains-mono/latin-ext-600.css",
               "src/styles.css"
             ],
             "scripts": []
           },
           "configurations": {
             "production": {
+              "optimization": {
+                "scripts": true,
+                "styles": {
+                  "minify": true,
+                  "inlineCritical": true
+                },
+                "fonts": false
+              },
               "budgets": [
                 {
                   "type": "initial",
@@ -62,7 +82,7 @@
           "defaultConfiguration": "production"
         },
         "serve": {
-          "builder": "@angular-devkit/build-angular:dev-server",
+          "builder": "@angular/build:dev-server",
           "options": {
             "proxyConfig": "proxy.conf.json"
           },
@@ -77,7 +97,7 @@
           "defaultConfiguration": "development"
         },
         "test": {
-          "builder": "@angular-devkit/build-angular:karma",
+          "builder": "@angular/build:karma",
           "options": {
             "fileReplacements": [
               {
@@ -85,10 +105,7 @@
                 "with": "src/environments/environment.development.ts"
               }
             ],
-            "polyfills": [
-              "zone.js",
-              "zone.js/testing"
-            ],
+            "polyfills": ["zone.js", "zone.js/testing"],
             "tsConfig": "tsconfig.spec.json",
             "assets": [
               {
@@ -96,9 +113,7 @@
                 "input": "public"
               }
             ],
-            "styles": [
-              "src/styles.css"
-            ],
+            "styles": ["src/styles.css"],
             "scripts": []
           }
         }
@@ -107,5 +122,31 @@
   },
   "cli": {
     "analytics": false
+  },
+  "schematics": {
+    "@schematics/angular:component": {
+      "type": "component"
+    },
+    "@schematics/angular:directive": {
+      "type": "directive"
+    },
+    "@schematics/angular:service": {
+      "type": "service"
+    },
+    "@schematics/angular:guard": {
+      "typeSeparator": "."
+    },
+    "@schematics/angular:interceptor": {
+      "typeSeparator": "."
+    },
+    "@schematics/angular:module": {
+      "typeSeparator": "."
+    },
+    "@schematics/angular:pipe": {
+      "typeSeparator": "."
+    },
+    "@schematics/angular:resolver": {
+      "typeSeparator": "."
+    }
   }
 }

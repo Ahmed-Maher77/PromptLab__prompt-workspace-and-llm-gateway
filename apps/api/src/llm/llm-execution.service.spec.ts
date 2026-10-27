@@ -4,6 +4,7 @@ import { LlmExecutionService, ExecuteLlmParams } from './llm-execution.service';
 import { ProvidersService } from '../providers/providers.service';
 import { UsageService } from '../usage/usage.service';
 import { ObservabilityService } from '../observability/observability.service';
+import { ModelCatalogService } from '../providers/model-catalog.service';
 
 describe('LlmExecutionService', () => {
   let service: LlmExecutionService;
@@ -18,6 +19,9 @@ describe('LlmExecutionService', () => {
   let providersServiceMock: {
     executeChatCompletion: jest.Mock;
     estimateTokens: jest.Mock;
+  };
+  let modelCatalogMock: {
+    calculateCost: jest.Mock;
   };
 
   let mockTrace: {
@@ -63,6 +67,8 @@ describe('LlmExecutionService', () => {
         model: 'gpt-4o-mini',
         content: 'Hello, world!',
         latencyMs: 120,
+        cost: 0.000045,
+        costSource: 'provider-reported',
         usage: {
           promptTokens: 40,
           completionTokens: 20,
@@ -72,12 +78,20 @@ describe('LlmExecutionService', () => {
       }),
     };
 
+    modelCatalogMock = {
+      calculateCost: jest.fn().mockResolvedValue({
+        cost: 0.00003,
+        costSource: 'catalog-estimate',
+      }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         LlmExecutionService,
         { provide: UsageService, useValue: usageServiceMock },
         { provide: ObservabilityService, useValue: observabilityServiceMock },
         { provide: ProvidersService, useValue: providersServiceMock },
+        { provide: ModelCatalogService, useValue: modelCatalogMock },
       ],
     }).compile();
 
@@ -114,6 +128,7 @@ describe('LlmExecutionService', () => {
         userId: 'user-001',
         model: 'gpt-4o-mini',
         estimatedTokens: 550, // 50 (estimate) + 500 (maxTokens)
+        operation: 'playground',
       }),
     );
     expect(providersServiceMock.executeChatCompletion).toHaveBeenCalled();
@@ -213,7 +228,68 @@ describe('LlmExecutionService', () => {
     );
   });
 
-  describe('ARCH-01b Claim-First Idempotency', () => {
+  describe('trace status and span closure', () => {
+    it.each([
+      ['provider_rate_limited', 429],
+      ['provider_quota_error', 429],
+    ])('marks the trace rate_limited when the provider returns %s', async (errorType, upstreamStatus) => {
+      providersServiceMock.executeChatCompletion.mockResolvedValueOnce({
+        success: false,
+        model: 'gpt-4o-mini',
+        latencyMs: 30,
+        errorType,
+        upstreamStatus,
+        errorMessage: 'Upstream provider rate limit or quota exceeded',
+      });
+
+      const result = await service.execute(baseParams);
+
+      expect(result.success).toBe(false);
+      expect(usageServiceMock.reconcileUsage).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, errorType: 'RATE_LIMITED' }),
+      );
+      expect(mockTrace.complete).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'rate_limited', errorCode: errorType }),
+      );
+    });
+
+    it('keeps other provider failures as error, not rate_limited', async () => {
+      providersServiceMock.executeChatCompletion.mockResolvedValueOnce({
+        success: false,
+        model: 'gpt-4o-mini',
+        latencyMs: 30,
+        errorType: 'provider_error',
+        upstreamStatus: 500,
+        errorMessage: 'Upstream provider error (HTTP 500): quota service unavailable',
+      });
+
+      await service.execute(baseParams);
+
+      expect(mockTrace.complete).toHaveBeenCalledWith(expect.objectContaining({ status: 'error' }));
+    });
+
+    it('ends the quota.reserve span on an idempotent replay', async () => {
+      usageServiceMock.reserveUsage.mockResolvedValueOnce({
+        success: true,
+        created: false,
+        record: {
+          id: 'rec-r',
+          requestId: 'replay-key-0001',
+          userId: 'user-001',
+          status: 'reconciled',
+          responseBody: { success: true, model: 'gpt-4o-mini', content: 'cached', latencyMs: 5 },
+        },
+      });
+
+      await service.execute({ ...baseParams, idempotencyKey: 'replay-key-0001' });
+
+      expect(mockTrace.startSpan).toHaveBeenCalledWith('quota.reserve', expect.anything());
+      expect(mockSpan.end).toHaveBeenCalledWith('ok', { replayed: true });
+      expect(mockTrace.complete).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Claim-First Idempotency', () => {
     it('returns stored responseBody on replay of a reconciled request without calling provider', async () => {
       const storedResponseBody = {
         success: true,
@@ -255,7 +331,7 @@ describe('LlmExecutionService', () => {
       expect(mockTrace.complete).toHaveBeenCalledWith(
         expect.objectContaining({
           status: 'success',
-          metadata: { replayed: true },
+          metadata: expect.objectContaining({ replayed: true }),
         }),
       );
     });
@@ -373,6 +449,43 @@ describe('LlmExecutionService', () => {
           requestId: sharedKey,
         }),
       );
+    });
+
+    it('propagates provider-reported cost when returned by providersService', async () => {
+      providersServiceMock.executeChatCompletion.mockResolvedValueOnce({
+        success: true,
+        model: 'gpt-4o-mini',
+        content: 'Hello',
+        latencyMs: 100,
+        cost: 0.00012,
+        costSource: 'provider-reported',
+        usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+      });
+
+      const result = await service.execute(baseParams);
+      expect(result.cost).toBe(0.00012);
+      expect(result.costSource).toBe('provider-reported');
+      expect(modelCatalogMock.calculateCost).not.toHaveBeenCalled();
+    });
+
+    it('falls back to modelCatalog.calculateCost when provider does not report cost', async () => {
+      providersServiceMock.executeChatCompletion.mockResolvedValueOnce({
+        success: true,
+        model: 'gpt-4o-mini',
+        content: 'Hello',
+        latencyMs: 100,
+        cost: null,
+        usage: { promptTokens: 10, completionTokens: 10, totalTokens: 20 },
+      });
+      modelCatalogMock.calculateCost.mockResolvedValueOnce({
+        cost: 0.00005,
+        costSource: 'catalog-estimate',
+      });
+
+      const result = await service.execute(baseParams);
+      expect(result.cost).toBe(0.00005);
+      expect(result.costSource).toBe('catalog-estimate');
+      expect(modelCatalogMock.calculateCost).toHaveBeenCalledWith('gpt-4o-mini', 10, 10);
     });
   });
 });

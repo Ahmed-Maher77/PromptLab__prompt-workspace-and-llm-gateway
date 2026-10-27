@@ -17,10 +17,10 @@ async function bootstrap() {
     process.exit(1);
   }
 
-  // SEC-04a: disable default body parser so json({ limit: '256kb' }) in configureApp is the single parser
+  // Disable default body parser so json({ limit: '256kb' }) in configureApp is the single parser
   const app = await NestFactory.create(AppModule, { bodyParser: false });
 
-  // SEC-04: apply full HTTP hardening pipeline (helmet, CORS, body limit, pipes, etc.)
+  // Apply full HTTP hardening pipeline (helmet, CORS, body limit, pipes, etc.)
   configureApp(app, envConfig);
 
   const port = envConfig.PORT;

@@ -10,38 +10,18 @@ domain: "infrastructure"
 
 ## Architecture Diagram
 
-```
- ┌────────────────────────────────────────────────────────┐
- │           Angular 19 Frontend (Port 4200)              │
- │  - Prompt Studio       - Model Comparison (/compare)   │
- │  - Conversations       - Usage & Quotas (/usage)       │
- │  - Observability       - System Settings (/settings)   │
- └───────────────────────────┬────────────────────────────┘
-                             │ HTTP REST / SSE (Port 3100)
-                             │ CORS Origin: http://localhost:4200
- ┌───────────────────────────▼────────────────────────────┐
- │           NestJS Modular Monolith (Port 3100)          │
- │  Prefix: /api                                          │
- │  - PromptsModule          - ExperimentsModule          │
- │  - ConversationsModule    - UsageModule (ACID Quotas)  │
- │  - ObservabilityModule    - SettingsModule             │
- │  - ProvidersModule        - HealthModule               │
- └─────────────┬───────────────────────────┬──────────────┘
-               │ Prisma ORM (Port 5432)    │ HTTP (Port 4000)
-               │ Local / Docker            │ W3C traceparent
- ┌─────────────▼─────────────┐ ┌───────────▼──────────────┐
- │ PostgreSQL Database (5432)│ │ LiteLLM Proxy (Port 4000)│
- │ - prompts & versions      │ │ - /v1/chat/completions   │
- │ - experiments & ratings   │ │ - /v1/models             │
- │ - conversations & messages│ │ - /health/liveliness     │
- │ - quota_ledger & policy   │ │ Upstream Secrets Loaded  │
- └───────────────────────────┘ └───────────┬──────────────┘
-                                           │
-                        ┌──────────────────┴──────────────────┐
-                        │ External LLM Providers              │
-                        │ - OpenAI API (gpt-4o-mini)          │
-                        │ - Anthropic API (claude-3-5-sonnet) │
-                        └─────────────────────────────────────┘
+```mermaid
+graph TD
+    Client["Angular 22 Frontend (Port 4200)<br/>• Prompt Studio &nbsp;&nbsp;&nbsp;&nbsp; • Model Comparison (/compare)<br/>• Conversations &nbsp;&nbsp;&nbsp;&nbsp; • Usage & Quotas (/usage)<br/>• Observability &nbsp;&nbsp;&nbsp;&nbsp; • System Settings (/settings)"]
+    API["NestJS Modular Monolith (Port 3100)<br/>Prefix: /api<br/>• PromptsModule &nbsp;&nbsp;&nbsp;&nbsp; • ExperimentsModule<br/>• ConversationsModule &nbsp;&nbsp;&nbsp;&nbsp; • UsageModule (ACID Quotas)<br/>• ObservabilityModule &nbsp;&nbsp;&nbsp;&nbsp; • SettingsModule<br/>• ProvidersModule &nbsp;&nbsp;&nbsp;&nbsp; • HealthModule"]
+    DB[("PostgreSQL Database (Port 5432)<br/>• prompts & versions<br/>• experiments & ratings<br/>• conversations & messages<br/>• quota_ledger & policy")]
+    Gateway["LiteLLM Proxy (Port 4000)<br/>• /v1/chat/completions<br/>• /v1/models<br/>• /health/liveliness<br/>(Upstream Secrets Loaded)"]
+    Providers["External LLM Providers<br/>• OpenAI API (gpt-4o-mini)<br/>• Anthropic API (claude-3-5-sonnet)"]
+
+    Client -->|"HTTP REST / SSE (Port 3100)<br/>CORS Origin: http://localhost:4200"| API
+    API -->|"Prisma ORM (Port 5432)<br/>Local / Docker"| DB
+    API -->|"HTTP (Port 4000)<br/>W3C traceparent"| Gateway
+    Gateway --> Providers
 ```
 
 ## Network Ports & Protocols

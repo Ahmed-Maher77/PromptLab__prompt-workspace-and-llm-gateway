@@ -9,34 +9,15 @@ import {
 import { Request, Response } from 'express';
 import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
+import { STATUS_CODES } from 'http';
 
+/** RFC 9457 `title`: the standard HTTP reason phrase for the status (Node's own table). */
 function getStatusTitle(status: number): string {
-  switch (status) {
-    case HttpStatus.BAD_REQUEST:
-      return 'Bad Request';
-    case HttpStatus.UNAUTHORIZED:
-      return 'Unauthorized';
-    case HttpStatus.FORBIDDEN:
-      return 'Forbidden';
-    case HttpStatus.NOT_FOUND:
-      return 'Not Found';
-    case HttpStatus.CONFLICT:
-      return 'Conflict';
-    case HttpStatus.UNPROCESSABLE_ENTITY:
-      return 'Unprocessable Entity';
-    case HttpStatus.TOO_MANY_REQUESTS:
-      return 'Too Many Requests';
-    case HttpStatus.PAYLOAD_TOO_LARGE:
-      return 'Payload Too Large';
-    case HttpStatus.INTERNAL_SERVER_ERROR:
-      return 'Internal Server Error';
-    default:
-      return status >= 500 ? 'Internal Server Error' : 'Error';
-  }
+  return STATUS_CODES[status] ?? (status >= 500 ? 'Internal Server Error' : 'Error');
 }
 
 /**
- * ERR-01: Centralized exception filter standardized on RFC 9457 Problem Details.
+ * Centralized exception filter standardized on RFC 9457 Problem Details.
  *
  * Guarantees:
  *  - Preserves structured exception data (code, retryAfterSeconds, resetDate, remainingTokens, etc.)
@@ -131,6 +112,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
         if (typeof extra.code === 'string') {
           code = extra.code;
+        } else if (/^[A-Z][A-Z0-9_]+$/.test(message)) {
+          code = message;
         } else if (typeof extra.error === 'string') {
           code = extra.error;
         }
@@ -158,6 +141,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (!code) {
       if (status === HttpStatus.TOO_MANY_REQUESTS) {
         code = 'RATE_LIMIT_EXCEEDED';
+      } else if (/^[A-Z][A-Z0-9_]+$/.test(message)) {
+        code = message;
       } else if (
         typeof restExtensions.error === 'string' &&
         restExtensions.error
@@ -208,6 +193,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
       (typeof restExtensions.type === 'string' && restExtensions.type) ||
       'about:blank';
 
+    // RFC 9457 reserves type/title/status/detail/instance. Extension members from an exception body
+    // (e.g. Terminus health results, which carry their own `status: 'error'`) must never replace them.
+    const {
+      type: _reservedType,
+      title: _reservedTitle,
+      status: _reservedStatus,
+      detail: _reservedDetail,
+      instance: _reservedInstance,
+      ...extensionMembers
+    } = restExtensions;
+
     response.status(status).json({
       type: typeUri,
       title,
@@ -215,7 +211,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       detail: message,
       instance: reqUrl,
       ...(code ? { code } : {}),
-      ...restExtensions,
+      ...extensionMembers,
       // Backward-compatibility properties
       statusCode: status,
       message,

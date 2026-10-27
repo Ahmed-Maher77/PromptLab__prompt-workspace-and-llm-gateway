@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from '../services/auth.service';
 
-describe('authInterceptor (SEC-01b)', () => {
+describe('authInterceptor', () => {
   let http: HttpClient;
   let httpMock: HttpTestingController;
   let authServiceSpy: jasmine.SpyObj<AuthService>;

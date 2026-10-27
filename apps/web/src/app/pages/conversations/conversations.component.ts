@@ -1,7 +1,19 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  signal,
+  computed,
+  ChangeDetectionStrategy,
+  inject,
+  DestroyRef,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
+import { EMPTY, Subject, Subscription, of } from 'rxjs';
+import { debounceTime, switchMap, catchError } from 'rxjs/operators';
 import {
   LucidePlus,
   LucideX,
@@ -23,6 +35,11 @@ import {
 } from '../../services/conversation.service';
 import { PromptService, ModelMetadata } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
+import { isUnknownOutcomeError } from '../../utils/http-retry.util';
+import { toApiErrorMessage } from '../../utils/api-error.util';
+import { DialogDirective } from '../../shared/a11y/dialog.directive';
+import { ToastService } from '../../shared/feedback/toast.service';
+import { ConfirmService } from '../../shared/feedback/confirm.service';
 
 @Component({
   selector: 'app-conversations',
@@ -40,11 +57,13 @@ import { generateIdempotencyKey } from '../../utils/uuid.util';
     LucideCheck,
     LucideCircleAlert,
     LucideSend,
+    DialogDirective,
   ],
   templateUrl: './conversations.component.html',
   styleUrls: ['./conversations.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
-export class ConversationsComponent implements OnInit {
+export class ConversationsComponent implements OnInit, OnDestroy {
   // Inventory
   conversations = signal<ConversationSummary[]>([]);
   selectedConversation = signal<ConversationDetail | null>(null);
@@ -85,21 +104,76 @@ export class ConversationsComponent implements OnInit {
   showHistoryDrawer = signal<boolean>(false);
   resumeMessage = signal<string | null>(null);
 
-  // Computed Token Counter for current message input (FE-01: reactively tracks messageInput signal)
-  currentInputTokensEstimate = computed(() => {
-    const text = this.messageInput() || '';
-    if (!text.trim()) return 0;
-    return Math.max(1, Math.ceil(text.length / 3.8));
+  // Model-aware Token Counter for current message input
+  private readonly tokenEstimateSubject = new Subject<{ text: string; model: string; provider?: string }>();
+  private tokenEstimateSub?: Subscription;
+
+  inputTokensCount = signal<number>(0);
+  inputTokensMethod = signal<string | null>(null);
+
+  currentInputTokensEstimate = computed(() => this.inputTokensCount());
+  isEstimateApproximate = computed(() => {
+    const method = this.inputTokensMethod();
+    return Boolean(method && (method.startsWith('approximate:') || method.startsWith('heuristic:')));
   });
+
+  /** Short text for the screen-reader status region. */
+  liveStatus = signal('');
+
+  private readonly toast = inject(ToastService);
+  private readonly confirmService = inject(ConfirmService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /** Selection requests; switchMap keeps only the latest one's response. */
+  private readonly selectSubject = new Subject<{ id: string }>();
 
   constructor(
     private readonly conversationService: ConversationService,
     private readonly promptService: PromptService,
-  ) {}
+  ) {
+    this.selectSubject
+      .pipe(
+        switchMap(({ id }) =>
+          this.conversationService.getConversation(id).pipe(
+            catchError((err) => {
+              this.loadingDetail.set(false);
+              this.chatError.set(toApiErrorMessage(err, 'Failed to load conversation details.'));
+              return EMPTY;
+            }),
+          ),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((detail) => {
+        this.selectedConversation.set(detail);
+        this.loadingDetail.set(false);
+        this.refreshContext();
+      });
+  }
 
   ngOnInit(): void {
     this.loadModels();
     this.loadConversations();
+
+    this.tokenEstimateSub = this.tokenEstimateSubject
+      .pipe(
+        debounceTime(350),
+        switchMap(({ text, model, provider }) =>
+          this.conversationService.estimateTokens({ text, model, provider }).pipe(
+            catchError(() =>
+              of({ tokens: Math.max(1, Math.ceil(text.length / 4)), method: 'heuristic:chars/4' }),
+            ),
+          ),
+        ),
+      )
+      .subscribe((res) => {
+        this.inputTokensCount.set(res.tokens);
+        this.inputTokensMethod.set(res.method);
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.tokenEstimateSub?.unsubscribe();
   }
 
   loadModels(): void {
@@ -141,17 +215,7 @@ export class ConversationsComponent implements OnInit {
       this.resumeMessage.set(null);
     }
 
-    this.conversationService.getConversation(id).subscribe({
-      next: (detail) => {
-        this.selectedConversation.set(detail);
-        this.loadingDetail.set(false);
-        this.refreshContext();
-      },
-      error: (err) => {
-        this.loadingDetail.set(false);
-        this.chatError.set(err.error?.message || 'Failed to load conversation details.');
-      },
-    });
+    this.selectSubject.next({ id });
   }
 
   onModelChange(modelId: string): void {
@@ -188,14 +252,19 @@ export class ConversationsComponent implements OnInit {
         },
         error: (err) => {
           this.creatingConversation.set(false);
-          alert(err.error?.message || 'Failed to create conversation');
+          this.toast.error(toApiErrorMessage(err, 'Failed to create conversation'));
         },
       });
   }
 
-  deleteConversation(id: string, event: Event): void {
+  async deleteConversation(id: string, event: Event): Promise<void> {
     event.stopPropagation();
-    if (!confirm('Are you sure you want to delete this conversation?')) {
+    const confirmed = await this.confirmService.confirm({
+      title: 'Delete conversation',
+      message: 'Are you sure you want to delete this conversation?',
+      confirmLabel: 'Delete',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -213,6 +282,16 @@ export class ConversationsComponent implements OnInit {
   onMessageInputChange(val: string): void {
     this.messageInput.set(val);
     this.currentSendMessageKey = null; // Input changed -> reset key
+    const trimmed = (val || '').trim();
+    if (!trimmed) {
+      this.inputTokensCount.set(0);
+      this.inputTokensMethod.set(null);
+      return;
+    }
+    const conv = this.selectedConversation();
+    const model = conv?.model || this.newModel || 'gpt-4o';
+    const provider = conv?.provider || this.newProvider;
+    this.tokenEstimateSubject.next({ text: trimmed, model, provider });
   }
 
   sendMessage(): void {
@@ -229,14 +308,19 @@ export class ConversationsComponent implements OnInit {
 
     this.sendingMessage.set(true);
     this.chatError.set(null);
+    this.liveStatus.set('');
 
     this.conversationService.sendMessage(conv.id, text, idempotencyKey).subscribe({
       next: (res) => {
         this.currentSendMessageKey = null; // Cleared on success!
         this.messageInput.set('');
+        this.inputTokensCount.set(0);
+        this.inputTokensMethod.set(null);
         this.sendingMessage.set(false);
 
-        if (!res.success) {
+        if (res.success) {
+          this.liveStatus.set('Assistant replied');
+        } else {
           this.chatError.set(
             `[${res.errorType || 'PROVIDER_ERROR'}] ${res.errorMessage}` +
               (res.configurationHint ? ` (${res.configurationHint})` : ''),
@@ -248,8 +332,19 @@ export class ConversationsComponent implements OnInit {
       },
       error: (err) => {
         this.sendingMessage.set(false);
-        this.chatError.set(err.error?.message || 'Failed to transmit message.');
-        // Note: currentSendMessageKey is intentionally preserved so manual retry reuses the exact same key!
+        const code = err.error?.code || err.error?.message;
+        if (code === 'CONTEXT_BUDGET_EXCEEDED') {
+          this.chatError.set(
+            "This message plus the pinned context exceeds the conversation's budget — compact history or shorten the message.",
+          );
+        } else {
+          this.chatError.set(toApiErrorMessage(err, 'Failed to transmit message.'));
+        }
+        // Keep the idempotency key only for unknown outcomes (network error, 502/503/504, 409 REQUEST_IN_PROGRESS).
+        // Rotate it on every other error (reading `code` from problem-details body).
+        if (!isUnknownOutcomeError(err)) {
+          this.currentSendMessageKey = null;
+        }
       },
     });
   }
@@ -265,6 +360,9 @@ export class ConversationsComponent implements OnInit {
     this.loadingContext.set(true);
     this.conversationService.inspectContext(conv.id).subscribe({
       next: (data) => {
+        if (this.selectedConversation()?.id !== conv.id) {
+          return; // A newer selection owns the context panel now.
+        }
         this.contextData.set(data);
         this.loadingContext.set(false);
       },
@@ -303,7 +401,9 @@ export class ConversationsComponent implements OnInit {
       },
       error: (err) => {
         this.loadingPreview.set(false);
-        this.compactionError.set(err.error?.message || 'Failed to generate compaction preview.');
+        this.compactionError.set(
+          toApiErrorMessage(err, 'Failed to generate compaction preview.'),
+        );
       },
     });
   }
@@ -324,7 +424,7 @@ export class ConversationsComponent implements OnInit {
       },
       error: (err) => {
         this.loadingPreview.set(false);
-        this.compactionError.set(err.error?.message || 'Invalid sequence target for compaction.');
+        this.compactionError.set(toApiErrorMessage(err, 'Invalid sequence target for compaction.'));
       },
     });
   }
@@ -355,7 +455,9 @@ export class ConversationsComponent implements OnInit {
         },
         error: (err) => {
           this.applyingCompaction.set(false);
-          this.compactionError.set(err.error?.message || 'Failed to apply compaction checkpoint.');
+          this.compactionError.set(
+            toApiErrorMessage(err, 'Failed to apply compaction checkpoint.'),
+          );
         },
       });
   }
@@ -385,7 +487,7 @@ export class ConversationsComponent implements OnInit {
         this.selectConversation(conv.id, true);
       },
       error: (err) => {
-        alert(err.error?.message || 'Failed to resume from checkpoint');
+        this.toast.error(toApiErrorMessage(err, 'Failed to resume from checkpoint'));
       },
     });
   }

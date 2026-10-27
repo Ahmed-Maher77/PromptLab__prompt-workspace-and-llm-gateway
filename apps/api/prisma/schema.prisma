@@ -7,11 +7,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  admin
+  user
+}
+
+enum ConversationStatus {
+  active
+  archived
+}
+
+enum MessageRole {
+  system
+  user
+  assistant
+}
+
+enum MessageStatus {
+  complete
+  failed
+}
+
+enum ExperimentRunStatus {
+  completed
+  failed
+}
+
+enum TokenUsageSource {
+  estimated
+  provider_reported @map("provider-reported")
+  estimated_timeout @map("estimated-timeout")
+}
+
+enum QuotaPeriodStatus {
+  active
+  closed
+}
+
+enum UsageStatus {
+  reserved
+  reconciling
+  reconciled
+  failed
+  timeout_ambiguous @map("timeout-ambiguous")
+  expired
+}
+
+enum UsageOperation {
+  playground
+  comparison
+  conversation
+  compaction
+  gateway
+}
+
 model User {
   id          String   @id @default(uuid())
   email       String   @unique
   displayName String
-  role        String   @default("user") // admin, engineer, viewer
+  role        UserRole @default(user)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -36,6 +90,7 @@ model Prompt {
   owner    User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   versions PromptVersion[]
 
+  @@index([ownerId, updatedAt])
   @@map("prompts")
 }
 
@@ -62,14 +117,32 @@ model Experiment {
   id          String   @id @default(uuid())
   ownerId     String
   name        String
-  commonInput String
+  commonInput Json
   settings    Json     @default("{}")
   createdAt   DateTime @default(now())
 
-  owner User            @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  runs  ExperimentRun[]
+  owner       User                   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  runs        ExperimentRun[]
+  evaluations ExperimentEvaluation[]
 
+  @@index([ownerId, createdAt])
   @@map("experiments")
+}
+
+model ExperimentEvaluation {
+  id             String   @id @default(uuid())
+  experimentId   String
+  slot           String // "A" or "B"
+  rating         Int? // 1..5
+  notes          String?
+  criteriaScores Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  experiment Experiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@unique([experimentId, slot])
+  @@map("experiment_evaluations")
 }
 
 model ExperimentRun {
@@ -80,18 +153,20 @@ model ExperimentRun {
   provider         String
   model            String
   output           String?
-  status           String   @default("pending") // pending, running, completed, failed
+  status           ExperimentRunStatus
   inputTokens      Int      @default(0)
   outputTokens     Int      @default(0)
-  tokenUsageSource String   @default("estimated") // estimated, provider-reported
+  tokenUsageSource TokenUsageSource @default(estimated)
   latencyMs        Int      @default(0)
-  estimatedCost    Float?
+  estimatedCost    Decimal? @db.Decimal(14, 8)
   errorCode        String?
   createdAt        DateTime @default(now())
 
   experiment    Experiment     @relation(fields: [experimentId], references: [id], onDelete: Cascade)
   promptVersion PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
 
+  @@index([experimentId])
+  @@index([promptVersionId])
   @@map("experiment_runs")
 }
 
@@ -101,14 +176,21 @@ model Conversation {
   title     String
   provider  String
   model     String
-  status    String   @default("active") // active, archived
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  contextBudget Int?
+  activeCheckpointId String?
+  status       ConversationStatus @default(active)
+  lastSequence Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  owner       User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  messages    ConversationMessage[]
-  checkpoints ConversationCheckpoint[]
+  owner            User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  messages         ConversationMessage[]
+  checkpoints      ConversationCheckpoint[] @relation("ConversationCheckpoints")
+  usageRecords     UsageRecord[]
+  activeCheckpoint ConversationCheckpoint?  @relation("ActiveConversationCheckpoint", fields: [activeCheckpointId], references: [id], onDelete: SetNull)
 
+  @@index([ownerId, updatedAt])
+  @@index([activeCheckpointId])
   @@map("conversations")
 }
 
@@ -116,17 +198,18 @@ model ConversationMessage {
   id               String   @id @default(uuid())
   conversationId   String
   requestId        String?
-  role             String // system, user, assistant
+  role             MessageRole
   content          String
   sequenceNumber   Int
+  status           MessageStatus @default(complete)
   inputTokens      Int?
   outputTokens     Int?
-  tokenUsageSource String? // estimated, provider-reported
+  tokenUsageSource TokenUsageSource?
   createdAt        DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
-  @@index([conversationId, sequenceNumber])
+  @@unique([conversationId, sequenceNumber])
   @@unique([conversationId, requestId, role])
   @@map("conversation_messages")
 }
@@ -140,8 +223,10 @@ model ConversationCheckpoint {
   contextPolicyVersion     String   @default("v1")
   createdAt                DateTime @default(now())
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation           Conversation   @relation("ConversationCheckpoints", fields: [conversationId], references: [id], onDelete: Cascade)
+  activeForConversations Conversation[] @relation("ActiveConversationCheckpoint")
 
+  @@index([conversationId, createdAt])
   @@map("conversation_checkpoints")
 }
 
@@ -165,11 +250,12 @@ model QuotaPeriod {
   tokenLimit     Int
   reservedTokens Int      @default(0)
   actualTokens   Int      @default(0)
-  status         String   @default("active") // active, closed
+  status         QuotaPeriodStatus @default(active)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, periodStart])
+  @@index([status, periodEnd])
   @@map("quota_periods")
 }
 
@@ -182,17 +268,21 @@ model UsageRecord {
   model            String
   inputTokens      Int       @default(0)
   outputTokens     Int       @default(0)
-  tokenUsageSource String    @default("estimated") // estimated, provider-reported
+  tokenUsageSource TokenUsageSource @default(estimated)
   reservedTokens   Int       @default(0)
-  estimatedCost    Float?
-  status           String    @default("pending") // reserved, reconciled, failed
+  estimatedCost    Decimal?  @db.Decimal(14, 8)
+  status           UsageStatus @default(reserved)
+  operation        UsageOperation?
   responseBody     Json?
   createdAt        DateTime  @default(now())
   reconciledAt     DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
   @@unique([userId, requestId])
+  @@index([conversationId])
   @@index([userId, createdAt])
+  @@index([status, createdAt])
   @@map("usage_records")
 }

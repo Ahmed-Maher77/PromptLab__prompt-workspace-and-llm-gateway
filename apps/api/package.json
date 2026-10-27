@@ -20,7 +20,8 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma migrate deploy",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "seed": "ts-node src/database/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -31,13 +32,23 @@
     "@nestjs/schedule": "^5.0.1",
     "@nestjs/terminus": "^11.0.0",
     "@nestjs/throttler": "^6.7.1",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/core": "2.12.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.223.0",
+    "@opentelemetry/resources": "2.12.0",
+    "@opentelemetry/sdk-trace-base": "2.12.0",
     "@prisma/client": "^6.4.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "helmet": "^8.3.0",
-    "re2": "^1.24.1",
+    "js-tiktoken": "1.0.21",
+    "prisma": "^6.4.1",
+    "re2": "^1.27.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
+  },
+  "prisma": {
+    "seed": "ts-node src/database/seed.ts"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.2",
@@ -54,7 +65,6 @@
     "eslint-plugin-prettier": "^5.2.3",
     "jest": "^29.7.0",
     "prettier": "^3.5.1",
-    "prisma": "^6.4.1",
     "source-map-support": "^0.5.21",
     "supertest": "^7.3.1",
     "ts-jest": "^29.2.5",

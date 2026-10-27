@@ -5,7 +5,6 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -19,12 +18,13 @@ import {
   registerDecorator,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsStringRecord } from '../../common/validators/is-string-record.validator';
 import { compileSafeRegex } from '../../common/utils/regex.util';
 
-export function IsValidCriterionPattern(validationOptions?: ValidationOptions) {
+export function IsValidCriterionExpectedValue(validationOptions?: ValidationOptions) {
   return function (object: object, propertyName: string) {
     registerDecorator({
-      name: 'isValidCriterionPattern',
+      name: 'isValidCriterionExpectedValue',
       target: object.constructor,
       propertyName: propertyName,
       options: validationOptions,
@@ -35,6 +35,10 @@ export function IsValidCriterionPattern(validationOptions?: ValidationOptions) {
             const compiled = compileSafeRegex(value);
             return !compiled.error;
           }
+          if (obj?.type === 'max_length') {
+            if (typeof value !== 'string') return false;
+            return /^[1-9]\d*$/.test(value.trim());
+          }
           return true;
         },
         defaultMessage(args: ValidationArguments) {
@@ -43,12 +47,17 @@ export function IsValidCriterionPattern(validationOptions?: ValidationOptions) {
             const compiled = compileSafeRegex(args.value);
             return compiled.error || 'Invalid regular expression for regex evaluation criterion';
           }
+          if (obj?.type === 'max_length') {
+            return 'expectedValue must be a positive integer string for max_length evaluation criterion';
+          }
           return 'Invalid expectedValue';
         },
       },
     });
   };
 }
+
+export const IsValidCriterionPattern = IsValidCriterionExpectedValue;
 
 export class SlotConfigDto {
   @IsString()
@@ -110,10 +119,10 @@ export class EvaluationCriterionDto {
   })
   type!: 'contains_text' | 'regex' | 'json_validity' | 'max_length' | 'manual';
 
-  @ValidateIf((o: EvaluationCriterionDto) => o.type === 'regex' || o.expectedValue != null)
+  @ValidateIf((o: EvaluationCriterionDto) => o.type === 'regex' || o.type === 'max_length' || o.expectedValue != null)
   @IsString()
   @MaxLength(4096, { message: 'expectedValue must not exceed 4096 characters' })
-  @IsValidCriterionPattern()
+  @IsValidCriterionExpectedValue()
   expectedValue?: string;
 }
 
@@ -123,7 +132,7 @@ export class RunComparisonDto {
   @MaxLength(150, { message: 'name must not exceed 150 characters' })
   name!: string;
 
-  @IsObject()
+  @IsStringRecord({ maxKeys: 50, maxValueLength: 32768 })
   commonInput!: Record<string, string>;
 
   @ValidateNested()
@@ -151,10 +160,11 @@ export class RateExperimentDto {
   @IsIn(['A', 'B'], { message: 'slot must be either A or B' })
   slot!: 'A' | 'B';
 
+  @IsOptional()
   @IsInt({ message: 'rating must be an integer between 1 and 5' })
   @Min(1, { message: 'rating must be between 1 and 5' })
   @Max(5, { message: 'rating must be between 1 and 5' })
-  rating!: number; // 1 to 5
+  rating?: number; // 1 to 5, optional for notes-only update
 
   @IsString()
   @IsOptional()

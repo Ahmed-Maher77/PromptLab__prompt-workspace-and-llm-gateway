@@ -3,7 +3,6 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -13,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsStringRecord } from '../../common/validators/is-string-record.validator';
 import { FewShotExampleDto } from './create-prompt.dto';
 
 export class PreviewPromptDto {
@@ -21,8 +21,8 @@ export class PreviewPromptDto {
   @MaxLength(32768, { message: 'templateBody must not exceed 32768 characters' })
   templateBody!: string;
 
-  @IsObject()
   @IsOptional()
+  @IsStringRecord({ maxKeys: 50, maxValueLength: 32768 })
   variables?: Record<string, string>;
 
   @IsArray()
@@ -47,8 +47,8 @@ export class RunPlaygroundDto {
   @MaxLength(32768, { message: 'templateBody must not exceed 32768 characters' })
   templateBody!: string;
 
-  @IsObject()
   @IsOptional()
+  @IsStringRecord({ maxKeys: 50, maxValueLength: 32768 })
   variables?: Record<string, string>;
 
   @IsArray()

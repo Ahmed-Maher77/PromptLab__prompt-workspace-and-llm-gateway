@@ -59,6 +59,35 @@ describe('HealthService', () => {
     req.flush(mockHealth);
   });
 
+  it('accepts the reduced anonymous payload without admin-only fields', (done) => {
+    service.getHealth().subscribe((res) => {
+      expect(res).toEqual({
+        status: 'ok',
+        timestamp: '2026-10-23T00:00:00Z',
+        uptimeSeconds: 10,
+        version: '0.1.0',
+        services: {
+          database: { status: 'connected', latencyMs: 4 },
+          gateway: { serviceAvailability: 'available', latencyMs: 9 },
+        },
+      });
+      expect(res?.environment).toBeUndefined();
+      expect(res?.services.gateway.url).toBeUndefined();
+      done();
+    });
+
+    httpTesting.expectOne('/api/health').flush({
+      status: 'ok',
+      timestamp: '2026-10-23T00:00:00Z',
+      uptimeSeconds: 10,
+      version: '0.1.0',
+      services: {
+        database: { status: 'connected', latencyMs: 4 },
+        gateway: { serviceAvailability: 'available', latencyMs: 9 },
+      },
+    });
+  });
+
   it('handles error gracefully and returns null without throwing', (done) => {
     service.getHealth().subscribe((res) => {
       expect(res).toBeNull();

@@ -1,4 +1,15 @@
-import { Component, OnInit, signal, computed } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  signal,
+  computed,
+  ChangeDetectionStrategy,
+  DestroyRef,
+  inject,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { EMPTY, Subject } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -24,6 +35,10 @@ import {
   ModelMetadata,
 } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
+import { isUnknownOutcomeError } from '../../utils/http-retry.util';
+import { toApiErrorMessage } from '../../utils/api-error.util';
+import { DialogDirective } from '../../shared/a11y/dialog.directive';
+import { ToastService } from '../../shared/feedback/toast.service';
 
 @Component({
   selector: 'app-compare',
@@ -38,9 +53,11 @@ import { generateIdempotencyKey } from '../../utils/uuid.util';
     LucideCheck,
     LucideX,
     LucideInfo,
+    DialogDirective,
   ],
   templateUrl: './compare.component.html',
   styleUrls: ['./compare.component.css'],
+  changeDetection: ChangeDetectionStrategy.Eager,
 })
 export class CompareComponent implements OnInit {
   // Inventory
@@ -116,10 +133,47 @@ export class CompareComponent implements OnInit {
     return Array.from(matches);
   });
 
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly toast = inject(ToastService);
+  // Each stream keeps only the latest request's response (rapid clicks / selections).
+  private readonly slotAPromptLoad$ = new Subject<string>();
+  private readonly slotBPromptLoad$ = new Subject<string>();
+  private readonly savedExperimentLoad$ = new Subject<string>();
+
   constructor(
     private readonly experimentService: ExperimentService,
     private readonly promptService: PromptService,
-  ) {}
+  ) {
+    this.slotAPromptLoad$
+      .pipe(switchMap((id) => this.fetchPrompt(id)), takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ id, prompt }) => this.applySlotAPrompt(id, prompt));
+    this.slotBPromptLoad$
+      .pipe(switchMap((id) => this.fetchPrompt(id)), takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ id, prompt }) => this.applySlotBPrompt(id, prompt));
+    this.savedExperimentLoad$
+      .pipe(
+        switchMap((id) =>
+          this.experimentService.getExperiment(id).pipe(
+            catchError((err) => {
+              this.toast.error(toApiErrorMessage(err, 'Could not load the saved comparison.'));
+              return EMPTY;
+            }),
+          ),
+        ),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((exp) => this.applySavedExperiment(exp));
+  }
+
+  private fetchPrompt(id: string) {
+    return this.promptService.getPrompt(id).pipe(
+      map((prompt) => ({ id, prompt })),
+      catchError((err) => {
+        this.toast.error(toApiErrorMessage(err, 'Could not load the selected prompt.'));
+        return EMPTY;
+      }),
+    );
+  }
 
   ngOnInit(): void {
     this.loadModelsAndPrompts();
@@ -169,39 +223,39 @@ export class CompareComponent implements OnInit {
 
   onSlotAPromptChange(promptId: string): void {
     this.slotAPromptId = promptId;
-    this.promptService.getPrompt(promptId).subscribe({
-      next: (prompt) => {
-        this.promptDetailsMap.set(promptId, prompt);
-        if (prompt.versions.length > 0) {
-          const v = prompt.versions[0];
-          this.slotAVersionId = v.id;
-          this.slotAVersionNumber = v.versionNumber;
-          this.slotATemplateBody = v.templateBody;
-          this.updateVariableDefaults(v);
-        }
-      },
-    });
+    this.slotAPromptLoad$.next(promptId);
+  }
+
+  private applySlotAPrompt(promptId: string, prompt: PromptDetail): void {
+    this.promptDetailsMap.set(promptId, prompt);
+    if (prompt.versions.length > 0) {
+      const v = prompt.versions[0];
+      this.slotAVersionId = v.id;
+      this.slotAVersionNumber = v.versionNumber;
+      this.slotATemplateBody = v.templateBody;
+      this.updateVariableDefaults(v);
+    }
   }
 
   onSlotBPromptChange(promptId: string): void {
     this.slotBPromptId = promptId;
-    this.promptService.getPrompt(promptId).subscribe({
-      next: (prompt) => {
-        this.promptDetailsMap.set(promptId, prompt);
-        if (prompt.versions.length > 0) {
-          // If comparing same prompt, pick version 2 if exists, or version 1
-          const v =
-            promptId === this.slotAPromptId && prompt.versions.length > 1
-              ? prompt.versions[1]
-              : prompt.versions[0];
+    this.slotBPromptLoad$.next(promptId);
+  }
 
-          this.slotBVersionId = v.id;
-          this.slotBVersionNumber = v.versionNumber;
-          this.slotBTemplateBody = v.templateBody;
-          this.updateVariableDefaults(v);
-        }
-      },
-    });
+  private applySlotBPrompt(promptId: string, prompt: PromptDetail): void {
+    this.promptDetailsMap.set(promptId, prompt);
+    if (prompt.versions.length > 0) {
+      // If comparing same prompt, pick version 2 if exists, or version 1
+      const v =
+        promptId === this.slotAPromptId && prompt.versions.length > 1
+          ? prompt.versions[1]
+          : prompt.versions[0];
+
+      this.slotBVersionId = v.id;
+      this.slotBVersionNumber = v.versionNumber;
+      this.slotBTemplateBody = v.templateBody;
+      this.updateVariableDefaults(v);
+    }
   }
 
   onSlotAVersionChange(versionId: string): void {
@@ -347,8 +401,10 @@ export class CompareComponent implements OnInit {
         },
         error: (err) => {
           this.runningComparison.set(false);
-          this.runError.set(err.error?.message || 'Comparison execution failed.');
-          // Key preserved for retry
+          this.runError.set(toApiErrorMessage(err, 'Comparison execution failed.'));
+          if (!isUnknownOutcomeError(err)) {
+            this.currentRunComparisonKey = null;
+          }
         },
       });
   }
@@ -363,94 +419,98 @@ export class CompareComponent implements OnInit {
       this.slotBRating = rating;
     }
 
+    if (!res.experimentId) return;
+
     const notes = slot === 'A' ? this.slotANotes : this.slotBNotes;
 
     this.experimentService.rateSlot(res.experimentId, slot, rating, notes).subscribe({
       next: () => {
-        // Updated rating recorded in experiment settings
+        // Updated rating recorded in experiment evaluations
       },
     });
   }
 
   saveSlotNotes(slot: 'A' | 'B'): void {
     const res = this.comparisonResult();
-    if (!res) return;
+    if (!res || !res.experimentId) return;
     const rating = slot === 'A' ? this.slotARating : this.slotBRating;
     const notes = slot === 'A' ? this.slotANotes : this.slotBNotes;
 
-    this.experimentService.rateSlot(res.experimentId, slot, rating || 3, notes).subscribe();
+    this.experimentService
+      .rateSlot(res.experimentId, slot, rating > 0 ? rating : undefined, notes)
+      .subscribe();
   }
 
   loadSavedExperiment(expId: string): void {
-    this.experimentService.getExperiment(expId).subscribe({
-      next: (exp) => {
-        this.experimentName = exp.name;
-        this.commonInput = exp.commonInput || {};
-        this.evaluationCriteria = exp.evaluationCriteria || [];
+    this.savedExperimentLoad$.next(expId);
+  }
 
-        const runA = exp.runs.find((r) => r.slot === 'A');
-        const runB = exp.runs.find((r) => r.slot === 'B');
+  private applySavedExperiment(exp: SavedExperimentSummary): void {
+    this.experimentName = exp.name;
+    this.commonInput = exp.commonInput || {};
+    this.evaluationCriteria = exp.evaluationCriteria || [];
 
-        const mockRes: ComparisonResult = {
-          experimentId: exp.id,
-          name: exp.name,
-          createdAt: exp.createdAt,
-          commonInput: exp.commonInput,
-          slotA: {
-            slot: 'A',
-            promptId: runA?.promptId,
-            promptName: runA?.promptName,
-            promptVersionId: runA?.promptVersionId,
-            versionNumber: runA?.versionNumber,
-            provider: runA?.provider || 'openai',
-            model: runA?.model || 'gpt-4o-mini',
-            resolvedPrompt: '',
-            status: (runA?.status as any) || 'completed',
-            output: runA?.output || null,
-            latencyMs: runA?.latencyMs || 0,
-            inputTokens: runA?.inputTokens || 0,
-            outputTokens: runA?.outputTokens || 0,
-            totalTokens: (runA?.inputTokens || 0) + (runA?.outputTokens || 0),
-            tokenUsageSource: (runA?.tokenUsageSource as any) || 'provider-reported',
-            estimatedCost: runA?.estimatedCost || null,
-            errorCode: runA?.errorCode || null,
-            criteriaResults: exp.evaluations?.['A']?.criteriaResults || [],
-            manualRating: exp.evaluations?.['A']?.manualRating,
-            manualNotes: exp.evaluations?.['A']?.manualNotes,
-          },
-          slotB: {
-            slot: 'B',
-            promptId: runB?.promptId,
-            promptName: runB?.promptName,
-            promptVersionId: runB?.promptVersionId,
-            versionNumber: runB?.versionNumber,
-            provider: runB?.provider || 'openai',
-            model: runB?.model || 'gpt-4o-mini',
-            resolvedPrompt: '',
-            status: (runB?.status as any) || 'completed',
-            output: runB?.output || null,
-            latencyMs: runB?.latencyMs || 0,
-            inputTokens: runB?.inputTokens || 0,
-            outputTokens: runB?.outputTokens || 0,
-            totalTokens: (runB?.inputTokens || 0) + (runB?.outputTokens || 0),
-            tokenUsageSource: (runB?.tokenUsageSource as any) || 'provider-reported',
-            estimatedCost: runB?.estimatedCost || null,
-            errorCode: runB?.errorCode || null,
-            criteriaResults: exp.evaluations?.['B']?.criteriaResults || [],
-            manualRating: exp.evaluations?.['B']?.manualRating,
-            manualNotes: exp.evaluations?.['B']?.manualNotes,
-          },
-        };
+    const runA = exp.runs.find((r) => r.slot === 'A');
+    const runB = exp.runs.find((r) => r.slot === 'B');
 
-        this.comparisonResult.set(mockRes);
-        this.slotARating = exp.evaluations?.['A']?.manualRating || 0;
-        this.slotANotes = exp.evaluations?.['A']?.manualNotes || '';
-        this.slotBRating = exp.evaluations?.['B']?.manualRating || 0;
-        this.slotBNotes = exp.evaluations?.['B']?.manualNotes || '';
-
-        this.showHistoryDrawer.set(false);
+    const mockRes: ComparisonResult = {
+      experimentId: exp.id,
+      name: exp.name,
+      createdAt: exp.createdAt,
+      commonInput: exp.commonInput,
+      slotA: {
+        slot: 'A',
+        promptId: runA?.promptId,
+        promptName: runA?.promptName,
+        promptVersionId: runA?.promptVersionId,
+        versionNumber: runA?.versionNumber,
+        provider: runA?.provider || 'openai',
+        model: runA?.model || 'gpt-4o-mini',
+        resolvedPrompt: '',
+        status: (runA?.status as any) || 'completed',
+        output: runA?.output || null,
+        latencyMs: runA?.latencyMs || 0,
+        inputTokens: runA?.inputTokens || 0,
+        outputTokens: runA?.outputTokens || 0,
+        totalTokens: (runA?.inputTokens || 0) + (runA?.outputTokens || 0),
+        tokenUsageSource: (runA?.tokenUsageSource as any) || 'provider-reported',
+        estimatedCost: runA?.estimatedCost || null,
+        errorCode: runA?.errorCode || null,
+        criteriaResults: exp.evaluations?.['A']?.criteriaResults || [],
+        manualRating: exp.evaluations?.['A']?.manualRating,
+        manualNotes: exp.evaluations?.['A']?.manualNotes,
       },
-    });
+      slotB: {
+        slot: 'B',
+        promptId: runB?.promptId,
+        promptName: runB?.promptName,
+        promptVersionId: runB?.promptVersionId,
+        versionNumber: runB?.versionNumber,
+        provider: runB?.provider || 'openai',
+        model: runB?.model || 'gpt-4o-mini',
+        resolvedPrompt: '',
+        status: (runB?.status as any) || 'completed',
+        output: runB?.output || null,
+        latencyMs: runB?.latencyMs || 0,
+        inputTokens: runB?.inputTokens || 0,
+        outputTokens: runB?.outputTokens || 0,
+        totalTokens: (runB?.inputTokens || 0) + (runB?.outputTokens || 0),
+        tokenUsageSource: (runB?.tokenUsageSource as any) || 'provider-reported',
+        estimatedCost: runB?.estimatedCost || null,
+        errorCode: runB?.errorCode || null,
+        criteriaResults: exp.evaluations?.['B']?.criteriaResults || [],
+        manualRating: exp.evaluations?.['B']?.manualRating,
+        manualNotes: exp.evaluations?.['B']?.manualNotes,
+      },
+    };
+
+    this.comparisonResult.set(mockRes);
+    this.slotARating = exp.evaluations?.['A']?.manualRating || 0;
+    this.slotANotes = exp.evaluations?.['A']?.manualNotes || '';
+    this.slotBRating = exp.evaluations?.['B']?.manualRating || 0;
+    this.slotBNotes = exp.evaluations?.['B']?.manualNotes || '';
+
+    this.showHistoryDrawer.set(false);
   }
 
   toggleHistoryDrawer(): void {

@@ -5,7 +5,7 @@
       <p class="page-description">Continue a session, inspect its context, or start a new conversation.</p>
     </div>
     <button class="btn btn-primary" (click)="openNewModal()">
-      <svg lucidePlus [size]="15" aria-hidden="true"></svg>
+      <svg aria-hidden="true" lucidePlus [size]="15" aria-hidden="true"></svg>
       New conversation
     </button>
   </header>
@@ -23,7 +23,7 @@
     <!-- Conversations List -->
     <div class="conv-list-container">
       @if (loadingList()) {
-        <div class="loading-state">
+        <div class="loading-state" role="status">
           <span class="spinner"></span>
           <span>Loading conversations...</span>
         </div>
@@ -41,13 +41,17 @@
               (click)="selectConversation(conv.id)"
             >
               <div class="conv-item-top">
-                <span class="conv-title" [title]="conv.title">{{ conv.title }}</span>
+                <button type="button" class="conv-title" [title]="conv.title">
+                  {{ conv.title }}
+                </button>
                 <button
+                  type="button"
                   class="btn-icon-danger"
                   (click)="deleteConversation(conv.id, $event)"
                   title="Delete conversation"
+                  [attr.aria-label]="'Delete conversation ' + conv.title"
                 >
-                  <svg lucideX [size]="12"></svg>
+                  <svg aria-hidden="true" lucideX [size]="12"></svg>
                 </button>
               </div>
 
@@ -78,12 +82,12 @@
       <div class="no-selection-state">
         <div class="empty-card">
           <div class="empty-icon-circle">
-            <svg lucideMessageSquare [size]="24"></svg>
+            <svg aria-hidden="true" lucideMessageSquare [size]="24"></svg>
           </div>
           <h4>No conversation selected</h4>
           <p>Choose an existing session from the list on the left, or launch a new conversation with an initial prompt.</p>
           <button class="btn btn-primary" (click)="openNewModal()">
-            <svg lucidePlus [size]="14"></svg>
+            <svg aria-hidden="true" lucidePlus [size]="14"></svg>
             New Conversation
           </button>
         </div>
@@ -106,17 +110,17 @@
 
         <div class="chat-header-actions">
           <button class="btn btn-secondary btn-sm" (click)="openContextModal()">
-            <svg lucideInfo [size]="14"></svg>
+            <svg aria-hidden="true" lucideInfo [size]="14"></svg>
             Inspect Context
           </button>
 
           <button class="btn btn-secondary btn-sm" (click)="openCompactModal()">
-            <svg lucideMinimize2 [size]="14"></svg>
+            <svg aria-hidden="true" lucideMinimize2 [size]="14"></svg>
             Compact History
           </button>
 
           <button class="btn btn-ghost btn-sm" (click)="toggleHistoryDrawer()" title="View Checkpoints & History">
-            <svg lucideBookmark [size]="14"></svg>
+            <svg aria-hidden="true" lucideBookmark [size]="14"></svg>
             Checkpoints ({{ selectedConversation()?.checkpoints?.length || 0 }})
           </button>
         </div>
@@ -128,8 +132,8 @@
           <span class="meter-title">Active Context Budget:</span>
           @if (contextData()) {
             <span class="meter-value">
-              <strong>~{{ contextData()?.totalEstimatedInputTokens }}</strong> tokens
-              <span class="provenance-tag">({{ contextData()?.tokenUsageSource }})</span>
+              <strong>@if (contextData()?.tokenEstimationMethod?.startsWith('approximate:') || contextData()?.tokenEstimationMethod?.startsWith('heuristic:')) {~}{{ contextData()?.totalEstimatedInputTokens }}</strong> tokens
+              <span class="provenance-tag" [attr.title]="contextData()?.tokenEstimationMethod ? 'Method: ' + contextData()?.tokenEstimationMethod : null">({{ contextData()?.tokenEstimationMethod || contextData()?.tokenUsageSource }})</span>
               /
               @if (contextData()?.contextLimitStatus === 'known') {
                 <span>{{ contextData()?.contextWindow | number }} max limit</span>
@@ -149,18 +153,32 @@
         </div>
       </div>
 
+      <!-- Truncation Warning Banner -->
+      @if (contextData()?.truncatedMessagesCount && contextData()!.truncatedMessagesCount > 0) {
+        <div class="alert alert-warning truncation-alert" role="status">
+          <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
+          <span class="truncation-alert-text">
+            <strong>Context sliding window active:</strong> {{ contextData()!.truncatedMessagesCount }} older message(s) are truncated to fit within budget (~{{ contextData()!.inputBudget }} tokens
+            @if (contextData()?.requestedBudget && contextData()!.requestedBudget! > contextData()!.inputBudget) {
+              <span>, capped to {{ contextData()!.inputBudget }} for this model</span>
+            }).
+          </span>
+          <button class="btn btn-sm btn-secondary" (click)="openCompactModal()">Compact History</button>
+        </div>
+      }
+
       <!-- Resume Confirmation Banner -->
       @if (resumeMessage()) {
-        <div class="alert alert-info">
-          <svg lucideCheck [size]="16"></svg>
+        <div class="alert alert-info" role="status">
+          <svg aria-hidden="true" lucideCheck [size]="16"></svg>
           <span>{{ resumeMessage() }}</span>
         </div>
       }
 
       <!-- Chat Error Banner -->
       @if (chatError()) {
-        <div class="alert alert-danger">
-          <svg lucideCircleAlert [size]="16"></svg>
+        <div class="alert alert-danger" role="alert">
+          <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
           <div class="alert-content">
             <strong>Provider Execution Error:</strong>
             <p>{{ chatError() }}</p>
@@ -170,6 +188,9 @@
           </button>
         </div>
       }
+
+      <!-- Announces new assistant replies without re-reading the transcript -->
+      <div class="visually-hidden" role="status" aria-live="polite">{{ liveStatus() }}</div>
 
       <!-- Messages Transcript Area -->
       <div class="transcript-scroll-area">
@@ -184,7 +205,7 @@
               <div class="checkpoint-divider">
                 <div class="divider-line"></div>
                 <div class="divider-badge">
-                  <svg lucideBookmark [size]="12"></svg>
+                  <svg aria-hidden="true" lucideBookmark [size]="12"></svg>
                   <span>Active Compaction Checkpoint (Messages above are summarized in context)</span>
                 </div>
                 <div class="divider-line"></div>
@@ -205,6 +226,9 @@
                   </div>
                   <div class="message-meta">
                     <span class="seq-num">#{{ msg.sequenceNumber }}</span>
+                    @if (msg.status === 'failed') {
+                      <span class="failed-tag" title="Execution failed on provider">Failed</span>
+                    }
                     @if (isMessageCompacted(msg.sequenceNumber)) {
                       <span class="compacted-tag" title="Compacted into checkpoint summary for model input">In Checkpoint</span>
                     }
@@ -239,8 +263,11 @@
           ></textarea>
 
           <div class="input-controls">
-            <span class="input-estimate">
-              ~{{ currentInputTokensEstimate() }} estimated tokens
+            <span
+              class="input-estimate"
+              [attr.title]="inputTokensMethod() ? 'Method: ' + inputTokensMethod() : null"
+            >
+              @if (isEstimateApproximate()) {~}{{ currentInputTokensEstimate() }} tokens
             </span>
 
             <button
@@ -253,7 +280,7 @@
                 <span>Transmitting...</span>
               } @else {
                 <span>Send</span>
-                <svg lucideSend [size]="14"></svg>
+                <svg aria-hidden="true" lucideSend [size]="14"></svg>
               }
             </button>
           </div>
@@ -264,12 +291,21 @@
 
   <!-- Right Drawer: Checkpoints & Resume -->
   @if (showHistoryDrawer()) {
-    <div class="drawer-overlay" (click)="toggleHistoryDrawer()"></div>
-    <aside class="checkpoints-drawer">
+    <div class="drawer-overlay" aria-hidden="true" (click)="toggleHistoryDrawer()"></div>
+    <aside
+      class="checkpoints-drawer"
+      appDialog="checkpoints-drawer-title"
+      (dialogClose)="toggleHistoryDrawer()"
+    >
       <div class="drawer-header">
-        <h4>Compaction Checkpoints</h4>
-        <button class="btn-icon" (click)="toggleHistoryDrawer()">
-          <svg lucideX [size]="16"></svg>
+        <h4 id="checkpoints-drawer-title">Compaction Checkpoints</h4>
+        <button
+          type="button"
+          class="btn-icon"
+          aria-label="Close checkpoints drawer"
+          (click)="toggleHistoryDrawer()"
+        >
+          <svg aria-hidden="true" lucideX [size]="16"></svg>
         </button>
       </div>
 
@@ -289,7 +325,12 @@
             @for (chk of selectedConversation()?.checkpoints; track chk.id) {
               <div class="checkpoint-card" [class.active-chk]="selectedConversation()?.activeCheckpoint?.id === chk.id">
                 <div class="chk-card-top">
-                  <span class="chk-title">Checkpoint #{{ chk.id.slice(0, 8) }}</span>
+                  <div class="chk-title-wrapper">
+                    <span class="chk-title">Checkpoint #{{ chk.id.slice(0, 8) }}</span>
+                    @if (selectedConversation()?.activeCheckpoint?.id === chk.id) {
+                      <span class="badge badge-accent badge-sm active-badge">Active</span>
+                    }
+                  </div>
                   <span class="chk-date">{{ chk.createdAt | date:'short' }}</span>
                 </div>
 
@@ -314,9 +355,13 @@
                 }
 
                 <div class="chk-actions">
-                  <button class="btn btn-secondary btn-sm" (click)="resumeCheckpoint(chk.id)">
-                    Resume from this Checkpoint
-                  </button>
+                  @if (selectedConversation()?.activeCheckpoint?.id === chk.id) {
+                    <span class="active-indicator">Currently active in context</span>
+                  } @else {
+                    <button class="btn btn-secondary btn-sm" (click)="resumeCheckpoint(chk.id)">
+                      Resume from this Checkpoint
+                    </button>
+                  }
                 </div>
               </div>
             }
@@ -329,13 +374,23 @@
   <!-- Modal 1: Context Window Inspector -->
   @if (showContextModal()) {
     <div class="modal-backdrop" (click)="closeContextModal()">
-      <div class="modal-card modal-lg" (click)="$event.stopPropagation()">
+      <div
+        class="modal-card modal-lg"
+        appDialog="context-modal-title"
+        (dialogClose)="closeContextModal()"
+        (click)="$event.stopPropagation()"
+      >
         <div class="modal-header">
           <div class="modal-title-group">
-            <h3>Context Window Inspector</h3>
+            <h3 id="context-modal-title">Context Window Inspector</h3>
             <span class="badge badge-neutral">{{ contextData()?.model }}</span>
           </div>
-          <button class="btn-icon" (click)="closeContextModal()"><svg lucideX [size]="16"></svg></button>
+          <button
+            type="button"
+            class="btn-icon"
+            aria-label="Close context inspector"
+            (click)="closeContextModal()"
+          ><svg aria-hidden="true" lucideX [size]="16"></svg></button>
         </div>
 
         <div class="modal-body">
@@ -362,8 +417,10 @@
 
             <div class="c-metric-card">
               <span class="c-metric-label">Total Input Tokens</span>
-              <span class="c-metric-value text-accent">~{{ contextData()?.totalEstimatedInputTokens }}</span>
-              <span class="c-metric-sub">Provenance: <strong>{{ contextData()?.tokenUsageSource }}</strong></span>
+              <span class="c-metric-value text-accent">
+                @if (contextData()?.tokenEstimationMethod?.startsWith('approximate:') || contextData()?.tokenEstimationMethod?.startsWith('heuristic:')) {~}{{ contextData()?.totalEstimatedInputTokens }}
+              </span>
+              <span class="c-metric-sub">Method: <strong>{{ contextData()?.tokenEstimationMethod || contextData()?.tokenUsageSource }}</strong></span>
             </div>
 
             <div class="c-metric-card">
@@ -375,7 +432,34 @@
                 {{ contextData()?.compactedMessagesCount }} compacted, {{ contextData()?.retainedMessagesCount }} active
               </span>
             </div>
+
+            <div class="c-metric-card" [class.c-metric-card-warning]="(contextData()?.truncatedMessagesCount || 0) > 0">
+              <span class="c-metric-label">Truncated Messages</span>
+              <span class="c-metric-value" [class.text-warning]="(contextData()?.truncatedMessagesCount || 0) > 0">
+                {{ contextData()?.truncatedMessagesCount || 0 }} dropped
+              </span>
+              <span class="c-metric-sub">
+                Sliding budget: ~{{ contextData()?.inputBudget }} tokens
+                @if (contextData()?.requestedBudget && contextData()!.requestedBudget! > contextData()!.inputBudget) {
+                  <span> (capped to {{ contextData()!.inputBudget }} for this model)</span>
+                }
+              </span>
+            </div>
           </div>
+
+          <!-- Truncation Compaction Suggestion inside Inspector -->
+          @if (contextData()?.truncatedMessagesCount && contextData()!.truncatedMessagesCount > 0) {
+            <div class="alert alert-warning inspector-truncation-alert" role="status">
+              <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
+              <span class="truncation-alert-text">
+                <strong>{{ contextData()!.truncatedMessagesCount }} message(s) truncated:</strong> Context exceeds budget (~{{ contextData()!.inputBudget }} tokens
+                @if (contextData()?.requestedBudget && contextData()!.requestedBudget! > contextData()!.inputBudget) {
+                  <span>, capped to {{ contextData()!.inputBudget }} for this model</span>
+                }). Oldest messages were dropped; compacting history will preserve key facts.
+              </span>
+              <button class="btn btn-sm btn-primary" (click)="closeContextModal(); openCompactModal()">Compact History</button>
+            </div>
+          }
 
           <!-- Assembled Messages List -->
           <div class="assembled-messages-section">
@@ -409,10 +493,20 @@
   <!-- Modal 2: Manual Compaction Review Modal -->
   @if (showCompactModal()) {
     <div class="modal-backdrop" (click)="closeCompactModal()">
-      <div class="modal-card modal-lg" (click)="$event.stopPropagation()">
+      <div
+        class="modal-card modal-lg"
+        appDialog="compact-modal-title"
+        (dialogClose)="closeCompactModal()"
+        (click)="$event.stopPropagation()"
+      >
         <div class="modal-header">
-          <h3>Manual Conversation Compaction</h3>
-          <button class="btn-icon" (click)="closeCompactModal()"><svg lucideX [size]="16"></svg></button>
+          <h3 id="compact-modal-title">Manual Conversation Compaction</h3>
+          <button
+            type="button"
+            class="btn-icon"
+            aria-label="Close compaction dialog"
+            (click)="closeCompactModal()"
+          ><svg aria-hidden="true" lucideX [size]="16"></svg></button>
         </div>
 
         <div class="modal-body">
@@ -422,13 +516,13 @@
           </p>
 
           @if (compactionError()) {
-            <div class="alert alert-danger">
+            <div class="alert alert-danger" role="alert">
               <p>{{ compactionError() }}</p>
             </div>
           }
 
           @if (loadingPreview()) {
-            <div class="loading-state">
+            <div class="loading-state" role="status">
               <span class="spinner"></span>
               <span>Analyzing transcript and generating synthesis preview...</span>
             </div>
@@ -467,6 +561,15 @@
                 </span>
               </div>
             </div>
+
+            @if (compactPreview()?.summarySource === 'fallback') {
+              <div class="alert alert-warning" role="status">
+                {{ compactPreview()?.fallbackReason === 'provider_error'
+                  ? 'The model could not be reached, so this summary was built automatically from the messages.'
+                  : 'The model reply could not be used, so this summary was built automatically from the messages.' }}
+                Review and edit it before applying.
+              </div>
+            }
 
             <!-- Proposed Summary Review/Edit -->
             <div class="form-group">
@@ -517,10 +620,20 @@
   <!-- Modal 3: New Conversation Modal -->
   @if (showNewModal()) {
     <div class="modal-backdrop" (click)="closeNewModal()">
-      <div class="modal-card" (click)="$event.stopPropagation()">
+      <div
+        class="modal-card"
+        appDialog="new-modal-title"
+        (dialogClose)="closeNewModal()"
+        (click)="$event.stopPropagation()"
+      >
         <div class="modal-header">
-          <h3>Create New Conversation</h3>
-          <button class="btn-icon" (click)="closeNewModal()"><svg lucideX [size]="16"></svg></button>
+          <h3 id="new-modal-title">Create New Conversation</h3>
+          <button
+            type="button"
+            class="btn-icon"
+            aria-label="Close new conversation dialog"
+            (click)="closeNewModal()"
+          ><svg aria-hidden="true" lucideX [size]="16"></svg></button>
         </div>
 
         <div class="modal-body">

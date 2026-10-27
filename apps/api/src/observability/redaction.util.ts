@@ -1,3 +1,5 @@
+import { randomBytes } from 'crypto';
+
 const SENSITIVE_KEY_PATTERNS = [
   /api[_-]?key/i,
   /secret/i,
@@ -69,28 +71,20 @@ export function sanitizeTelemetry<T>(input: T): T {
   return input;
 }
 
-/**
- * Generates a standard W3C compliant 32-character hex traceId.
- */
+/** Cryptographically random W3C trace ID (32 hex chars, never all zeros). */
 export function generateTraceId(): string {
-  let hex = '';
-  for (let i = 0; i < 4; i++) {
-    hex += Math.floor(Math.random() * 0xffffffff)
-      .toString(16)
-      .padStart(8, '0');
-  }
-  return hex;
+  return randomNonZeroHex(16);
 }
 
-/**
- * Generates a standard W3C compliant 16-character hex spanId.
- */
+/** Cryptographically random W3C span ID (16 hex chars, never all zeros). */
 export function generateSpanId(): string {
-  let hex = '';
-  for (let i = 0; i < 2; i++) {
-    hex += Math.floor(Math.random() * 0xffffffff)
-      .toString(16)
-      .padStart(8, '0');
-  }
-  return hex;
+  return randomNonZeroHex(8);
+}
+
+function randomNonZeroHex(bytes: number): string {
+  let buf: Buffer;
+  do {
+    buf = randomBytes(bytes);
+  } while (buf.every((b) => b === 0));
+  return buf.toString('hex');
 }

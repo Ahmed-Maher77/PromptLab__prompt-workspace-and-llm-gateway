@@ -30,6 +30,7 @@
     "prisma:push": "npm --workspace=@promptlab/api run prisma:push",
     "prisma:deploy": "npm --workspace=@promptlab/api run prisma:deploy",
     "prisma:migrate": "npm --workspace=@promptlab/api run prisma:migrate",
+    "seed": "npm --workspace=@promptlab/api run seed",
     "audit": "audit-ci --config ./audit-ci.json"
   },
   "keywords": [

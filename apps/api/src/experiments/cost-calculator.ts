@@ -1,64 +1,14 @@
 /**
- * Cost calculator for model token usage.
- * Pricing is expressed in USD per 1 Million tokens.
- * Only returns a cost if exact pricing is known; otherwise returns null.
- * 
- * Note: Rates reflect standard published vendor API pricing as of October 2024.
- * Figures are configurable estimates for engineering comparisons, not real-time
- * financial ledger statements or live vendor invoice guarantees.
+ * Pure token cost calculation utilities.
+ * All model pricing is dynamically fetched and cached from LiteLLM GET /model/info
+ * Via ModelCatalogService. Static pricing tables are eliminated.
  */
-export interface ModelPricing {
-  inputPerMillion: number;
-  outputPerMillion: number;
-  currency: 'USD';
-  effectiveAsOf: string;
-  source: string;
-}
 
-export const KNOWN_MODEL_PRICING: Record<string, ModelPricing> = {
-  'gpt-4o-mini': {
-    inputPerMillion: 0.15,
-    outputPerMillion: 0.60,
-    currency: 'USD',
-    effectiveAsOf: '2024-10-01',
-    source: 'OpenAI Published API Pricing (Oct 2024)',
-  },
-  'gpt-4o': {
-    inputPerMillion: 2.50,
-    outputPerMillion: 10.00,
-    currency: 'USD',
-    effectiveAsOf: '2024-10-01',
-    source: 'OpenAI Published API Pricing (Oct 2024)',
-  },
-  'claude-3-5-sonnet': {
-    inputPerMillion: 3.00,
-    outputPerMillion: 15.00,
-    currency: 'USD',
-    effectiveAsOf: '2024-10-01',
-    source: 'Anthropic Published API Pricing (Oct 2024)',
-  },
-};
-
-/**
- * Allows registering or overriding pricing for custom or newer models at runtime.
- */
-export function registerModelPricing(model: string, pricing: ModelPricing): void {
-  KNOWN_MODEL_PRICING[model.toLowerCase()] = pricing;
-}
-
-/**
- * Strips known vendor prefixes (e.g. openai/gpt-4o -> gpt-4o).
- */
-export function normalizeModelName(model: string): string {
-  const lower = (model || '').toLowerCase().trim();
-  const slashIdx = lower.lastIndexOf('/');
-  return slashIdx !== -1 ? lower.substring(slashIdx + 1) : lower;
-}
-
-export function getModelPricing(model: string): ModelPricing | null {
-  const key = (model || '').toLowerCase().trim();
-  const normalized = normalizeModelName(model);
-  return KNOWN_MODEL_PRICING[key] || KNOWN_MODEL_PRICING[normalized] || null;
+export interface TokenPricingRates {
+  inputCostPerToken: number | null;
+  outputCostPerToken: number | null;
+  source?: string;
+  effectiveAsOf?: string;
 }
 
 export interface CostCalculationResult {
@@ -68,13 +18,22 @@ export interface CostCalculationResult {
   effectiveAsOf: string | null;
 }
 
-export function calculateCostDetails(
-  model: string,
+/**
+ * Calculates token cost given explicit input/output rates per token.
+ * Returns null if rates are unknown or incomplete (no made-up prices).
+ */
+export function calculateCostFromRates(
   inputTokens: number,
   outputTokens: number,
+  rates?: TokenPricingRates | null,
 ): CostCalculationResult {
-  const pricing = getModelPricing(model);
-  if (!pricing) {
+  if (
+    !rates ||
+    rates.inputCostPerToken === null ||
+    rates.inputCostPerToken === undefined ||
+    rates.outputCostPerToken === null ||
+    rates.outputCostPerToken === undefined
+  ) {
     return {
       estimatedCost: null,
       isEstimate: true,
@@ -83,22 +42,30 @@ export function calculateCostDetails(
     };
   }
 
-  const inputCost = (inputTokens / 1_000_000) * pricing.inputPerMillion;
-  const outputCost = (outputTokens / 1_000_000) * pricing.outputPerMillion;
+  const inputCost = inputTokens * rates.inputCostPerToken;
+  const outputCost = outputTokens * rates.outputCostPerToken;
   const totalCost = inputCost + outputCost;
 
   return {
     estimatedCost: Math.round(totalCost * 1_000_000) / 1_000_000,
     isEstimate: true,
-    pricingSource: pricing.source,
-    effectiveAsOf: pricing.effectiveAsOf,
+    pricingSource: rates.source || 'gateway-catalog',
+    effectiveAsOf: rates.effectiveAsOf || null,
   };
 }
 
+/**
+ * Calculates cost for given input and output tokens using per-token rates.
+ * Returns null if pricing is unknown.
+ */
 export function calculateCost(
-  model: string,
   inputTokens: number,
   outputTokens: number,
+  inputCostPerToken?: number | null,
+  outputCostPerToken?: number | null,
 ): number | null {
-  return calculateCostDetails(model, inputTokens, outputTokens).estimatedCost;
+  return calculateCostFromRates(inputTokens, outputTokens, {
+    inputCostPerToken: inputCostPerToken ?? null,
+    outputCostPerToken: outputCostPerToken ?? null,
+  }).estimatedCost;
 }

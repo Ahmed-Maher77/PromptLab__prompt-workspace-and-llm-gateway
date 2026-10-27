@@ -4,315 +4,429 @@
     <div class="header-left">
       <h1 class="page-title">Usage &amp; quotas</h1>
       <p class="header-sub">
-        Enforced monthly token quotas, in-flight reservations, provider-reported reconciliation, and audit ledger.
+        Enforced monthly token quotas, in-flight reservations, provider-reported
+        reconciliation, and audit ledger.
       </p>
     </div>
     <div class="header-actions">
-      <button class="btn btn-secondary" (click)="loadAll()" [disabled]="loading">
-        <svg lucideRefreshCw [size]="14"></svg>
+      <button
+        class="btn btn-secondary"
+        (click)="loadAll()"
+        [disabled]="loading"
+      >
+        <svg aria-hidden="true" lucideRefreshCw [size]="14"></svg>
         Refresh
       </button>
     </div>
   </header>
 
   <!-- Alerts -->
-  <div *ngIf="errorMessage" class="alert alert-error">
-    <svg lucideCircleAlert [size]="16"></svg>
-    <span>{{ errorMessage }}</span>
-  </div>
+  @if (errorMessage) {
+    <div class="alert alert-error" role="alert">
+      <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
+      <span>{{ errorMessage }}</span>
+    </div>
+  }
 
-  <div *ngIf="successMessage" class="alert alert-success">
-    <svg lucideCircleCheck [size]="16"></svg>
-    <span>{{ successMessage }}</span>
-  </div>
+  @if (successMessage) {
+    <div class="alert alert-success" role="status">
+      <svg aria-hidden="true" lucideCircleCheck [size]="16"></svg>
+      <span>{{ successMessage }}</span>
+    </div>
+  }
 
   <!-- Loading State -->
-  <div *ngIf="loading && !status" class="loading-state">
-    <div class="spinner"></div>
-    <p>Loading monthly quota status and usage records...</p>
-  </div>
+  @if (loading && !status) {
+    <div class="loading-state" role="status">
+      <div class="spinner"></div>
+      <p>Loading monthly quota status and usage records...</p>
+    </div>
+  }
 
   <!-- Content -->
-  <div *ngIf="status" class="usage-content">
-    <!-- Stat Cards -->
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-header">
-          <span class="stat-title">Monthly Allowance</span>
-          <span class="badge badge-neutral">Policy</span>
+  @if (status) {
+    <div class="usage-content">
+      <!-- Stat Cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-title">Monthly Allowance</span>
+            <span class="badge badge-neutral">Policy</span>
+          </div>
+          <div class="stat-value">{{ status.tokenLimit.toLocaleString() }}</div>
+          <div class="stat-sub">Tokens / month (UTC calendar)</div>
         </div>
-        <div class="stat-value">{{ status.tokenLimit.toLocaleString() }}</div>
-        <div class="stat-sub">Tokens / month (UTC calendar)</div>
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-title">Provider-Reported</span>
+            <span class="badge badge-success">Reconciled</span>
+          </div>
+          <div class="stat-value text-success">
+            {{ status.actualTokens.toLocaleString() }}
+          </div>
+          <div class="stat-sub">
+            {{ status.percentUsed }}% of monthly allowance
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-title">In-Flight Reserved</span>
+            <span class="badge badge-warning">Pending</span>
+          </div>
+          <div class="stat-value text-warning">
+            {{ status.reservedTokens.toLocaleString() }}
+          </div>
+          <div class="stat-sub">
+            {{ status.percentReserved }}% currently reserved
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-title">Remaining Allowance</span>
+            <span
+              class="badge"
+              [ngClass]="
+                status.remainingTokens > 0 ? 'badge-primary' : 'badge-error'
+              "
+            >
+              {{ status.remainingTokens > 0 ? "Available" : "Exhausted" }}
+            </span>
+          </div>
+          <div
+            class="stat-value"
+            [ngClass]="
+              status.remainingTokens > 0 ? 'text-primary' : 'text-error'
+            "
+          >
+            {{ status.remainingTokens.toLocaleString() }}
+          </div>
+          <div class="stat-sub">Remaining before rejection</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-title">Estimated Spend</span>
+            <span class="badge badge-neutral">USD</span>
+          </div>
+          <div class="stat-value">
+            ${{ status.estimatedTotalCost.toFixed(4) }}
+          </div>
+          <div class="stat-sub">From reconciled records</div>
+        </div>
       </div>
-
-      <div class="stat-card">
-        <div class="stat-header">
-          <span class="stat-title">Provider-Reported</span>
-          <span class="badge badge-success">Reconciled</span>
+      <!-- Quota Budget Progress Bar -->
+      <div class="card budget-meter-card">
+        <div class="meter-header">
+          <div class="meter-title-wrap">
+            <h2 class="card-title">Monthly Quota Consumption</h2>
+            <span class="reset-date-note">
+              Resets on: <strong>{{ formatDate(status.resetDate) }}</strong>
+            </span>
+          </div>
+          <div class="rate-limit-badge">
+            Rate limit:
+            <strong>{{ status.rateLimit.limitPerMinute }} requests/min</strong>
+          </div>
         </div>
-        <div class="stat-value text-success">{{ status.actualTokens.toLocaleString() }}</div>
-        <div class="stat-sub">{{ status.percentUsed }}% of monthly allowance</div>
+        <!-- Segmented Bar -->
+        <div class="progress-bar-container" title="Budget consumption meter">
+          <div
+            class="progress-segment segment-used"
+            [style.width.%]="status.percentUsed"
+            [title]="
+              'Used: ' +
+              status.actualTokens.toLocaleString() +
+              ' tokens (' +
+              status.percentUsed +
+              '%)'
+            "
+          ></div>
+          <div
+            class="progress-segment segment-reserved"
+            [style.width.%]="status.percentReserved"
+            [title]="
+              'Reserved: ' +
+              status.reservedTokens.toLocaleString() +
+              ' tokens (' +
+              status.percentReserved +
+              '%)'
+            "
+          ></div>
+        </div>
+        <!-- Meter Legend -->
+        <div class="meter-legend">
+          <div class="legend-item">
+            <span class="legend-dot dot-used"></span>
+            <span
+              >Used:
+              <strong>{{ status.actualTokens.toLocaleString() }}</strong> ({{
+                status.percentUsed
+              }}%)</span
+            >
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot dot-reserved"></span>
+            <span
+              >Reserved:
+              <strong>{{ status.reservedTokens.toLocaleString() }}</strong> ({{
+                status.percentReserved
+              }}%)</span
+            >
+          </div>
+          <div class="legend-item">
+            <span class="legend-dot dot-remaining"></span>
+            <span
+              >Remaining:
+              <strong>{{
+                status.remainingTokens.toLocaleString()
+              }}</strong></span
+            >
+          </div>
+        </div>
       </div>
-
-      <div class="stat-card">
-        <div class="stat-header">
-          <span class="stat-title">In-Flight Reserved</span>
-          <span class="badge badge-warning">Pending</span>
+      <!-- Quota Policy & Developer Controls -->
+      <div class="card policy-controls-card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">Quota Policy & Testing Controls</h2>
+            <p class="card-sub">
+              Configure monthly token budgets and request rate limits. Limits
+              are enforced server-side before request dispatch.
+            </p>
+          </div>
         </div>
-        <div class="stat-value text-warning">{{ status.reservedTokens.toLocaleString() }}</div>
-        <div class="stat-sub">{{ status.percentReserved }}% currently reserved</div>
+        <div class="policy-form-grid">
+          <div class="form-group">
+            <label class="form-label" for="limitInput"
+              >Monthly Token Allowance</label
+            >
+            <input
+              id="limitInput"
+              type="number"
+              class="form-control"
+              [(ngModel)]="editLimit"
+              min="1000"
+              step="10000"
+            />
+            <span class="form-hint"
+              >Default: 1,000,000 tokens per user per calendar month.</span
+            >
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="rateInput"
+              >Request Rate Limit (req/min)</label
+            >
+            <input
+              id="rateInput"
+              type="number"
+              class="form-control"
+              [(ngModel)]="editRateLimit"
+              min="1"
+              max="600"
+              step="5"
+            />
+            <span class="form-hint"
+              >Enforced independently from token volume.</span
+            >
+          </div>
+          <div class="form-actions-inline">
+            <button
+              class="btn btn-primary"
+              (click)="savePolicy()"
+              [disabled]="savingPolicy"
+            >
+              {{ savingPolicy ? "Saving..." : "Update Policy" }}
+            </button>
+            <button
+              class="btn btn-secondary"
+              (click)="simulateNearQuota()"
+              title="Sets token limit near current consumption to test 429 quota exhaustion in Playground/Compare"
+            >
+              Simulate Near-Quota Limit
+            </button>
+            <button
+              class="btn btn-danger-outline"
+              (click)="resetDemoUsage()"
+              [disabled]="resetting"
+              title="Resets used and reserved counters to 0 for a fresh test run"
+            >
+              {{ resetting ? "Resetting..." : "Reset Period for Demo" }}
+            </button>
+          </div>
+        </div>
       </div>
-
-      <div class="stat-card">
-        <div class="stat-header">
-          <span class="stat-title">Remaining Allowance</span>
-          <span class="badge" [ngClass]="status.remainingTokens > 0 ? 'badge-primary' : 'badge-error'">
-            {{ status.remainingTokens > 0 ? 'Available' : 'Exhausted' }}
-          </span>
+      <!-- Usage Ledger Table -->
+      <div class="card ledger-card">
+        <div class="ledger-header">
+          <div>
+            <h2 class="card-title">Usage & Request Ledger</h2>
+            <p class="card-sub">
+              Audit log of every model invocation with idempotent request ID,
+              reservation, and reconciled usage.
+            </p>
+          </div>
+          <!-- Filter Pills -->
+          <div class="filter-pills">
+            <button
+              class="filter-pill"
+              [class.active]="statusFilter === 'all'"
+              (click)="statusFilter = 'all'"
+            >
+              All ({{ ledger.length }})
+            </button>
+            <button
+              class="filter-pill"
+              [class.active]="statusFilter === 'reconciled'"
+              (click)="statusFilter = 'reconciled'"
+            >
+              Reconciled
+            </button>
+            <button
+              class="filter-pill"
+              [class.active]="statusFilter === 'reserved'"
+              (click)="statusFilter = 'reserved'"
+            >
+              Reserved
+            </button>
+            <button
+              class="filter-pill"
+              [class.active]="statusFilter === 'failed'"
+              (click)="statusFilter = 'failed'"
+            >
+              Failed
+            </button>
+            <button
+              class="filter-pill"
+              [class.active]="statusFilter === 'timeout-ambiguous'"
+              (click)="statusFilter = 'timeout-ambiguous'"
+            >
+              Timed out
+            </button>
+            <button
+              class="filter-pill"
+              [class.active]="statusFilter === 'expired'"
+              (click)="statusFilter = 'expired'"
+            >
+              Expired
+            </button>
+          </div>
         </div>
-        <div class="stat-value" [ngClass]="status.remainingTokens > 0 ? 'text-primary' : 'text-error'">
-          {{ status.remainingTokens.toLocaleString() }}
+        <!-- Table -->
+        <div class="table-container">
+          @if (filteredLedger.length > 0) {
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Timestamp (UTC)</th>
+                  <th>Request ID</th>
+                  <th>Context</th>
+                  <th>Model</th>
+                  <th>Status</th>
+                  <th class="text-right">Reserved</th>
+                  <th class="text-right">Input</th>
+                  <th class="text-right">Output</th>
+                  <th class="text-right">Total Tokens</th>
+                  <th>Source</th>
+                  <th class="text-right">Est. Cost</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (item of filteredLedger; track item) {
+                  <tr>
+                    <td class="text-muted font-mono text-sm whitespace-nowrap">
+                      {{ formatDate(item.createdAt) }}
+                    </td>
+                    <td>
+                      <span
+                        class="request-id-tag font-mono text-sm"
+                        [title]="'Click to copy: ' + item.requestId"
+                        (click)="copyRequestId(item.requestId)"
+                      >
+                        {{
+                          item.requestId.length > 20
+                            ? item.requestId.slice(0, 18) + "…"
+                            : item.requestId
+                        }}
+                        @if (copiedId === item.requestId) {
+                          <span class="copied-indicator">Copied!</span>
+                        }
+                      </span>
+                    </td>
+                    <td>
+                      <span class="badge badge-neutral text-xs">{{
+                        getContextLabel(item)
+                      }}</span>
+                    </td>
+                    <td class="font-mono text-sm">{{ item.model }}</td>
+                    <td>
+                      <span
+                        class="badge text-xs"
+                        [ngClass]="{
+                          'badge-success': item.status === 'reconciled',
+                          'badge-warning':
+                            item.status === 'reserved' ||
+                            item.status === 'reconciling' ||
+                            item.status === 'timeout-ambiguous',
+                          'badge-error': item.status === 'failed',
+                          'badge-neutral': item.status === 'expired',
+                        }"
+                      >
+                        {{ item.status }}
+                      </span>
+                    </td>
+                    <td class="text-right font-mono text-sm">
+                      {{ item.reservedTokens.toLocaleString() }}
+                    </td>
+                    <td class="text-right font-mono text-sm">
+                      {{ item.inputTokens.toLocaleString() }}
+                    </td>
+                    <td class="text-right font-mono text-sm">
+                      {{ item.outputTokens.toLocaleString() }}
+                    </td>
+                    <td class="text-right font-mono text-sm font-semibold">
+                      {{
+                        item.status === "reconciled"
+                          ? item.totalTokens.toLocaleString()
+                          : "—"
+                      }}
+                    </td>
+                    <td>
+                      <span
+                        class="badge text-xs"
+                        [ngClass]="
+                          item.tokenUsageSource === 'provider-reported'
+                            ? 'badge-success'
+                            : 'badge-neutral'
+                        "
+                      >
+                        {{ item.tokenUsageSource }}
+                      </span>
+                    </td>
+                    <td class="text-right font-mono text-sm">
+                      {{
+                        item.estimatedCost !== null
+                          ? "$" + item.estimatedCost.toFixed(5)
+                          : "—"
+                      }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+          <!-- Empty State -->
+          @if (filteredLedger.length === 0) {
+            <div class="empty-ledger">
+              <svg aria-hidden="true" lucideClock [size]="32"></svg>
+              <p class="empty-title">No usage records found</p>
+              <p class="empty-sub">
+                Model requests from Prompt Studio, Comparison experiments, or
+                Conversations will be recorded here with reservation and
+                reconciliation metadata.
+              </p>
+            </div>
+          }
         </div>
-        <div class="stat-sub">Remaining before rejection</div>
-      </div>
-
-      <div class="stat-card">
-        <div class="stat-header">
-          <span class="stat-title">Estimated Spend</span>
-          <span class="badge badge-neutral">USD</span>
-        </div>
-        <div class="stat-value">${{ status.estimatedTotalCost.toFixed(4) }}</div>
-        <div class="stat-sub">From reconciled records</div>
       </div>
     </div>
-
-    <!-- Quota Budget Progress Bar -->
-    <div class="card budget-meter-card">
-      <div class="meter-header">
-        <div class="meter-title-wrap">
-          <h2 class="card-title">Monthly Quota Consumption</h2>
-          <span class="reset-date-note">
-            Resets on: <strong>{{ formatDate(status.resetDate) }}</strong>
-          </span>
-        </div>
-        <div class="rate-limit-badge">
-          Rate Limit: <strong>{{ status.rateLimit.currentMinuteRequests }} / {{ status.rateLimit.limitPerMinute }} req/min</strong>
-        </div>
-      </div>
-
-      <!-- Segmented Bar -->
-      <div class="progress-bar-container" title="Budget consumption meter">
-        <div
-          class="progress-segment segment-used"
-          [style.width.%]="status.percentUsed"
-          [title]="'Used: ' + status.actualTokens.toLocaleString() + ' tokens (' + status.percentUsed + '%)'"
-        ></div>
-        <div
-          class="progress-segment segment-reserved"
-          [style.width.%]="status.percentReserved"
-          [title]="'Reserved: ' + status.reservedTokens.toLocaleString() + ' tokens (' + status.percentReserved + '%)'"
-        ></div>
-      </div>
-
-      <!-- Meter Legend -->
-      <div class="meter-legend">
-        <div class="legend-item">
-          <span class="legend-dot dot-used"></span>
-          <span>Used: <strong>{{ status.actualTokens.toLocaleString() }}</strong> ({{ status.percentUsed }}%)</span>
-        </div>
-        <div class="legend-item">
-          <span class="legend-dot dot-reserved"></span>
-          <span>Reserved: <strong>{{ status.reservedTokens.toLocaleString() }}</strong> ({{ status.percentReserved }}%)</span>
-        </div>
-        <div class="legend-item">
-          <span class="legend-dot dot-remaining"></span>
-          <span>Remaining: <strong>{{ status.remainingTokens.toLocaleString() }}</strong></span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Quota Policy & Developer Controls -->
-    <div class="card policy-controls-card">
-      <div class="card-header">
-        <div>
-          <h2 class="card-title">Quota Policy & Testing Controls</h2>
-          <p class="card-sub">
-            Configure monthly token budgets and request rate limits. Limits are enforced server-side before request dispatch.
-          </p>
-        </div>
-      </div>
-
-      <div class="policy-form-grid">
-        <div class="form-group">
-          <label class="form-label" for="limitInput">Monthly Token Allowance</label>
-          <input
-            id="limitInput"
-            type="number"
-            class="form-control"
-            [(ngModel)]="editLimit"
-            min="1000"
-            step="10000"
-          />
-          <span class="form-hint">Default: 1,000,000 tokens per user per calendar month.</span>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="rateInput">Request Rate Limit (req/min)</label>
-          <input
-            id="rateInput"
-            type="number"
-            class="form-control"
-            [(ngModel)]="editRateLimit"
-            min="1"
-            max="600"
-            step="5"
-          />
-          <span class="form-hint">Enforced independently from token volume.</span>
-        </div>
-
-        <div class="form-actions-inline">
-          <button class="btn btn-primary" (click)="savePolicy()" [disabled]="savingPolicy">
-            {{ savingPolicy ? 'Saving...' : 'Update Policy' }}
-          </button>
-          <button
-            class="btn btn-secondary"
-            (click)="simulateNearQuota()"
-            title="Sets token limit near current consumption to test 429 quota exhaustion in Playground/Compare"
-          >
-            Simulate Near-Quota Limit
-          </button>
-          <button
-            class="btn btn-danger-outline"
-            (click)="resetDemoUsage()"
-            [disabled]="resetting"
-            title="Resets used and reserved counters to 0 for a fresh test run"
-          >
-            {{ resetting ? 'Resetting...' : 'Reset Period for Demo' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Usage Ledger Table -->
-    <div class="card ledger-card">
-      <div class="ledger-header">
-        <div>
-          <h2 class="card-title">Usage & Request Ledger</h2>
-          <p class="card-sub">
-            Audit log of every model invocation with idempotent request ID, reservation, and reconciled usage.
-          </p>
-        </div>
-
-        <!-- Filter Pills -->
-        <div class="filter-pills">
-          <button
-            class="filter-pill"
-            [class.active]="statusFilter === 'all'"
-            (click)="statusFilter = 'all'"
-          >
-            All ({{ ledger.length }})
-          </button>
-          <button
-            class="filter-pill"
-            [class.active]="statusFilter === 'reconciled'"
-            (click)="statusFilter = 'reconciled'"
-          >
-            Reconciled
-          </button>
-          <button
-            class="filter-pill"
-            [class.active]="statusFilter === 'reserved'"
-            (click)="statusFilter = 'reserved'"
-          >
-            Reserved
-          </button>
-          <button
-            class="filter-pill"
-            [class.active]="statusFilter === 'failed'"
-            (click)="statusFilter = 'failed'"
-          >
-            Failed
-          </button>
-        </div>
-      </div>
-
-      <!-- Table -->
-      <div class="table-container">
-        <table class="table" *ngIf="filteredLedger.length > 0">
-          <thead>
-            <tr>
-              <th>Timestamp (UTC)</th>
-              <th>Request ID</th>
-              <th>Context</th>
-              <th>Model</th>
-              <th>Status</th>
-              <th class="text-right">Reserved</th>
-              <th class="text-right">Input</th>
-              <th class="text-right">Output</th>
-              <th class="text-right">Total Tokens</th>
-              <th>Source</th>
-              <th class="text-right">Est. Cost</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let item of filteredLedger">
-              <td class="text-muted font-mono text-sm whitespace-nowrap">{{ formatDate(item.createdAt) }}</td>
-              <td>
-                <span
-                  class="request-id-tag font-mono text-sm"
-                  [title]="'Click to copy: ' + item.requestId"
-                  (click)="copyRequestId(item.requestId)"
-                >
-                  {{ item.requestId.length > 20 ? item.requestId.slice(0, 18) + '…' : item.requestId }}
-                  <span *ngIf="copiedId === item.requestId" class="copied-indicator">Copied!</span>
-                </span>
-              </td>
-              <td>
-                <span class="badge badge-neutral text-xs">{{ getContextLabel(item) }}</span>
-              </td>
-              <td class="font-mono text-sm">{{ item.model }}</td>
-              <td>
-                <span
-                  class="badge text-xs"
-                  [ngClass]="{
-                    'badge-success': item.status === 'reconciled',
-                    'badge-warning': item.status === 'reserved',
-                    'badge-error': item.status === 'failed'
-                  }"
-                >
-                  {{ item.status }}
-                </span>
-              </td>
-              <td class="text-right font-mono text-sm">{{ item.reservedTokens.toLocaleString() }}</td>
-              <td class="text-right font-mono text-sm">{{ item.inputTokens.toLocaleString() }}</td>
-              <td class="text-right font-mono text-sm">{{ item.outputTokens.toLocaleString() }}</td>
-              <td class="text-right font-mono text-sm font-semibold">
-                {{ item.status === 'reconciled' ? item.totalTokens.toLocaleString() : '—' }}
-              </td>
-              <td>
-                <span
-                  class="badge text-xs"
-                  [ngClass]="item.tokenUsageSource === 'provider-reported' ? 'badge-success' : 'badge-neutral'"
-                >
-                  {{ item.tokenUsageSource }}
-                </span>
-              </td>
-              <td class="text-right font-mono text-sm">
-                {{ item.estimatedCost !== null ? '$' + item.estimatedCost.toFixed(5) : '—' }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- Empty State -->
-        <div *ngIf="filteredLedger.length === 0" class="empty-ledger">
-          <svg lucideClock [size]="32"></svg>
-          <p class="empty-title">No usage records found</p>
-          <p class="empty-sub">
-            Model requests from Prompt Studio, Comparison experiments, or Conversations will be recorded here with reservation and reconciliation metadata.
-          </p>
-        </div>
-      </div>
-    </div>
-  </div>
+  }
 </div>

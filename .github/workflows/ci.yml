@@ -73,3 +73,23 @@ jobs:
       - name: Dependency security audit
         run: npm run audit
 
+  docker-images:
+    name: Docker config & image builds
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # docker-compose.yml uses env_file: .env and required variables; the template satisfies both.
+      - name: Create .env from template
+        run: cp .env.example .env
+
+      - name: Validate docker compose config
+        run: docker compose config -q
+
+      - name: Build API image (no push)
+        run: docker build -f apps/api/Dockerfile -t promptlab-api:ci .
+
+      - name: Build Web image (no push)
+        run: docker build -f apps/web/Dockerfile -t promptlab-web:ci .
