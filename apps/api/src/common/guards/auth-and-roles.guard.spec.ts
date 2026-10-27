@@ -85,6 +85,30 @@ describe('Authentication & Authorization Security Invariants', () => {
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
     });
 
+    it('attaches the user on a public route when a valid credential is sent', async () => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+      const guard = createAuthGuard();
+      const ctx = createMockContext({ authorization: 'Bearer dev-admin-token' });
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+      const req = ctx.switchToHttp().getRequest();
+      expect(req.user).toMatchObject({ id: 'dev-user-001', role: 'admin' });
+    });
+
+    it('ignores an invalid credential on a public route instead of rejecting', async () => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(true);
+      const guard = createAuthGuard();
+      const ctx = createMockContext({ authorization: 'Bearer not-a-real-token' });
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+      expect(ctx.switchToHttp().getRequest().user).toBeUndefined();
+    });
+
+    it('still rejects an invalid credential on a protected route', async () => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
+      const guard = createAuthGuard();
+      const ctx = createMockContext({ authorization: 'Bearer not-a-real-token' });
+      await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
+    });
+
     it('rejects unauthenticated requests with HTTP 401 UnauthorizedException', async () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(false);
       const guard = createAuthGuard();

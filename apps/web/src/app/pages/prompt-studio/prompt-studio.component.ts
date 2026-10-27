@@ -1,4 +1,4 @@
-import { Component, OnInit, signal, computed, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, signal, computed, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
@@ -26,6 +26,8 @@ import { generateIdempotencyKey } from '../../utils/uuid.util';
 import { isUnknownOutcomeError } from '../../utils/http-retry.util';
 
 export type StudioViewMode = 'library' | 'editor';
+import { DialogDirective } from '../../shared/a11y/dialog.directive';
+import { ToastService } from '../../shared/feedback/toast.service';
 
 @Component({
   selector: 'app-prompt-studio',
@@ -42,6 +44,7 @@ export type StudioViewMode = 'library' | 'editor';
     LucideTriangleAlert,
     LucidePlay,
     LucideX,
+    DialogDirective,
   ],
   templateUrl: './prompt-studio.component.html',
   styleUrls: ['./prompt-studio.component.css'],
@@ -118,6 +121,8 @@ export class PromptStudioComponent implements OnInit {
     const length = this.templateBody?.length || 0;
     return Math.max(1, Math.ceil(length / 4));
   });
+
+  private readonly toast = inject(ToastService);
 
   constructor(
     private readonly promptService: PromptService,
@@ -345,11 +350,11 @@ export class PromptStudioComponent implements OnInit {
 
   saveAsNewVersion(): void {
     if (!this.promptName.trim()) {
-      alert('Prompt Name is required.');
+      this.toast.error('Prompt Name is required.');
       return;
     }
     if (!this.templateBody.trim()) {
-      alert('Template Body cannot be empty.');
+      this.toast.error('Template Body cannot be empty.');
       return;
     }
 
@@ -388,7 +393,7 @@ export class PromptStudioComponent implements OnInit {
             this.loadPrompts();
           },
           error: (err) => {
-            alert('Failed to save version: ' + (err.error?.message || err.message));
+            this.toast.error('Failed to save version: ' + (err.error?.message || err.message));
             this.savingVersion.set(false);
           },
         });
@@ -413,7 +418,7 @@ export class PromptStudioComponent implements OnInit {
             this.loadPrompts();
           },
           error: (err) => {
-            alert('Failed to create prompt: ' + (err.error?.message || err.message));
+            this.toast.error('Failed to create prompt: ' + (err.error?.message || err.message));
             this.savingVersion.set(false);
           },
         });

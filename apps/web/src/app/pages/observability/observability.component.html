@@ -14,7 +14,7 @@
         (click)="clearTraces()"
         [disabled]="clearing || traces.length === 0"
       >
-        <svg lucideTrash [size]="14"></svg>
+        <svg aria-hidden="true" lucideTrash [size]="14"></svg>
         Clear Traces
       </button>
       <button
@@ -22,7 +22,7 @@
         (click)="loadData()"
         [disabled]="loading"
       >
-        <svg lucideRefreshCw [size]="14"></svg>
+        <svg aria-hidden="true" lucideRefreshCw [size]="14"></svg>
         Refresh
       </button>
     </div>
@@ -30,15 +30,15 @@
 
   <!-- Alerts -->
   @if (errorMessage) {
-    <div class="alert alert-error">
-      <svg lucideCircleAlert [size]="16"></svg>
+    <div class="alert alert-error" role="alert">
+      <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
       <span>{{ errorMessage }}</span>
     </div>
   }
 
   @if (successMessage) {
-    <div class="alert alert-success">
-      <svg lucideCircleCheck [size]="16"></svg>
+    <div class="alert alert-success" role="status">
+      <svg aria-hidden="true" lucideCircleCheck [size]="16"></svg>
       <span>{{ successMessage }}</span>
     </div>
   }
@@ -174,7 +174,7 @@
 
   <!-- Loading State -->
   @if (loading && traces.length === 0) {
-    <div class="loading-state">
+    <div class="loading-state" role="status">
       <div class="spinner"></div>
       <p>Loading distributed traces...</p>
     </div>
@@ -187,7 +187,7 @@
       @if (traces.length === 0 && !loading) {
         <div class="empty-state">
           <div class="empty-icon-circle">
-            <svg lucideActivity [size]="24"></svg>
+            <svg aria-hidden="true" lucideActivity [size]="24"></svg>
           </div>
           <h3 class="empty-title">No traces recorded yet</h3>
           <p class="empty-desc">
@@ -216,8 +216,12 @@
             <tbody>
               @for (trace of traces; track trace) {
                 <tr
+                  class="trace-row"
+                  tabindex="0"
                   [class.row-selected]="selectedTrace?.id === trace.id"
                   (click)="selectTrace(trace)"
+                  (keydown.enter)="onRowKey($event, trace)"
+                  (keydown.space)="onRowKey($event, trace)"
                 >
                   <td class="mono text-muted">
                     {{ formatDate(trace.startTime) }}
@@ -258,7 +262,9 @@
                   </td>
                   <td>
                     <button
+                      type="button"
                       class="btn btn-xs btn-secondary"
+                      [attr.aria-label]="'Inspect trace ' + trace.id"
                       (click)="selectTrace(trace); $event.stopPropagation()"
                     >
                       Inspect
@@ -274,20 +280,25 @@
 
     <!-- Waterfall / Detail Drawer -->
     @if (selectedTrace) {
-      <aside class="trace-drawer">
+      <aside
+        class="trace-drawer"
+        appDialog="trace-drawer-title"
+        (dialogClose)="closeDrawer()"
+      >
         <div class="drawer-header">
           <div class="drawer-title-group">
-            <h3 class="drawer-title">Trace Details</h3>
+            <h3 class="drawer-title" id="trace-drawer-title">Trace Details</h3>
             <span class="mono text-muted drawer-subtitle">{{
               selectedTrace.id
             }}</span>
           </div>
           <button
+            type="button"
             class="btn btn-ghost btn-xs close-btn"
             (click)="closeDrawer()"
             aria-label="Close inspector"
           >
-            <svg lucideX [size]="14"></svg>
+            <svg aria-hidden="true" lucideX [size]="14"></svg>
           </button>
         </div>
         <div class="drawer-body">
@@ -385,9 +396,15 @@
             <div class="waterfall-container">
               @for (span of selectedTrace.spans; track span) {
                 <div class="span-row">
-                  <div class="span-info" (click)="toggleSpanExpanded(span.id)">
+                  <button
+                    type="button"
+                    class="span-info"
+                    [attr.aria-expanded]="isSpanExpanded(span.id)"
+                    (click)="toggleSpanExpanded(span.id)"
+                  >
                     @if (isSpanExpanded(span.id)) {
                       <svg
+                        aria-hidden="true"
                         lucideChevronDown
                         [size]="14"
                         class="expand-icon"
@@ -395,6 +412,7 @@
                     }
                     @if (!isSpanExpanded(span.id)) {
                       <svg
+                        aria-hidden="true"
                         lucideChevronRight
                         [size]="14"
                         class="expand-icon"
@@ -412,7 +430,7 @@
                     >
                       {{ span.status }}
                     </span>
-                  </div>
+                  </button>
                   <!-- Bar visualizer -->
                   <div class="span-timeline-track">
                     <div

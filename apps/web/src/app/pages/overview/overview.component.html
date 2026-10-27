@@ -13,7 +13,7 @@
         [disabled]="isLoading"
         aria-label="Refresh status"
       >
-        <svg lucideRefreshCw [size]="14" [class.spin]="isLoading"></svg>
+        <svg aria-hidden="true" lucideRefreshCw [size]="14" [class.spin]="isLoading"></svg>
         @if (isLoading) {
           <span>Checking…</span>
         }
@@ -62,7 +62,7 @@
         <div class="metric-row">
           <span class="metric-label">Environment</span>
           <span class="metric-val font-mono">{{
-            healthData?.environment || "unknown"
+            healthData?.environment || (healthData ? "Restricted" : "unknown")
           }}</span>
         </div>
         <div class="metric-row">
@@ -153,44 +153,52 @@
         </span>
       </div>
       <div class="card-body">
-        <div class="metric-row">
-          <span class="metric-label">Gateway Endpoint</span>
-          <span class="metric-val font-mono">{{
-            healthData?.services?.gateway?.url || "http://localhost:4000"
-          }}</span>
-        </div>
-        <div class="metric-row">
-          <span class="metric-label">Provider Readiness</span>
-          <span
-            class="badge"
-            [ngClass]="
-              healthData?.services?.gateway?.providerReadiness?.status ===
-              'ready'
-                ? 'badge-success'
-                : 'badge-warning'
-            "
-          >
-            {{
-              healthData?.services?.gateway?.providerReadiness?.status ===
-              "ready"
-                ? "Credentials Configured"
-                : "Credentials Needed"
-            }}
-          </span>
-        </div>
-        <div class="metric-row">
-          <span class="metric-label">Configured Providers</span>
-          <span class="metric-val font-mono">
-            {{
-              (healthData?.services?.gateway?.providerReadiness
-                ?.configuredProviders?.length || 0) > 0
-                ? healthData?.services?.gateway?.providerReadiness?.configuredProviders?.join(
-                    ", "
-                  )
-                : "None (server-side only)"
-            }}
-          </span>
-        </div>
+        <!-- Endpoint and provider details are only returned to admins -->
+        @if (!healthData || healthData.services.gateway.providerReadiness) {
+          <div class="metric-row">
+            <span class="metric-label">Gateway Endpoint</span>
+            <span class="metric-val font-mono">{{
+              healthData?.services?.gateway?.url || "http://localhost:4000"
+            }}</span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Provider Readiness</span>
+            <span
+              class="badge"
+              [ngClass]="
+                healthData?.services?.gateway?.providerReadiness?.status ===
+                'ready'
+                  ? 'badge-success'
+                  : 'badge-warning'
+              "
+            >
+              {{
+                healthData?.services?.gateway?.providerReadiness?.status ===
+                "ready"
+                  ? "Credentials Configured"
+                  : "Credentials Needed"
+              }}
+            </span>
+          </div>
+          <div class="metric-row">
+            <span class="metric-label">Configured Providers</span>
+            <span class="metric-val font-mono">
+              {{
+                (healthData?.services?.gateway?.providerReadiness
+                  ?.configuredProviders?.length || 0) > 0
+                  ? healthData?.services?.gateway?.providerReadiness?.configuredProviders?.join(
+                      ", "
+                    )
+                  : "None (server-side only)"
+              }}
+            </span>
+          </div>
+        } @else {
+          <div class="metric-row">
+            <span class="metric-label">Endpoint and providers</span>
+            <span class="metric-val">Visible to admins only</span>
+          </div>
+        }
       </div>
     </div>
   </div>
@@ -212,6 +220,7 @@
           >
         </span>
         <svg
+          aria-hidden="true"
           lucideArrowRight
           [size]="16"
           class="module-arrow"
@@ -224,6 +233,7 @@
           <small>Run side-by-side experiments across models and prompts</small>
         </span>
         <svg
+          aria-hidden="true"
           lucideArrowRight
           [size]="16"
           class="module-arrow"
@@ -236,6 +246,7 @@
           <small>Inspect dialogue turns, token budgets, and compaction</small>
         </span>
         <svg
+          aria-hidden="true"
           lucideArrowRight
           [size]="16"
           class="module-arrow"
@@ -250,6 +261,7 @@
           >
         </span>
         <svg
+          aria-hidden="true"
           lucideArrowRight
           [size]="16"
           class="module-arrow"
@@ -264,6 +276,7 @@
           >
         </span>
         <svg
+          aria-hidden="true"
           lucideArrowRight
           [size]="16"
           class="module-arrow"
@@ -278,6 +291,7 @@
           >
         </span>
         <svg
+          aria-hidden="true"
           lucideArrowRight
           [size]="16"
           class="module-arrow"

@@ -99,7 +99,13 @@ export class PromptsService {
       ];
     }
 
-    const hasTechniqueFilter = Boolean(params?.technique);
+    if (params?.technique) {
+      where.techniqueMetadata = {
+        path: ['techniques'],
+        array_contains: [params.technique],
+      };
+    }
+
     const offset = params?.offset !== undefined ? Math.max(0, params.offset) : 0;
     const limit = params?.limit !== undefined ? Math.min(Math.max(1, params.limit), 100) : 50;
 
@@ -111,51 +117,38 @@ export class PromptsService {
         },
         versions: {
           orderBy: { versionNumber: 'desc' },
+          take: 1,
+          select: { versionNumber: true, templateBody: true },
         },
+        _count: { select: { versions: true } },
       },
       orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
-      ...(!hasTechniqueFilter && (params?.limit !== undefined || params?.offset !== undefined)
+      ...(params?.limit !== undefined || params?.offset !== undefined
         ? { skip: offset, take: limit }
         : {}),
     });
 
-    const result: PromptSummary[] = [];
-
-    for (const p of prompts) {
+    return prompts.map((p) => {
       const techniqueMetadata = (p.techniqueMetadata as Record<string, unknown>) || {};
       const techniques = Array.isArray(techniqueMetadata.techniques)
         ? (techniqueMetadata.techniques as string[])
         : [];
 
-      // Filter by technique if specified
-      if (params?.technique && !techniques.includes(params.technique)) {
-        continue;
-      }
-
       const latestVersion = p.versions[0];
 
-      result.push({
+      return {
         id: p.id,
         name: p.name,
         description: p.description,
         techniques,
-        versionCount: p.versions.length,
+        versionCount: p._count.versions,
         latestVersionNumber: latestVersion ? latestVersion.versionNumber : 1,
         latestTemplateBody: latestVersion ? latestVersion.templateBody : '',
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
         owner: p.owner,
-      });
-    }
-
-    if (params?.limit !== undefined || params?.offset !== undefined) {
-      if (!hasTechniqueFilter) {
-        return result;
-      }
-      return result.slice(offset, offset + limit);
-    }
-
-    return result;
+      };
+    });
   }
 
   /**
@@ -345,18 +338,23 @@ export class PromptsService {
     const values = dto.variables || {};
     const missing: string[] = [];
 
-    let resolved = dto.templateBody;
+    const lookup = (name: string): string | undefined => {
+      const val = Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined;
+      return val === undefined || val === null || val === '' ? undefined : String(val);
+    };
 
     for (const varName of detected) {
-      const val = values[varName];
-      if (val === undefined || val === null || val === '') {
+      if (lookup(varName) === undefined) {
         missing.push(varName);
-      } else {
-        // Replace all occurrences of {{varName}} with the exact string without dollar pattern expansion
-        const pattern = new RegExp(`\\{\\{\\s*${varName}\\s*\\}\\}`, 'g');
-        resolved = resolved.replace(pattern, () => val);
       }
     }
+
+    // Single pass: inserted values are never re-scanned, so a value that itself contains
+    // {{other}} stays literal. Missing variables keep their placeholder text.
+    let resolved = dto.templateBody.replace(
+      /\{\{\s*([a-zA-Z0-9_-]+)\s*\}\}/g,
+      (match: string, name: string) => lookup(name) ?? match,
+    );
 
     // If few-shot examples are provided, assemble them if not already part of template
     if (dto.examples && dto.examples.length > 0 && !dto.templateBody.includes('### Examples')) {

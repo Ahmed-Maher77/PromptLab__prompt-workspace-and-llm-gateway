@@ -14,7 +14,7 @@
         (click)="loadAll()"
         [disabled]="loading"
       >
-        <svg lucideRefreshCw [size]="14"></svg>
+        <svg aria-hidden="true" lucideRefreshCw [size]="14"></svg>
         Refresh
       </button>
     </div>
@@ -22,22 +22,22 @@
 
   <!-- Alerts -->
   @if (errorMessage) {
-    <div class="alert alert-error">
-      <svg lucideCircleAlert [size]="16"></svg>
+    <div class="alert alert-error" role="alert">
+      <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
       <span>{{ errorMessage }}</span>
     </div>
   }
 
   @if (successMessage) {
-    <div class="alert alert-success">
-      <svg lucideCircleCheck [size]="16"></svg>
+    <div class="alert alert-success" role="status">
+      <svg aria-hidden="true" lucideCircleCheck [size]="16"></svg>
       <span>{{ successMessage }}</span>
     </div>
   }
 
   <!-- Loading State -->
   @if (loading && !status) {
-    <div class="loading-state">
+    <div class="loading-state" role="status">
       <div class="spinner"></div>
       <p>Loading monthly quota status and usage records...</p>
     </div>
@@ -398,7 +398,7 @@
           <!-- Empty State -->
           @if (filteredLedger.length === 0) {
             <div class="empty-ledger">
-              <svg lucideClock [size]="32"></svg>
+              <svg aria-hidden="true" lucideClock [size]="32"></svg>
               <p class="empty-title">No usage records found</p>
               <p class="empty-sub">
                 Model requests from Prompt Studio, Comparison experiments, or

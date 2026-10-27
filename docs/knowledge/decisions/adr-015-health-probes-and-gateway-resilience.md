@@ -25,12 +25,12 @@ Three related problems in health reporting, tracing and gateway timeouts:
 | :--- | :--- | :--- | :--- |
 | `GET /api/health/live` | Liveness: "is the process able to serve HTTP?" | none | 200 |
 | `GET /api/health/ready` | Readiness: "can this instance do useful work?" | PostgreSQL, LiteLLM gateway liveness | 200, or 503 with an RFC 9457 body that lists each dependency's state |
-| `GET /api/health` | Diagnostic snapshot for the Overview/Settings UI | database latency, gateway liveness, configured providers | always 200 (`status: ok | degraded`) |
+| `GET /api/health` | Diagnostic snapshot for the Overview/Settings UI | database latency, gateway liveness; admins also get gateway URL, environment and configured providers | always 200 (`status: ok | degraded`) |
 
 **Rationale:**
 - The container HEALTHCHECK (Dockerfile and `docker-compose.yml`) uses `/live`. A dependency outage must not get a healthy API container restarted in a loop; restarting does not fix a database that is down.
 - An orchestrator or load balancer that should stop routing traffic during an outage uses `/ready`.
-- `/api/health` keeps its existing contract because the UI renders its body and shows nothing on an error status.
+- `/api/health` keeps its status-code contract because the UI renders its body and shows nothing on an error status. The route stays public, but unauthenticated callers receive only status, timestamp, uptime, version and the database and gateway availability and latency; the full payload is returned to callers with a valid `admin` credential.
 - `/live` and `/ready` use `@nestjs/terminus`. The global `AllExceptionsFilter` strips the reserved RFC 9457 members (`type`, `title`, `status`, `detail`, `instance`) from extension objects. Without that, Terminus's `status: "error"` would overwrite the numeric `status`. Titles now come from Node's `http.STATUS_CODES`, so 503 reads "Service Unavailable".
 - Each gateway probe request (`/health/liveliness`, then `/health`) gets its own `AbortSignal.timeout(1200)`. A 401/403/404 response counts as "available", because it proves the gateway process is answering HTTP.
 

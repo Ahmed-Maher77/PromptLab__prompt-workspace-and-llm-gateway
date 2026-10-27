@@ -6,6 +6,7 @@ import {
   TraceRecord,
 } from '../../services/observability.service';
 import { of, throwError } from 'rxjs';
+import { ConfirmService } from '../../shared/feedback/confirm.service';
 
 describe('ObservabilityComponent', () => {
   let component: ObservabilityComponent;
@@ -158,5 +159,64 @@ describe('ObservabilityComponent', () => {
     component.loadData();
     expect(component.errorMessage).toContain('Failed to load traces');
     expect(component.loading).toBe(false);
+  });
+
+  it('selects a trace row with the Enter key', () => {
+    const row = (fixture.nativeElement as HTMLElement).querySelector(
+      'tr.trace-row',
+    ) as HTMLElement;
+    expect(row.getAttribute('tabindex')).toBe('0');
+
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(component.selectedTrace?.id).toBe(mockTraces[0].id);
+  });
+
+  it('selects a trace row with the Space key without scrolling', () => {
+    const row = (fixture.nativeElement as HTMLElement).querySelector(
+      'tr.trace-row',
+    ) as HTMLElement;
+    const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+    row.dispatchEvent(event);
+    expect(event.defaultPrevented).toBeTrue();
+    expect(component.selectedTrace?.id).toBe(mockTraces[0].id);
+  });
+
+  it('exposes the trace drawer as a labelled dialog that closes on Escape', () => {
+    component.selectTrace(mockTraces[0]);
+    fixture.detectChanges();
+
+    const drawer = (fixture.nativeElement as HTMLElement).querySelector(
+      '.trace-drawer',
+    ) as HTMLElement;
+    expect(drawer.getAttribute('role')).toBe('dialog');
+    expect(drawer.getAttribute('aria-modal')).toBe('true');
+    expect(document.getElementById(drawer.getAttribute('aria-labelledby') as string)).toBeTruthy();
+
+    drawer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(component.selectedTrace).toBeNull();
+  });
+
+  it('toggles span expansion from a real button', () => {
+    component.selectTrace(mockTraces[0]);
+    fixture.detectChanges();
+    const btn = (fixture.nativeElement as HTMLElement).querySelector(
+      'button.span-info',
+    ) as HTMLButtonElement;
+    expect(btn.getAttribute('aria-expanded')).toBe('false');
+    btn.click();
+    fixture.detectChanges();
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('does not clear traces when the confirmation is declined', async () => {
+    spyOn(TestBed.inject(ConfirmService), 'confirm').and.resolveTo(false);
+    await component.clearTraces();
+    expect(mockObservabilityService.clearTraces).not.toHaveBeenCalled();
+  });
+
+  it('clears traces when the confirmation is accepted', async () => {
+    spyOn(TestBed.inject(ConfirmService), 'confirm').and.resolveTo(true);
+    await component.clearTraces();
+    expect(mockObservabilityService.clearTraces).toHaveBeenCalled();
   });
 });

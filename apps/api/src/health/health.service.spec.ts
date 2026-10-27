@@ -128,6 +128,26 @@ describe('HealthService', () => {
     expect(health.services.gateway.url).toBe('http://127.0.0.1:4000');
   });
 
+  describe('toPublicHealth', () => {
+    it('drops the url, environment, providers and error strings', async () => {
+      mockPrismaService.checkHealth.mockResolvedValueOnce({
+        status: 'disconnected',
+        latencyMs: 12,
+        error: 'Database connection or query failed',
+      });
+
+      const full = await service.getHealth();
+      const pub = service.toPublicHealth(full);
+
+      expect(Object.keys(pub).sort()).toEqual(
+        ['services', 'status', 'timestamp', 'uptimeSeconds', 'version'].sort(),
+      );
+      expect(pub.services.database).toEqual({ status: 'disconnected', latencyMs: 12 });
+      expect(Object.keys(pub.services.gateway).sort()).toEqual(['latencyMs', 'serviceAvailability']);
+      expect(JSON.stringify(pub)).not.toMatch(/localhost|openai|Database connection or query/);
+    });
+  });
+
   describe('checkGatewayLiveness', () => {
     it('gives each probe its own fresh timeout signal', async () => {
       const signals: AbortSignal[] = [];

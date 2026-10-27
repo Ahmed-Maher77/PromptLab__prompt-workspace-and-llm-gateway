@@ -20,7 +20,7 @@
         (click)="toggleHistoryDrawer()"
         id="btn-toggle-history"
       >
-        <svg lucideClock [size]="14"></svg>
+        <svg aria-hidden="true" lucideClock [size]="14"></svg>
         Saved History ({{ savedExperiments().length }})
       </button>
 
@@ -34,17 +34,25 @@
           <span class="spinner-sm"></span>
         }
         @if (!runningComparison()) {
-          <svg lucidePlay [size]="14"></svg>
+          <svg aria-hidden="true" lucidePlay [size]="14"></svg>
         }
         {{ runningComparison() ? "Running Comparison..." : "Run Comparison" }}
       </button>
     </div>
   </header>
 
+  <div class="visually-hidden" role="status" aria-live="polite">
+    @if (runningComparison()) {
+      Comparison running
+    } @else if (comparisonResult()) {
+      Comparison finished
+    }
+  </div>
+
   <!-- Error Banner -->
   @if (runError()) {
-    <div class="alert alert-danger" id="alert-compare-error">
-      <svg lucideCircleAlert [size]="16"></svg>
+    <div class="alert alert-danger" id="alert-compare-error" role="alert">
+      <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
       <span>{{ runError() }}</span>
     </div>
   }
@@ -141,6 +149,7 @@
           id="btn-add-criterion"
         >
           <svg
+            aria-hidden="true"
             width="13"
             height="13"
             viewBox="0 0 24 24"
@@ -190,6 +199,7 @@
               aria-label="Remove criterion"
             >
               <svg
+                aria-hidden="true"
                 width="14"
                 height="14"
                 viewBox="0 0 24 24"
@@ -374,7 +384,7 @@
 
             <!-- Error Alert (Partial Failure Support) -->
             @if (comparisonResult()?.slotA?.status === "failed") {
-              <div class="alert alert-danger slot-error">
+              <div class="alert alert-danger slot-error" role="alert">
                 <div class="error-title">Slot A Execution Failed</div>
                 <div class="error-msg">
                   {{
@@ -422,10 +432,10 @@
                       [title]="res.notes || ''"
                     >
                       @if (res.passed) {
-                        <svg lucideCheck [size]="12"></svg>
+                        <svg aria-hidden="true" lucideCheck [size]="12"></svg>
                       }
                       @if (!res.passed) {
-                        <svg lucideX [size]="12"></svg>
+                        <svg aria-hidden="true" lucideX [size]="12"></svg>
                       }
                       {{ res.name }}: {{ res.notes }}
                     </span>
@@ -445,6 +455,8 @@
                         type="button"
                         class="star-btn"
                         [class.active]="star <= slotARating"
+                        [attr.aria-label]="'Rate response A ' + star + ' of 5'"
+                        [attr.aria-pressed]="star <= slotARating"
                         (click)="rateSlot('A', star)"
                       >
                         ★
@@ -621,7 +633,7 @@
 
             <!-- Error Alert (Partial Failure Support) -->
             @if (comparisonResult()?.slotB?.status === "failed") {
-              <div class="alert alert-danger slot-error">
+              <div class="alert alert-danger slot-error" role="alert">
                 <div class="error-title">Slot B Execution Failed</div>
                 <div class="error-msg">
                   {{
@@ -669,10 +681,10 @@
                       [title]="res.notes || ''"
                     >
                       @if (res.passed) {
-                        <svg lucideCheck [size]="12"></svg>
+                        <svg aria-hidden="true" lucideCheck [size]="12"></svg>
                       }
                       @if (!res.passed) {
-                        <svg lucideX [size]="12"></svg>
+                        <svg aria-hidden="true" lucideX [size]="12"></svg>
                       }
                       {{ res.name }}: {{ res.notes }}
                     </span>
@@ -692,6 +704,8 @@
                         type="button"
                         class="star-btn"
                         [class.active]="star <= slotBRating"
+                        [attr.aria-label]="'Rate response B ' + star + ' of 5'"
+                        [attr.aria-pressed]="star <= slotBRating"
                         (click)="rateSlot('B', star)"
                       >
                         ★
@@ -721,7 +735,7 @@
 
   <!-- Nondeterminism Disclaimer per DESIGN_SYSTEM.md -->
   <footer class="compare-footer-disclaimer">
-    <svg lucideInfo [size]="14"></svg>
+    <svg aria-hidden="true" lucideInfo [size]="14"></svg>
     <span>
       <strong>Notice:</strong> LLM generation outputs are nondeterministic.
       Latency, token metrics, and output text may vary between consecutive runs
@@ -732,16 +746,26 @@
   <!-- ==================== SAVED EXPERIMENTS DRAWER ==================== -->
   @if (showHistoryDrawer()) {
     <div class="history-drawer-backdrop" (click)="toggleHistoryDrawer()">
-      <div class="history-drawer" (click)="$event.stopPropagation()">
+      <div
+        class="history-drawer"
+        appDialog="compare-history-title"
+        (dialogClose)="toggleHistoryDrawer()"
+        (click)="$event.stopPropagation()"
+      >
         <div class="drawer-header">
-          <span class="drawer-title">Comparison History</span>
-          <button class="btn btn-ghost btn-sm" (click)="toggleHistoryDrawer()">
-            <svg lucideX [size]="14"></svg>
+          <h2 class="drawer-title" id="compare-history-title">Comparison History</h2>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            aria-label="Close comparison history"
+            (click)="toggleHistoryDrawer()"
+          >
+            <svg aria-hidden="true" lucideX [size]="14"></svg>
           </button>
         </div>
         <div class="drawer-body">
           @if (loadingHistory()) {
-            <div class="loading-state">
+            <div class="loading-state" role="status">
               <div class="spinner"></div>
               <p>Loading experiments...</p>
             </div>
@@ -754,7 +778,14 @@
           @if (!loadingHistory() && savedExperiments().length > 0) {
             <div class="history-list">
               @for (exp of savedExperiments(); track exp) {
-                <div class="history-card" (click)="loadSavedExperiment(exp.id)">
+                <div
+                  class="history-card"
+                  role="button"
+                  tabindex="0"
+                  (click)="loadSavedExperiment(exp.id)"
+                  (keydown.enter)="loadSavedExperiment(exp.id)"
+                  (keydown.space)="$event.preventDefault(); loadSavedExperiment(exp.id)"
+                >
                   <div class="history-card-header">
                     <span class="history-card-title">{{ exp.name }}</span>
                     <span class="history-card-date">{{

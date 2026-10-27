@@ -702,3 +702,8 @@
   .criterion-row { grid-template-columns: 1fr 1fr auto; }
   .criterion-row .crit-val-input { grid-column: 1 / 3; }
 }
+
+.history-card:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

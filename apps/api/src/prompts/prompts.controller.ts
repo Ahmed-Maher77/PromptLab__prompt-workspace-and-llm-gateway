@@ -3,7 +3,7 @@ import { PromptsService } from './prompts.service';
 import { CreatePromptDto } from './dto/create-prompt.dto';
 import { CreateVersionDto } from './dto/create-version.dto';
 import { PreviewPromptDto, RunPlaygroundDto } from './dto/run-prompt.dto';
-import { PaginationQueryDto } from '../common/dto/pagination.dto';
+import { ListPromptsQueryDto } from './dto/list-prompts-query.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { IdempotencyKey } from '../common/decorators/idempotency-key.decorator';
 import { ThrottleUser } from '../common/guards/user-throttler.guard';
@@ -15,15 +15,13 @@ export class PromptsController {
   @Get()
   async findAll(
     @CurrentUser('id') userId: string,
-    @Query() pagination: PaginationQueryDto,
-    @Query('search') search?: string,
-    @Query('technique') technique?: string,
+    @Query() query: ListPromptsQueryDto,
   ) {
     return this.promptsService.findAll(userId, {
-      search,
-      technique,
-      limit: pagination.limit,
-      offset: pagination.offset,
+      search: query.search,
+      technique: query.technique,
+      limit: query.limit,
+      offset: query.offset,
     });
   }
 

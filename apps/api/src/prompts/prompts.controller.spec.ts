@@ -1,3 +1,5 @@
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import { ListPromptsQueryDto } from './dto/list-prompts-query.dto';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PromptsController } from './prompts.controller';
 import { PromptsService } from './prompts.service';
@@ -33,8 +35,8 @@ describe('PromptsController', () => {
   });
 
   it('delegates findAll with search, technique and pagination', async () => {
-    const pagination = { limit: 10, offset: 5 };
-    const res = await controller.findAll('dev-user-001', pagination, 'classifier', 'few_shot');
+    const query = { limit: 10, offset: 5, search: 'classifier', technique: 'few_shot' };
+    const res = await controller.findAll('dev-user-001', query);
     expect(mockService.findAll).toHaveBeenCalledWith('dev-user-001', {
       search: 'classifier',
       technique: 'few_shot',
@@ -88,4 +90,30 @@ describe('PromptsController', () => {
     expect(mockService.runPlayground).toHaveBeenCalledWith(runDto, 'dev-user-001', 'idemp-key-12345');
   });
 
+
+  describe('ListPromptsQueryDto validation', () => {
+    const pipe = new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    });
+    const validate = (value: Record<string, unknown>) =>
+      pipe.transform(value, { type: 'query', metatype: ListPromptsQueryDto });
+
+    it('accepts search and technique together with pagination', async () => {
+      await expect(
+        validate({ search: 'support', technique: 'few-shot', limit: '5', offset: '0' }),
+      ).resolves.toMatchObject({ search: 'support', technique: 'few-shot', limit: 5, offset: 0 });
+    });
+
+    it('rejects unknown parameters and malformed techniques', async () => {
+      await expect(validate({ unknown: 'x' })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(validate({ technique: 'few shot; drop' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      await expect(validate({ search: 'x'.repeat(201) })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+  });
 });

@@ -25,6 +25,7 @@ import {
 } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
 import { isUnknownOutcomeError } from '../../utils/http-retry.util';
+import { DialogDirective } from '../../shared/a11y/dialog.directive';
 
 @Component({
   selector: 'app-compare',
@@ -39,6 +40,7 @@ import { isUnknownOutcomeError } from '../../utils/http-retry.util';
     LucideCheck,
     LucideX,
     LucideInfo,
+    DialogDirective,
   ],
   templateUrl: './compare.component.html',
   styleUrls: ['./compare.component.css'],

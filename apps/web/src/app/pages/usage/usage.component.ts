@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -13,6 +13,7 @@ import {
   UsageRecordItem,
   QuotaPolicy,
 } from '../../services/usage.service';
+import { ConfirmService } from '../../shared/feedback/confirm.service';
 
 @Component({
   selector: 'app-usage',
@@ -47,6 +48,8 @@ export class UsageComponent implements OnInit {
   // Filter
   statusFilter: 'all' | 'reconciled' | 'reserved' | 'failed' = 'all';
   copiedId: string | null = null;
+
+  private readonly confirmService = inject(ConfirmService);
 
   constructor(private readonly usageService: UsageService) {}
 
@@ -132,8 +135,13 @@ export class UsageComponent implements OnInit {
     this.savePolicy();
   }
 
-  resetDemoUsage(): void {
-    if (!confirm('Reset current month token usage and active reservations to 0 for demo/testing?')) {
+  async resetDemoUsage(): Promise<void> {
+    const confirmed = await this.confirmService.confirm({
+      title: 'Reset demo usage',
+      message: 'Reset current month token usage and active reservations to 0 for demo/testing?',
+      confirmLabel: 'Reset usage',
+    });
+    if (!confirmed) {
       return;
     }
 

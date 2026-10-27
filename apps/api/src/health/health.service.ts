@@ -28,6 +28,24 @@ export interface HealthCheckResult {
   };
 }
 
+/** What anonymous callers receive: no URLs, environment, providers or error strings. */
+export interface PublicHealthResult {
+  status: 'ok' | 'degraded';
+  timestamp: string;
+  uptimeSeconds: number;
+  version: string;
+  services: {
+    database: {
+      status: 'connected' | 'disconnected';
+      latencyMs: number;
+    };
+    gateway: {
+      serviceAvailability: 'available' | 'unreachable' | 'not_configured';
+      latencyMs?: number;
+    };
+  };
+}
+
 @Injectable()
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
@@ -64,6 +82,24 @@ export class HealthService {
         gateway: {
           url: rawLitellmUrl,
           ...gatewayHealth,
+        },
+      },
+    };
+  }
+
+  /** Reduces the full report to the fields that are safe to show unauthenticated callers. */
+  toPublicHealth(health: HealthCheckResult): PublicHealthResult {
+    const { database, gateway } = health.services;
+    return {
+      status: health.status,
+      timestamp: health.timestamp,
+      uptimeSeconds: health.uptimeSeconds,
+      version: health.version,
+      services: {
+        database: { status: database.status, latencyMs: database.latencyMs },
+        gateway: {
+          serviceAvailability: gateway.serviceAvailability,
+          ...(gateway.latencyMs !== undefined ? { latencyMs: gateway.latencyMs } : {}),
         },
       },
     };

@@ -78,23 +78,23 @@ export class AuthGuard implements CanActivate {
       context.getClass(),
     ]);
 
-    if (isPublic) {
-      return true;
-    }
-
     const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers['authorization'];
-    const apiKeyHeader = request.headers['x-api-key'];
+    const token = this.extractToken(request);
 
-    let token: string | undefined;
-    if (
-      authHeader &&
-      typeof authHeader === 'string' &&
-      authHeader.startsWith('Bearer ')
-    ) {
-      token = authHeader.substring(7).trim();
-    } else if (apiKeyHeader && typeof apiKeyHeader === 'string') {
-      token = apiKeyHeader.trim();
+    if (isPublic) {
+      // Public routes never reject, but a valid credential still identifies the caller so
+      // handlers can tailor their response. Invalid or missing credentials are ignored.
+      if (token) {
+        try {
+          const user = await this.resolveUserFromToken(token);
+          if (user) {
+            request.user = user;
+          }
+        } catch {
+          // Treated the same as an anonymous caller.
+        }
+      }
+      return true;
     }
 
     if (!token) {
@@ -109,6 +109,25 @@ export class AuthGuard implements CanActivate {
     request.user = user;
     await this.ensureUserPersisted(user);
     return true;
+  }
+
+  private extractToken(request: {
+    headers: Record<string, string | string[] | undefined>;
+  }): string | undefined {
+    const authHeader = request.headers['authorization'];
+    const apiKeyHeader = request.headers['x-api-key'];
+
+    let token: string | undefined;
+    if (
+      authHeader &&
+      typeof authHeader === 'string' &&
+      authHeader.startsWith('Bearer ')
+    ) {
+      token = authHeader.substring(7).trim();
+    } else if (apiKeyHeader && typeof apiKeyHeader === 'string') {
+      token = apiKeyHeader.trim();
+    }
+    return token || undefined;
   }
 
   private async ensureUserPersisted(user: AuthenticatedUser): Promise<void> {

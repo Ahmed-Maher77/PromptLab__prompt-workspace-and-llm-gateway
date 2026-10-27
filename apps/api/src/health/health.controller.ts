@@ -1,7 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckResult as TerminusResult, HealthCheckService, HealthIndicatorService } from '@nestjs/terminus';
-import { HealthService, HealthCheckResult } from './health.service';
+import { HealthService, HealthCheckResult, PublicHealthResult } from './health.service';
 import { Public } from '../common/decorators/public.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../common/auth/authenticated-user.interface';
 
 /**
  * Health endpoints, each with a distinct contract.
@@ -9,6 +11,7 @@ import { Public } from '../common/decorators/public.decorator';
  * - GET /api/health        Diagnostic status for the UI. Always 200 while the process can answer;
  *                          the body carries `status: 'ok' | 'degraded'` plus per-dependency detail.
  *                          The Overview page renders this body, so a 503 here would blank the page.
+ *                          Anonymous callers get a reduced body; admins get the full detail.
  * - GET /api/health/live   Liveness probe: the process is up and serving HTTP. No dependency checks,
  *                          so a database or gateway outage never causes a container restart loop.
  * - GET /api/health/ready  Readiness probe: 200 only when the database and the LiteLLM gateway are
@@ -24,8 +27,12 @@ export class HealthController {
 
   @Public()
   @Get()
-  async check(): Promise<HealthCheckResult> {
-    return this.healthService.getHealth();
+  async check(
+    @CurrentUser() user?: AuthenticatedUser,
+  ): Promise<HealthCheckResult | PublicHealthResult> {
+    const health = await this.healthService.getHealth();
+    // The route is public, but a valid admin credential unlocks the full diagnostic payload.
+    return user?.role === 'admin' ? health : this.healthService.toPublicHealth(health);
   }
 
   @Public()

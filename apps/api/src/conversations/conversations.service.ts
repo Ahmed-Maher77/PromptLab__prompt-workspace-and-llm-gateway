@@ -235,10 +235,106 @@ export class ConversationsService {
     proposedInput: string | undefined,
     userId: string,
   ): Promise<ContextInspectionResult> {
-    const conv = await this.findOne(id, userId);
+    const conv = await this.loadContextState(id, userId, { withCounts: true });
     const policy = await this.modelCatalog.getModelContextPolicy(conv.model);
     const counter = this.tokenCounter.createCounter(conv.model, conv.provider);
     return assembleConversationContext(conv, proposedInput, policy, counter);
+  }
+
+  /**
+   * Loads only what context assembly needs: the owner-scoped conversation row, its active
+   * checkpoint, the system message, and the messages after the checkpoint's compacted sequence.
+   * Message counts that cover the whole history are fetched as aggregates when requested.
+   */
+  private async loadContextState(
+    id: string,
+    userId: string,
+    options?: { withCounts?: boolean },
+  ) {
+    const checkpointSelect = {
+      id: true,
+      summary: true,
+      retainedFacts: true,
+      compactedThroughSequence: true,
+      createdAt: true,
+    } satisfies Prisma.ConversationCheckpointSelect;
+
+    const row = await this.prisma.conversation.findFirst({
+      where: { id, ownerId: userId },
+      select: {
+        id: true,
+        ownerId: true,
+        provider: true,
+        model: true,
+        contextBudget: true,
+        activeCheckpointId: true,
+        activeCheckpoint: { select: checkpointSelect },
+        checkpoints: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: checkpointSelect,
+        },
+      },
+    });
+
+    if (!row) {
+      throw new NotFoundException(`Conversation with ID "${id}" was not found.`);
+    }
+
+    const { activeCheckpoint: linkedCheckpoint, checkpoints, ...conversation } = row;
+    const activeCheckpoint = row.activeCheckpointId
+      ? linkedCheckpoint
+      : checkpoints.length > 0
+        ? checkpoints[0]
+        : null;
+    const compactedThrough = activeCheckpoint ? activeCheckpoint.compactedThroughSequence : 0;
+
+    const messagesPromise = this.prisma.conversationMessage.findMany({
+      where: {
+        conversationId: conversation.id,
+        status: { not: 'failed' },
+        OR: [
+          { sequenceNumber: { gt: compactedThrough } },
+          { role: 'system', sequenceNumber: 1 },
+        ],
+      },
+      orderBy: { sequenceNumber: 'asc' },
+      select: {
+        id: true,
+        role: true,
+        content: true,
+        sequenceNumber: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+
+    if (!options?.withCounts) {
+      return { ...conversation, activeCheckpoint, messages: await messagesPromise };
+    }
+
+    const [messages, totalMessageCount, compactedMessageCount] = await Promise.all([
+      messagesPromise,
+      this.prisma.conversationMessage.count({ where: { conversationId: conversation.id } }),
+      activeCheckpoint
+        ? this.prisma.conversationMessage.count({
+            where: {
+              conversationId: conversation.id,
+              sequenceNumber: { lte: compactedThrough },
+              status: { not: 'failed' },
+              NOT: { role: 'system', sequenceNumber: 1 },
+            },
+          })
+        : Promise.resolve(0),
+    ]);
+
+    return {
+      ...conversation,
+      activeCheckpoint,
+      messages,
+      totalMessageCount,
+      compactedMessageCount,
+    };
   }
 
   /**
@@ -255,7 +351,7 @@ export class ConversationsService {
       throw new BadRequestException('Message content cannot be empty.');
     }
 
-    const conv = await this.findOne(id, userId);
+    const conv = await this.loadContextState(id, userId);
 
     // 1. Build assembled context payload including proposed current input via shared assembly
     const policy = await this.modelCatalog.getModelContextPolicy(conv.model);

@@ -5,7 +5,6 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -19,6 +18,7 @@ import {
   registerDecorator,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsStringRecord } from '../../common/validators/is-string-record.validator';
 import { compileSafeRegex } from '../../common/utils/regex.util';
 
 export function IsValidCriterionExpectedValue(validationOptions?: ValidationOptions) {
@@ -132,7 +132,7 @@ export class RunComparisonDto {
   @MaxLength(150, { message: 'name must not exceed 150 characters' })
   name!: string;
 
-  @IsObject()
+  @IsStringRecord({ maxKeys: 50, maxValueLength: 32768 })
   commonInput!: Record<string, string>;
 
   @ValidateNested()

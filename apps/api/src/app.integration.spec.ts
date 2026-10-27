@@ -136,7 +136,21 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         .expect(200);
 
       expect(res.body.status).toBeDefined();
-      expect(res.body.services).toBeDefined();
+      expect(res.body.services.database.status).toBeDefined();
+      expect(res.body.services.gateway.serviceAvailability).toBeDefined();
+      expect(res.body.services.gateway.url).toBeUndefined();
+      expect(res.body.services.gateway.providerReadiness).toBeUndefined();
+      expect(res.body.environment).toBeUndefined();
+    });
+
+    it('returns the full GET /api/health payload to an admin', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/api/health')
+        .set(authHeader)
+        .expect(200);
+
+      expect(res.body.services.gateway.url).toBeDefined();
+      expect(res.body.environment).toBeDefined();
     });
 
     describe('liveness and readiness probes', () => {
@@ -526,6 +540,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     it('returns the same gateway URL across /api/health and /api/settings', async () => {
       const healthRes = await request(app.getHttpServer())
         .get('/api/health')
+        .set(authHeader)
         .expect(200);
 
       const settingsRes = await request(app.getHttpServer())
@@ -546,6 +561,39 @@ describe('HTTP Routing & App Integration (E2E)', () => {
 
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBeLessThanOrEqual(2);
+    });
+
+    it('filters GET /api/prompts by technique in the database and paginates the filtered set', async () => {
+      const tag = `tech-filter-${Date.now()}`;
+      const create = (name: string, techniques: string[]) =>
+        request(app.getHttpServer())
+          .post('/api/prompts')
+          .set(authHeader)
+          .send({ name, techniques, templateBody: `Say {{word}} (${tag})` })
+          .expect(201);
+
+      await create(`${tag}-few-1`, ['few-shot', 'RTF']);
+      await create(`${tag}-zero`, ['zero-shot']);
+      await create(`${tag}-few-2`, ['few-shot']);
+
+      const all = await request(app.getHttpServer())
+        .get(`/api/prompts?technique=few-shot&search=${tag}`)
+        .set(authHeader)
+        .expect(200);
+      expect(all.body.map((p: { name: string }) => p.name).sort()).toEqual(
+        [`${tag}-few-1`, `${tag}-few-2`].sort(),
+      );
+      expect(all.body.every((p: { techniques: string[] }) => p.techniques.includes('few-shot'))).toBe(
+        true,
+      );
+      expect(all.body[0].versionCount).toBe(1);
+
+      const page = await request(app.getHttpServer())
+        .get(`/api/prompts?technique=few-shot&search=${tag}&limit=1&offset=1`)
+        .set(authHeader)
+        .expect(200);
+      expect(page.body).toHaveLength(1);
+      expect(page.body[0].name).toBe(all.body[1].name);
     });
 
     it('rejects invalid pagination parameters on GET /api/prompts with 400 Bad Request', async () => {

@@ -12,6 +12,8 @@ import {
 import { PromptService } from '../../services/prompt.service';
 import { provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
+import { ToastService } from '../../shared/feedback/toast.service';
+import { ConfirmService } from '../../shared/feedback/confirm.service';
 
 describe('ConversationsComponent', () => {
   let component: ConversationsComponent;
@@ -524,7 +526,8 @@ describe('ConversationsComponent', () => {
   });
 
   it('should not display resume confirmation banner if resume API fails', () => {
-    spyOn(window, 'alert');
+    const toast = TestBed.inject(ToastService);
+    spyOn(toast, 'error');
     mockConversationService.resume.and.returnValue(
       throwError(() => ({ error: { message: 'Checkpoint not found' } })),
     );
@@ -534,7 +537,7 @@ describe('ConversationsComponent', () => {
 
     expect(mockConversationService.resume).toHaveBeenCalledWith('c-1', 'chk-missing');
     expect(component.resumeMessage()).toBeNull();
-    expect(window.alert).toHaveBeenCalledWith('Checkpoint not found');
+    expect(toast.error).toHaveBeenCalledWith('Checkpoint not found');
   });
 
   it('marks active checkpoint in checkpoint drawer and displays active indicator', () => {
@@ -580,5 +583,38 @@ describe('ConversationsComponent', () => {
       systemPrompt: 'You are a REST API architect.',
     });
     expect(component.showNewModal()).toBeFalse();
+  });
+
+  it('exposes dialog semantics on the new conversation modal', () => {
+    component.openNewModal();
+    fixture.detectChanges();
+
+    const panel = (fixture.nativeElement as HTMLElement).querySelector('.modal-card');
+    expect(panel?.getAttribute('role')).toBe('dialog');
+    expect(panel?.getAttribute('aria-modal')).toBe('true');
+    const labelId = panel?.getAttribute('aria-labelledby') as string;
+    expect(document.getElementById(labelId)?.textContent).toContain('Create New Conversation');
+  });
+
+  it('closes the new conversation modal on Escape', () => {
+    component.openNewModal();
+    fixture.detectChanges();
+
+    const panel = (fixture.nativeElement as HTMLElement).querySelector('.modal-card') as HTMLElement;
+    panel.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(component.showNewModal()).toBeFalse();
+  });
+
+  it('does not delete a conversation when the confirmation is declined', async () => {
+    spyOn(TestBed.inject(ConfirmService), 'confirm').and.resolveTo(false);
+    await component.deleteConversation('c-1', new Event('click'));
+    expect(mockConversationService.deleteConversation).not.toHaveBeenCalled();
+  });
+
+  it('deletes a conversation after the confirmation is accepted', async () => {
+    spyOn(TestBed.inject(ConfirmService), 'confirm').and.resolveTo(true);
+    mockConversationService.deleteConversation.and.returnValue(of({ success: true, id: 'c-1' }));
+    await component.deleteConversation('c-1', new Event('click'));
+    expect(mockConversationService.deleteConversation).toHaveBeenCalledWith('c-1');
   });
 });

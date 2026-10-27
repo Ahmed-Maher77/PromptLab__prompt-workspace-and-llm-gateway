@@ -3,7 +3,7 @@
   <header class="top-bar">
     <div class="top-bar-left">
       <button class="btn btn-ghost menu-toggle" (click)="toggleSidebar()" [attr.aria-expanded]="!sidebarCollapsed" aria-controls="primary-navigation" aria-label="Toggle navigation menu">
-        <svg lucideMenu [size]="18"></svg>
+        <svg aria-hidden="true" lucideMenu [size]="18"></svg>
       </button>
       <div class="brand">
         <span class="brand-title">PromptLab</span>
@@ -13,8 +13,8 @@
 
     <div class="top-bar-right">
       <div class="user-menu">
-        <div class="user-avatar" title="Developer User">PM</div>
-        <span class="user-name">Developer</span>
+        <div class="user-avatar" role="img" [attr.aria-label]="displayName + ' avatar'" [title]="displayName">{{ initials }}</div>
+        <span class="user-name">{{ displayName }}</span>
       </div>
     </div>
   </header>
@@ -27,7 +27,7 @@
         <span class="sidebar-heading">Workspace</span>
         <nav class="nav-list" aria-label="Workspace">
           <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-item">
-            <svg lucideLayoutDashboard [size]="16"></svg>
+            <svg aria-hidden="true" lucideLayoutDashboard [size]="16"></svg>
             <span class="nav-text">System Status</span>
           </a>
         </nav>
@@ -37,32 +37,32 @@
         <span class="sidebar-heading">Modules</span>
         <nav class="nav-list" aria-label="Modules">
           <a routerLink="/prompt-studio" routerLinkActive="active" class="nav-item">
-            <svg lucideSquarePen [size]="16"></svg>
+            <svg aria-hidden="true" lucideSquarePen [size]="16"></svg>
             <span class="nav-text">Prompt Studio</span>
           </a>
 
           <a routerLink="/compare" routerLinkActive="active" class="nav-item">
-            <svg lucideSlidersHorizontal [size]="16"></svg>
+            <svg aria-hidden="true" lucideSlidersHorizontal [size]="16"></svg>
             <span class="nav-text">Compare</span>
           </a>
 
           <a routerLink="/conversations" routerLinkActive="active" class="nav-item">
-            <svg lucideMessageSquare [size]="16"></svg>
+            <svg aria-hidden="true" lucideMessageSquare [size]="16"></svg>
             <span class="nav-text">Conversations</span>
           </a>
 
           <a routerLink="/usage" routerLinkActive="active" class="nav-item">
-            <svg lucideClock [size]="16"></svg>
+            <svg aria-hidden="true" lucideClock [size]="16"></svg>
             <span class="nav-text">Usage & Quotas</span>
           </a>
 
           <a routerLink="/observability" routerLinkActive="active" class="nav-item">
-            <svg lucideActivity [size]="16"></svg>
+            <svg aria-hidden="true" lucideActivity [size]="16"></svg>
             <span class="nav-text">Observability</span>
           </a>
 
           <a routerLink="/settings" routerLinkActive="active" class="nav-item">
-            <svg lucideSettings [size]="16"></svg>
+            <svg aria-hidden="true" lucideSettings [size]="16"></svg>
             <span class="nav-text">Settings</span>
           </a>
         </nav>
@@ -70,8 +70,8 @@
 
       <div class="sidebar-footer">
         <div class="footer-status-indicator">
-          <span class="status-pulse-dot"></span>
-          <span class="footer-status-text">Gateway Online</span>
+          <span class="status-pulse-dot" [class.online]="gatewayState() === 'online'" [class.unreachable]="gatewayState() === 'unreachable'"></span>
+          <span class="footer-status-text" aria-live="polite">{{ gatewayLabel() }}</span>
         </div>
         <span class="footer-version-tag">PromptLab v0.1.0</span>
       </div>
@@ -83,3 +83,6 @@
     </main>
   </div>
 </div>
+
+<app-toast-host></app-toast-host>
+<app-confirm-dialog></app-confirm-dialog>

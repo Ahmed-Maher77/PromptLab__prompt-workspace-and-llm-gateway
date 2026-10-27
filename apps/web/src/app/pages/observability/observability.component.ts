@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -11,6 +11,8 @@ import {
   LucideChevronDown,
   LucideChevronRight,
 } from '@lucide/angular';
+import { DialogDirective } from '../../shared/a11y/dialog.directive';
+import { ConfirmService } from '../../shared/feedback/confirm.service';
 import {
   ObservabilityService,
   ObservabilityStatus,
@@ -32,6 +34,7 @@ import {
     LucideX,
     LucideChevronDown,
     LucideChevronRight,
+    DialogDirective,
   ],
   templateUrl: './observability.component.html',
   styleUrls: ['./observability.component.css'],
@@ -55,6 +58,8 @@ export class ObservabilityComponent implements OnInit {
 
   // Expanded span attribute ids
   expandedSpanIds = new Set<string>();
+
+  private readonly confirmService = inject(ConfirmService);
 
   constructor(private readonly observabilityService: ObservabilityService) {}
 
@@ -110,6 +115,15 @@ export class ObservabilityComponent implements OnInit {
     this.expandedSpanIds.clear();
   }
 
+  onRowKey(event: Event, trace: TraceRecord): void {
+    // Inner controls (e.g. the Inspect button) handle their own keys.
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    event.preventDefault();
+    this.selectTrace(trace);
+  }
+
   closeDrawer(): void {
     this.selectedTrace = null;
   }
@@ -126,8 +140,13 @@ export class ObservabilityComponent implements OnInit {
     return this.expandedSpanIds.has(spanId);
   }
 
-  clearTraces(): void {
-    if (!confirm('Are you sure you want to clear all in-memory traces?')) {
+  async clearTraces(): Promise<void> {
+    const confirmed = await this.confirmService.confirm({
+      title: 'Clear traces',
+      message: 'Are you sure you want to clear all in-memory traces?',
+      confirmLabel: 'Clear traces',
+    });
+    if (!confirmed) {
       return;
     }
 

@@ -23,7 +23,7 @@
         (click)="loadSettings()"
         [disabled]="loading"
       >
-        <svg lucideRefreshCw [size]="15" [class.spin]="loading"></svg>
+        <svg aria-hidden="true" lucideRefreshCw [size]="15" [class.spin]="loading"></svg>
         <span>{{ loading ? "Inspecting..." : "Refresh Status" }}</span>
       </button>
     </div>
@@ -31,8 +31,8 @@
 
   <!-- Error Alert -->
   @if (errorMessage) {
-    <div class="alert alert-error">
-      <svg lucideCircleAlert [size]="18"></svg>
+    <div class="alert alert-error" role="alert">
+      <svg aria-hidden="true" lucideCircleAlert [size]="18"></svg>
       <div class="alert-content">
         <strong>Gateway Connection Error</strong>
         <p>{{ errorMessage }}</p>
@@ -42,7 +42,7 @@
 
   <!-- Loading State -->
   @if (loading && !settings) {
-    <div class="loading-state">
+    <div class="loading-state" role="status">
       <div class="spinner"></div>
       <p>Inspecting runtime services and gateway connectivity...</p>
     </div>
@@ -57,7 +57,7 @@
           [class.success]="settings.gateway.connected"
           [class.danger]="!settings.gateway.connected"
         >
-          <svg lucideServer [size]="18"></svg>
+          <svg aria-hidden="true" lucideServer [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Gateway Status</span>
@@ -75,7 +75,7 @@
       </div>
       <div class="status-metric-card">
         <div class="metric-icon-wrap primary">
-          <svg lucideBox [size]="18"></svg>
+          <svg aria-hidden="true" lucideBox [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Model Catalog</span>
@@ -93,7 +93,7 @@
           [class.success]="settings.database.connected"
           [class.danger]="!settings.database.connected"
         >
-          <svg lucideDatabase [size]="18"></svg>
+          <svg aria-hidden="true" lucideDatabase [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Database Engine</span>
@@ -109,7 +109,7 @@
       </div>
       <div class="status-metric-card">
         <div class="metric-icon-wrap warning">
-          <svg lucideClock [size]="18"></svg>
+          <svg aria-hidden="true" lucideClock [size]="18"></svg>
         </div>
         <div class="metric-body">
           <span class="metric-label">Token Quota</span>
@@ -131,7 +131,7 @@
           <div class="box-header">
             <div class="box-title-group">
               <div class="box-icon-badge blue">
-                <svg lucideServer [size]="16"></svg>
+                <svg aria-hidden="true" lucideServer [size]="16"></svg>
               </div>
               <div>
                 <h2 class="box-title">LiteLLM Proxy Gateway</h2>
@@ -162,7 +162,7 @@
             </div>
             @if (settings.gateway.error) {
               <div class="notice notice-warning">
-                <svg lucideTriangleAlert [size]="14"></svg>
+                <svg aria-hidden="true" lucideTriangleAlert [size]="14"></svg>
                 <span>{{ settings.gateway.error }}</span>
               </div>
             }
@@ -208,7 +208,7 @@
               }
             </div>
             <div class="security-banner">
-              <svg lucideLock [size]="14"></svg>
+              <svg aria-hidden="true" lucideLock [size]="14"></svg>
               <span
                 >Provider API keys reside strictly on the server and are never
                 exposed to client bundles.</span
@@ -221,7 +221,7 @@
           <div class="box-header">
             <div class="box-title-group">
               <div class="box-icon-badge emerald">
-                <svg lucideDatabase [size]="16"></svg>
+                <svg aria-hidden="true" lucideDatabase [size]="16"></svg>
               </div>
               <div>
                 <h2 class="box-title">Database & Platform</h2>
@@ -284,7 +284,7 @@
           <div class="box-header">
             <div class="box-title-group">
               <div class="box-icon-badge amber">
-                <svg lucideClock [size]="16"></svg>
+                <svg aria-hidden="true" lucideClock [size]="16"></svg>
               </div>
               <div>
                 <h2 class="box-title">Active Quota Policy</h2>
@@ -340,7 +340,7 @@
               </div>
             </div>
             <div class="architectural-callout">
-              <svg lucideLock [size]="15"></svg>
+              <svg aria-hidden="true" lucideLock [size]="15"></svg>
               <div>
                 <strong>Pessimistic Locking Active:</strong>
                 <span
@@ -358,7 +358,7 @@
           <div class="box-header">
             <div class="box-title-group">
               <div class="box-icon-badge purple">
-                <svg lucideActivity [size]="16"></svg>
+                <svg aria-hidden="true" lucideActivity [size]="16"></svg>
               </div>
               <div>
                 <h2 class="box-title">Telemetry & Observability</h2>
@@ -399,7 +399,7 @@
                 <div class="telemetry-item-header">
                   <span class="telemetry-title">Privacy & Sanitization</span>
                   <span class="badge badge-success">
-                    <svg lucideCheck [size]="10"></svg>
+                    <svg aria-hidden="true" lucideCheck [size]="10"></svg>
                     Enforced
                   </span>
                 </div>
@@ -476,7 +476,7 @@
       <div class="box-header">
         <div class="box-title-group">
           <div class="box-icon-badge indigo">
-            <svg lucideShield [size]="16"></svg>
+            <svg aria-hidden="true" lucideShield [size]="16"></svg>
           </div>
           <div>
             <h2 class="box-title">Security & Environment Boundaries</h2>
@@ -493,7 +493,7 @@
           <div class="security-card">
             <div class="security-card-header">
               <div class="shield-circle">
-                <svg lucideUser [size]="14"></svg>
+                <svg aria-hidden="true" lucideUser [size]="14"></svg>
               </div>
               <span class="security-card-title">Authentication Model</span>
             </div>
@@ -507,7 +507,7 @@
           <div class="security-card">
             <div class="security-card-header">
               <div class="shield-circle">
-                <svg lucideGlobe [size]="14"></svg>
+                <svg aria-hidden="true" lucideGlobe [size]="14"></svg>
               </div>
               <span class="security-card-title">CORS Restrictions</span>
             </div>
@@ -520,7 +520,7 @@
           <div class="security-card">
             <div class="security-card-header">
               <div class="shield-circle">
-                <svg lucideLock [size]="14"></svg>
+                <svg aria-hidden="true" lucideLock [size]="14"></svg>
               </div>
               <span class="security-card-title">Zero-Secret Vaulting</span>
             </div>

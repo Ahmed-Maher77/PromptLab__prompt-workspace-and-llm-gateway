@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, signal, computed, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, computed, ChangeDetectionStrategy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -26,6 +26,9 @@ import {
 import { PromptService, ModelMetadata } from '../../services/prompt.service';
 import { generateIdempotencyKey } from '../../utils/uuid.util';
 import { isUnknownOutcomeError } from '../../utils/http-retry.util';
+import { DialogDirective } from '../../shared/a11y/dialog.directive';
+import { ToastService } from '../../shared/feedback/toast.service';
+import { ConfirmService } from '../../shared/feedback/confirm.service';
 
 @Component({
   selector: 'app-conversations',
@@ -43,6 +46,7 @@ import { isUnknownOutcomeError } from '../../utils/http-retry.util';
     LucideCheck,
     LucideCircleAlert,
     LucideSend,
+    DialogDirective,
   ],
   templateUrl: './conversations.component.html',
   styleUrls: ['./conversations.component.css'],
@@ -101,6 +105,12 @@ export class ConversationsComponent implements OnInit, OnDestroy {
     const method = this.inputTokensMethod();
     return Boolean(method && (method.startsWith('approximate:') || method.startsWith('heuristic:')));
   });
+
+  /** Short text for the screen-reader status region. */
+  liveStatus = signal('');
+
+  private readonly toast = inject(ToastService);
+  private readonly confirmService = inject(ConfirmService);
 
   constructor(
     private readonly conversationService: ConversationService,
@@ -218,14 +228,19 @@ export class ConversationsComponent implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.creatingConversation.set(false);
-          alert(err.error?.message || 'Failed to create conversation');
+          this.toast.error(err.error?.message || 'Failed to create conversation');
         },
       });
   }
 
-  deleteConversation(id: string, event: Event): void {
+  async deleteConversation(id: string, event: Event): Promise<void> {
     event.stopPropagation();
-    if (!confirm('Are you sure you want to delete this conversation?')) {
+    const confirmed = await this.confirmService.confirm({
+      title: 'Delete conversation',
+      message: 'Are you sure you want to delete this conversation?',
+      confirmLabel: 'Delete',
+    });
+    if (!confirmed) {
       return;
     }
 
@@ -269,6 +284,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
 
     this.sendingMessage.set(true);
     this.chatError.set(null);
+    this.liveStatus.set('');
 
     this.conversationService.sendMessage(conv.id, text, idempotencyKey).subscribe({
       next: (res) => {
@@ -278,7 +294,9 @@ export class ConversationsComponent implements OnInit, OnDestroy {
         this.inputTokensMethod.set(null);
         this.sendingMessage.set(false);
 
-        if (!res.success) {
+        if (res.success) {
+          this.liveStatus.set('Assistant replied');
+        } else {
           this.chatError.set(
             `[${res.errorType || 'PROVIDER_ERROR'}] ${res.errorMessage}` +
               (res.configurationHint ? ` (${res.configurationHint})` : ''),
@@ -438,7 +456,7 @@ export class ConversationsComponent implements OnInit, OnDestroy {
         this.selectConversation(conv.id, true);
       },
       error: (err) => {
-        alert(err.error?.message || 'Failed to resume from checkpoint');
+        this.toast.error(err.error?.message || 'Failed to resume from checkpoint');
       },
     });
   }

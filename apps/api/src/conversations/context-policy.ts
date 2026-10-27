@@ -113,6 +113,12 @@ export interface AssembleContextConversationInput {
   provider: string;
   contextBudget?: number | null;
   activeCheckpointId?: string | null;
+  /**
+   * Optional counts for callers that load only the messages after the active checkpoint.
+   * When omitted they are derived from `messages`.
+   */
+  totalMessageCount?: number;
+  compactedMessageCount?: number;
   messages: Array<{
     id?: string;
     role: string;
@@ -330,14 +336,16 @@ export function assembleConversationContext(
     0,
   );
 
-  const compactedCount = activeCheckpoint
-    ? conv.messages.filter(
+  const compactedCount = !activeCheckpoint
+    ? 0
+    : conv.compactedMessageCount !== undefined
+      ? conv.compactedMessageCount
+      : conv.messages.filter(
         (m) =>
           m.sequenceNumber <= activeCheckpoint.compactedThroughSequence &&
           !(m.role === 'system' && m.sequenceNumber === 1) &&
           m.status !== 'failed',
-      ).length
-    : 0;
+      ).length;
 
   return {
     model: conv.model,
@@ -362,7 +370,7 @@ export function assembleConversationContext(
           createdAt: new Date(activeCheckpoint.createdAt),
         }
       : null,
-    totalOriginalMessages: conv.messages.length,
+    totalOriginalMessages: conv.totalMessageCount ?? conv.messages.length,
     retainedMessagesCount: survivingRetained.length,
     compactedMessagesCount: compactedCount,
     truncatedMessagesCount,

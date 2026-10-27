@@ -15,6 +15,49 @@ describe('ConversationsService', () => {
   let mockPrisma: any;
   let mockProviders: any;
   let mockModelCatalog: any;
+  let ctxConv: any;
+
+  // Evaluates the subset of Prisma `where` used by the context loader against the fixture rows.
+  const matchesWhere = (m: any, where: any): boolean => {
+    if (where.status?.not !== undefined && m.status === where.status.not) return false;
+    if (where.sequenceNumber?.gt !== undefined && !(m.sequenceNumber > where.sequenceNumber.gt)) {
+      return false;
+    }
+    if (where.sequenceNumber?.lte !== undefined && !(m.sequenceNumber <= where.sequenceNumber.lte)) {
+      return false;
+    }
+    if (typeof where.sequenceNumber === 'number' && m.sequenceNumber !== where.sequenceNumber) {
+      return false;
+    }
+    if (where.role !== undefined && m.role !== where.role) return false;
+    if (where.NOT && matchesWhere(m, where.NOT)) return false;
+    if (where.OR && !where.OR.some((c: any) => matchesWhere(m, c))) return false;
+    return true;
+  };
+
+  const contextRows = (args: any) =>
+    (ctxConv?.messages ?? [])
+      .filter((m: any) => matchesWhere({ status: 'complete', ...m }, args.where))
+      .sort((a: any, b: any) => a.sequenceNumber - b.sequenceNumber);
+
+  const mockConv = (conv: any, persist = false) => {
+    ctxConv = conv;
+    const activeCheckpoint = conv.activeCheckpointId
+      ? (conv.checkpoints ?? []).find((c: any) => c.id === conv.activeCheckpointId) ?? null
+      : null;
+    const row = { ...conv, activeCheckpoint };
+    if (persist) {
+      mockPrisma.conversation.findUnique.mockResolvedValue(row);
+    } else {
+      mockPrisma.conversation.findUnique.mockResolvedValueOnce(row);
+    }
+  };
+
+  const mockTurnLookup = (rows: any[]) => {
+    mockPrisma.conversationMessage.findMany.mockImplementation(async (args: any) =>
+      args.where.requestId !== undefined ? rows : contextRows(args),
+    );
+  };
 
   beforeEach(async () => {
     mockModelCatalog = {
@@ -88,7 +131,12 @@ describe('ConversationsService', () => {
       },
       conversationMessage: {
         create: jest.fn(),
-        findMany: jest.fn(),
+        findMany: jest.fn(async (args: any) => contextRows(args)),
+        count: jest.fn(async (args: any) =>
+          (ctxConv?.messages ?? []).filter((m: any) =>
+            matchesWhere({ status: 'complete', ...m }, args.where),
+          ).length,
+        ),
       },
       conversationCheckpoint: {
         create: jest.fn(),
@@ -154,7 +202,7 @@ describe('ConversationsService', () => {
         status: 'active',
       });
 
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-1',
         title: 'Support Bot',
         provider: 'openai',
@@ -194,7 +242,7 @@ describe('ConversationsService', () => {
 
   describe('inspectContext', () => {
     it('should show known context window for gpt-4o-mini and calculate honest token estimates', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-1',
         title: 'Test Conv',
         provider: 'openai',
@@ -234,7 +282,7 @@ describe('ConversationsService', () => {
     });
 
     it('should set contextWindow to null and status unknown for unregistered models', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-custom',
         title: 'Custom Model Conv',
         provider: 'ollama',
@@ -251,7 +299,7 @@ describe('ConversationsService', () => {
     });
 
     it('should assemble compacted context incorporating checkpoint summary and retained facts', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-compacted',
         title: 'Compacted Conv',
         provider: 'openai',
@@ -291,7 +339,7 @@ describe('ConversationsService', () => {
     });
 
     it('should exclude failed messages from assembled context and retained count', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-failed-ctx',
         title: 'Failed Context Conv',
         provider: 'openai',
@@ -334,7 +382,7 @@ describe('ConversationsService', () => {
     ];
 
     it('should generate a proposed compaction preview with token savings', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-billing',
         title: 'Billing Conv',
         provider: 'openai',
@@ -377,7 +425,7 @@ describe('ConversationsService', () => {
     });
 
     it('falls back deterministically when the model reply does not match the JSON contract', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-billing',
         title: 'Billing Conv',
         provider: 'openai',
@@ -402,7 +450,7 @@ describe('ConversationsService', () => {
     });
 
     it('should fall back gracefully to deterministic summary when provider fails without corrupting history', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-billing',
         title: 'Billing Conv',
         provider: 'openai',
@@ -430,7 +478,7 @@ describe('ConversationsService', () => {
     });
 
     it('should reject compaction if conversation has fewer than 3 messages', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValueOnce({
+      mockConv({
         id: 'c-short',
         title: 'Short Conv',
         provider: 'openai',
@@ -454,7 +502,7 @@ describe('ConversationsService', () => {
     });
 
     it('should apply compaction and persist checkpoint while retaining all original messages in database', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-billing',
         title: 'Billing Conv',
         provider: 'openai',
@@ -492,9 +540,97 @@ describe('ConversationsService', () => {
     });
   });
 
+  describe('context loading', () => {
+    const compactedConv = () => ({
+      id: 'c-ctx',
+      ownerId: 'dev-user-001',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      contextBudget: null,
+      activeCheckpointId: 'chk-1',
+      checkpoints: [
+        {
+          id: 'chk-1',
+          summary: 'Earlier talk',
+          retainedFacts: ['fact'],
+          compactedThroughSequence: 4,
+          createdAt: new Date(),
+        },
+      ],
+      messages: [
+        { id: 'm1', role: 'system', content: 'Sys', sequenceNumber: 1, status: 'complete' },
+        { id: 'm2', role: 'user', content: 'old u', sequenceNumber: 2, status: 'complete' },
+        { id: 'm3', role: 'assistant', content: 'old a', sequenceNumber: 3, status: 'complete' },
+        { id: 'm4', role: 'user', content: 'old u2', sequenceNumber: 4, status: 'complete' },
+        { id: 'm5', role: 'user', content: 'new u', sequenceNumber: 5, status: 'complete' },
+        { id: 'm6', role: 'assistant', content: 'new a', sequenceNumber: 6, status: 'complete' },
+      ],
+    });
+
+    it('does not query messages before the active checkpoint and keeps inspection totals', async () => {
+      mockConv(compactedConv());
+
+      const inspection = await service.inspectContext('c-ctx', undefined, 'dev-user-001');
+
+      expect(mockPrisma.conversation.findFirst).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.conversation.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'c-ctx', ownerId: 'dev-user-001' } }),
+      );
+      const messageQuery = mockPrisma.conversationMessage.findMany.mock.calls[0][0];
+      expect(messageQuery.where).toEqual({
+        conversationId: 'c-ctx',
+        status: { not: 'failed' },
+        OR: [{ sequenceNumber: { gt: 4 } }, { role: 'system', sequenceNumber: 1 }],
+      });
+      expect(inspection.totalOriginalMessages).toBe(6);
+      expect(inspection.compactedMessagesCount).toBe(3);
+      expect(inspection.retainedMessagesCount).toBe(2);
+      expect(inspection.assembledMessages.map((m) => m.source)).toEqual([
+        'system-instruction',
+        'checkpoint-summary',
+        'retained-message',
+        'retained-message',
+      ]);
+    });
+
+    it('loads the conversation exactly once per sendMessage and skips pre-checkpoint messages', async () => {
+      mockConv(compactedConv());
+      mockProviders.executeChatCompletion.mockResolvedValueOnce({
+        success: true,
+        content: 'ok',
+        model: 'gpt-4o-mini',
+        latencyMs: 10,
+      });
+      mockPrisma.conversationMessage.create.mockResolvedValue({ id: 'new' });
+
+      await service.sendMessage('c-ctx', { content: 'next' }, 'dev-user-001');
+
+      expect(mockPrisma.conversation.findFirst).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.conversation.findUnique).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.conversationMessage.findMany).toHaveBeenCalledTimes(1);
+      expect(mockPrisma.conversationMessage.count).not.toHaveBeenCalled();
+      expect(mockPrisma.conversationMessage.findMany.mock.calls[0][0].where.OR[0]).toEqual({
+        sequenceNumber: { gt: 4 },
+      });
+      const sent = mockProviders.executeChatCompletion.mock.calls[0][0].messages;
+      expect(sent.map((m: any) => m.content)).toEqual(
+        expect.arrayContaining(['Sys', 'new u', 'new a', 'next']),
+      );
+      expect(sent.map((m: any) => m.content)).not.toContain('old u');
+    });
+
+    it('throws NotFoundException when the conversation is not owned by the caller', async () => {
+      mockPrisma.conversation.findFirst.mockResolvedValueOnce(null);
+      await expect(service.sendMessage('c-x', { content: 'hi' }, 'other-user')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockPrisma.conversationMessage.findMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sendMessage', () => {
     it('should persist user message and return provider error explicitly when provider fails', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-1',
         title: 'Conv',
         provider: 'openai',
@@ -529,7 +665,7 @@ describe('ConversationsService', () => {
     });
 
     it('should append assistant response with provider-reported usage on success', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-1',
         title: 'Conv',
         provider: 'openai',
@@ -583,7 +719,7 @@ describe('ConversationsService', () => {
       const storedUserMsg = { id: 'msg-u-1', role: 'user', content: 'Cached input', sequenceNumber: 1 };
       const storedAsstMsg = { id: 'msg-a-1', role: 'assistant', content: 'Cached output', sequenceNumber: 2 };
 
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-replay',
         ownerId: 'dev-user-001',
         provider: 'gateway',
@@ -603,7 +739,7 @@ describe('ConversationsService', () => {
         isReplay: true,
       });
 
-      mockPrisma.conversationMessage.findMany.mockResolvedValueOnce([
+      mockTurnLookup([
         storedUserMsg,
         storedAsstMsg,
       ]);
@@ -629,7 +765,7 @@ describe('ConversationsService', () => {
     });
 
     it('should throw 409 ConflictException when replayed request messages are not yet persisted', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-in-flight',
         ownerId: 'dev-user-001',
         provider: 'gateway',
@@ -648,7 +784,7 @@ describe('ConversationsService', () => {
         isReplay: true,
       });
 
-      mockPrisma.conversationMessage.findMany.mockResolvedValueOnce([]);
+      mockTurnLookup([]);
 
       await expect(
         service.sendMessage(
@@ -661,7 +797,7 @@ describe('ConversationsService', () => {
     });
 
     it('treats P2002 as already persisted only when meta.target matches requestId', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-racing',
         ownerId: 'dev-user-001',
         provider: 'gateway',
@@ -688,7 +824,7 @@ describe('ConversationsService', () => {
 
       const persistedUserMsg = { id: 'm-u', role: 'user', content: 'Racing input', sequenceNumber: 1 };
       const persistedAsstMsg = { id: 'm-a', role: 'assistant', content: 'Racing output', sequenceNumber: 2 };
-      mockPrisma.conversationMessage.findMany.mockResolvedValueOnce([persistedUserMsg, persistedAsstMsg]);
+      mockTurnLookup([persistedUserMsg, persistedAsstMsg]);
 
       const result = await service.sendMessage(
         'c-racing',
@@ -703,7 +839,7 @@ describe('ConversationsService', () => {
     });
 
     it('rethrows P2002 when meta.target indicates sequenceNumber collision', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-seq-collision',
         ownerId: 'dev-user-001',
         provider: 'gateway',
@@ -739,7 +875,7 @@ describe('ConversationsService', () => {
     });
 
     it('persists user message with status failed on provider failure', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-fail',
         ownerId: 'dev-user-001',
         provider: 'gateway',
@@ -783,7 +919,7 @@ describe('ConversationsService', () => {
     });
 
     it('throws 409 IDEMPOTENCY_RESULT_UNAVAILABLE when replayed request messages are missing and reconciledAt is older than 30s grace period', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-stale-replay',
         ownerId: 'dev-user-001',
         provider: 'gateway',
@@ -802,7 +938,7 @@ describe('ConversationsService', () => {
         isReplay: true,
       });
 
-      mockPrisma.conversationMessage.findMany.mockResolvedValueOnce([]);
+      mockTurnLookup([]);
 
       mockPrisma.usageRecord.findUnique.mockResolvedValueOnce({
         id: 'ur-stale',
@@ -824,7 +960,7 @@ describe('ConversationsService', () => {
 
   describe('resume', () => {
     it('should restore conversation context confirmation with retained history intact', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-resume',
         title: 'Resume Test',
         provider: 'openai',
@@ -857,7 +993,7 @@ describe('ConversationsService', () => {
 
   describe('contextBudget enforcement and sliding window', () => {
     it('keeps all messages and reports zero truncation when dialogue is within budget', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-within-budget',
         title: 'Within Budget Conv',
         provider: 'openai',
@@ -898,7 +1034,7 @@ describe('ConversationsService', () => {
       // Total without drop = 40 + 30 + 30 + 5 = 105 tokens > 80.
       // Dropping m-3 (30 tokens) leaves 75 tokens <= 80, but leaves m-4 (assistant) as first retained.
       // Whole-turn pruning drops m-4 too so dialogue starts with m-5 (user) -> 45 tokens <= 80!
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-over-budget',
         title: 'Over Budget Conv',
         provider: 'openai',
@@ -1105,7 +1241,7 @@ describe('ConversationsService', () => {
       // System prompt alone = 160 chars ~ 40 tokens
       // Proposed new message = 120 chars ~ 30 tokens
       // Essential = 70 tokens > budget of 50
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-impossible-budget',
         title: 'Impossible Budget Conv',
         provider: 'openai',
@@ -1117,7 +1253,7 @@ describe('ConversationsService', () => {
           { id: 'm-2', role: 'user', content: 'Existing turn', sequenceNumber: 2, status: 'complete' },
         ],
         checkpoints: [],
-      });
+      }, true);
 
       const llmService = (service as any).llmExecutionService;
       const executeSpy = jest.spyOn(llmService, 'execute');
@@ -1172,7 +1308,7 @@ describe('ConversationsService', () => {
     ];
 
     it('persists activeCheckpointId and updates assembled context when resuming an older checkpoint', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-resume-1',
         ownerId: 'u-1',
         title: 'Resume Conv',
@@ -1218,7 +1354,7 @@ describe('ConversationsService', () => {
     });
 
     it('throws NotFoundException when resuming a non-existent checkpoint ID', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-resume-1',
         ownerId: 'u-1',
         title: 'Resume Conv',
@@ -1235,7 +1371,7 @@ describe('ConversationsService', () => {
     });
 
     it('throws NotFoundException when checkpoint belongs to a different conversation or user', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-resume-1',
         ownerId: 'u-1',
         title: 'Resume Conv',
@@ -1264,7 +1400,7 @@ describe('ConversationsService', () => {
     ];
 
     it('rejects with 400 and INVALID_COMPACTION_RANGE when compactedThroughSequence <= activeCheckpoint.compactedThroughSequence', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-comp-1',
         ownerId: 'u-1',
         title: 'Compaction Conv',
@@ -1299,7 +1435,7 @@ describe('ConversationsService', () => {
     });
 
     it('rejects with 400 and INVALID_COMPACTION_RANGE when compactedThroughSequence >= maxSeq (latest message must remain uncompacted)', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-comp-1',
         ownerId: 'u-1',
         title: 'Compaction Conv',
@@ -1325,7 +1461,7 @@ describe('ConversationsService', () => {
     });
 
     it('locks conversation row with FOR UPDATE, creates checkpoint, and sets activeCheckpointId in one transaction', async () => {
-      mockPrisma.conversation.findUnique.mockResolvedValue({
+      mockConv({
         id: 'c-comp-1',
         ownerId: 'u-1',
         title: 'Compaction Conv',

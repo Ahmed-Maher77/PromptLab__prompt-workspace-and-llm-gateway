@@ -42,7 +42,7 @@
           (click)="createNewPromptDraft()"
           id="btn-create-prompt"
         >
-          <svg lucidePlus [size]="14"></svg>
+          <svg aria-hidden="true" lucidePlus [size]="14"></svg>
           New Prompt
         </button>
       }
@@ -62,7 +62,7 @@
             (click)="toggleVersionHistory()"
             id="btn-version-history"
           >
-            <svg lucideClock [size]="14"></svg>
+            <svg aria-hidden="true" lucideClock [size]="14"></svg>
             History ({{ activePrompt()?.versions?.length || 1 }})
           </button>
         }
@@ -98,7 +98,7 @@
       <!-- Filter and Search Toolbar -->
       <div class="library-toolbar">
         <div class="search-box">
-          <svg lucideSearch [size]="14" class="search-icon"></svg>
+          <svg aria-hidden="true" lucideSearch [size]="14" class="search-icon"></svg>
           <label class="visually-hidden" for="input-prompt-search"
             >Search prompt templates</label
           >
@@ -140,7 +140,7 @@
       <!-- Error State -->
       @if (promptsError()) {
         <div class="alert alert-danger" role="alert">
-          <svg lucideCircleAlert [size]="16"></svg>
+          <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
           <span>{{ promptsError() }}</span>
         </div>
       }
@@ -155,7 +155,7 @@
       @if (!loadingPrompts() && prompts().length === 0 && !promptsError()) {
         <div class="empty-state">
           <div class="empty-icon">
-            <svg lucideFileText [size]="32"></svg>
+            <svg aria-hidden="true" lucideFileText [size]="32"></svg>
           </div>
           <h3>
             {{
@@ -543,7 +543,7 @@
                 <!-- Missing Variable Warning -->
                 @if (preview() && preview()!.missingVariables.length > 0) {
                   <div class="alert alert-warning">
-                    <svg lucideTriangleAlert [size]="14"></svg>
+                    <svg aria-hidden="true" lucideTriangleAlert [size]="14"></svg>
                     <span
                       >Missing test values for:
                       <strong>{{
@@ -582,7 +582,7 @@
                     <span class="spinner-sm"></span>
                   }
                   @if (!runningPlayground()) {
-                    <svg lucidePlay [size]="14"></svg>
+                    <svg aria-hidden="true" lucidePlay [size]="14"></svg>
                   }
                   {{ runningPlayground() ? "Executing..." : "Run Prompt" }}
                 </button>
@@ -654,7 +654,7 @@
                 <!-- Gateway Unreachable Warning -->
                 @if (!gatewayConnected()) {
                   <div class="alert alert-warning">
-                    <svg lucideTriangleAlert [size]="14"></svg>
+                    <svg aria-hidden="true" lucideTriangleAlert [size]="14"></svg>
                     <span
                       >LiteLLM Gateway service is not connected at
                       http://127.0.0.1:4000. Start the gateway to enable live
@@ -669,7 +669,7 @@
                     id="alert-run-error"
                     role="alert"
                   >
-                    <svg lucideCircleAlert [size]="16"></svg>
+                    <svg aria-hidden="true" lucideCircleAlert [size]="16"></svg>
                     <div class="error-details">
                       <div class="error-msg">{{ runError() }}</div>
                       @if (runResult()?.configurationHint) {
@@ -738,7 +738,7 @@
                 <!-- Idle Placeholder -->
                 @if (!runResult() && !runError() && !runningPlayground()) {
                   <div class="idle-state">
-                    <svg lucidePlay [size]="24"></svg>
+                    <svg aria-hidden="true" lucidePlay [size]="24"></svg>
                     <p>
                       Click "Run Prompt" to execute this template against
                       <strong>{{ selectedModel }}</strong> through LiteLLM.
@@ -758,17 +758,21 @@
     <div class="history-drawer-backdrop" (click)="toggleVersionHistory()">
       <div
         class="history-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="history-drawer-title"
+        appDialog="history-drawer-title"
+        (dialogClose)="toggleVersionHistory()"
         (click)="$event.stopPropagation()"
       >
         <div class="drawer-header">
           <h2 class="drawer-title" id="history-drawer-title">
             Version history
           </h2>
-          <button class="btn btn-ghost btn-sm" (click)="toggleVersionHistory()">
-            <svg lucideX [size]="14"></svg>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            aria-label="Close version history"
+            (click)="toggleVersionHistory()"
+          >
+            <svg aria-hidden="true" lucideX [size]="14"></svg>
           </button>
         </div>
         <div class="drawer-body">
