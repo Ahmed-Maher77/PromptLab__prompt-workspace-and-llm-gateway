@@ -532,7 +532,7 @@ describe('ExperimentsService', () => {
       mockPrisma.experiment.findUnique.mockResolvedValueOnce({
         id: 'exp-saved',
         name: 'Saved comparison',
-        commonInput: '{"query": "hello"}',
+        commonInput: { query: 'hello' },
         settings: { evaluationCriteria: [] },
         createdAt: new Date(),
         runs: [
@@ -698,7 +698,7 @@ describe('ExperimentsService', () => {
       mockPrisma.experiment.findUnique.mockResolvedValueOnce({
         id: 'exp-with-eval',
         name: 'Automated + Manual Exp',
-        commonInput: '{"query": "test"}',
+        commonInput: { query: 'test' },
         settings: {
           evaluations: {
             A: { criteriaResults: initialAutomatedResults },

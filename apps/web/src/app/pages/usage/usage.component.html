@@ -294,6 +294,20 @@
             >
               Failed
             </button>
+            <button
+              class="filter-pill"
+              [class.active]="statusFilter === 'timeout-ambiguous'"
+              (click)="statusFilter = 'timeout-ambiguous'"
+            >
+              Timed out
+            </button>
+            <button
+              class="filter-pill"
+              [class.active]="statusFilter === 'expired'"
+              (click)="statusFilter = 'expired'"
+            >
+              Expired
+            </button>
           </div>
         </div>
         <!-- Table -->
@@ -348,8 +362,12 @@
                         class="badge text-xs"
                         [ngClass]="{
                           'badge-success': item.status === 'reconciled',
-                          'badge-warning': item.status === 'reserved',
+                          'badge-warning':
+                            item.status === 'reserved' ||
+                            item.status === 'reconciling' ||
+                            item.status === 'timeout-ambiguous',
                           'badge-error': item.status === 'failed',
+                          'badge-neutral': item.status === 'expired',
                         }"
                       >
                         {{ item.status }}

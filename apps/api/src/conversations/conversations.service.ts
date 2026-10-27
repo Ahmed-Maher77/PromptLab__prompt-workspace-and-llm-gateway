@@ -25,6 +25,8 @@ import {
 } from './context-policy';
 import { Prisma, ConversationMessage } from '@prisma/client';
 import { conflict } from '../common/utils/conflict.util';
+import { fromApiTokenUsageSource } from '../common/enums/usage.enums';
+import { toApiMessage } from './conversation-message.mapper';
 
 import {
   buildCompactionMessages,
@@ -200,7 +202,7 @@ export class ConversationsService {
       lastSequence: conversation.lastSequence,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
-      messages: conversation.messages,
+      messages: conversation.messages.map(toApiMessage),
       checkpoints: conversation.checkpoints,
       activeCheckpoint,
     };
@@ -405,8 +407,8 @@ export class ConversationsService {
         if (userMsg && assistantMsg) {
           return {
             success: true,
-            userMessage: userMsg,
-            assistantMessage: assistantMsg,
+            userMessage: toApiMessage(userMsg),
+            assistantMessage: toApiMessage(assistantMsg),
             latencyMs: execution.latencyMs,
             usage: execution.usage,
             traceId: execution.traceId,
@@ -482,7 +484,7 @@ export class ConversationsService {
 
       return {
         success: false,
-        userMessage,
+        userMessage: toApiMessage(userMessage),
         assistantMessage: null,
         errorType: execution.errorType,
         errorMessage: execution.errorMessage || 'Provider failed to generate response',
@@ -532,7 +534,7 @@ export class ConversationsService {
             status: 'complete',
             inputTokens: execution.usage?.promptTokens || this.tokenCounter.countText(dto.content, conv.model, conv.provider).tokens,
             outputTokens: execution.usage?.completionTokens || this.tokenCounter.countText(execution.content || '', conv.model, conv.provider).tokens,
-            tokenUsageSource: execution.usage?.source || 'provider-reported',
+            tokenUsageSource: fromApiTokenUsageSource(execution.usage?.source || 'provider-reported'),
           },
         });
 
@@ -566,8 +568,8 @@ export class ConversationsService {
 
     return {
       success: true,
-      userMessage,
-      assistantMessage,
+      userMessage: toApiMessage(userMessage),
+      assistantMessage: toApiMessage(assistantMessage),
       latencyMs: execution.latencyMs,
       usage: execution.usage,
       traceId: execution.traceId,

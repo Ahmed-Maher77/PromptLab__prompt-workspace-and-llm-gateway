@@ -164,6 +164,24 @@ describe('UsageComponent', () => {
     expect(component.getContextLabel(mockLedger[2])).toBe('Conversation');
   });
 
+  it('should prefer the operation over request id parsing for the context label', () => {
+    expect(component.getContextLabel({ ...mockLedger[0], operation: 'compaction' })).toBe(
+      'Compaction',
+    );
+    expect(
+      component.getContextLabel({ ...mockLedger[2], conversationId: null, operation: 'gateway' }),
+    ).toBe('Gateway');
+  });
+
+  it('should filter timeout-ambiguous records', () => {
+    component.ledger = [
+      { ...mockLedger[0], status: 'timeout-ambiguous' },
+      { ...mockLedger[1], status: 'expired' },
+    ];
+    component.statusFilter = 'timeout-ambiguous';
+    expect(component.filteredLedger.length).toBe(1);
+  });
+
   it('should update quota policy when savePolicy is invoked', () => {
     component.editLimit = 500_000;
     component.editRateLimit = 30;

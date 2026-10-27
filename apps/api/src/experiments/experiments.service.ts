@@ -5,6 +5,8 @@ import { PromptsService } from '../prompts/prompts.service';
 import { LlmExecutionService } from '../llm/llm-execution.service';
 import { RunComparisonDto, SlotConfigDto, EvaluationCriterionDto, RateExperimentDto } from './dto/run-comparison.dto';
 import { Prisma } from '@prisma/client';
+import { decimalToNumber, numberToDecimal } from '../common/utils/decimal.util';
+import { fromApiTokenUsageSource, toApiTokenUsageSource } from '../common/enums/usage.enums';
 import { compileSafeRegex, CompiledRegexResult } from '../common/utils/regex.util';
 
 export interface PreparedCriterion extends EvaluationCriterionDto {
@@ -96,13 +98,6 @@ export class ExperimentsService {
     });
 
     return experiments.map((exp) => {
-      let parsedInput: Record<string, string> = {};
-      try {
-        parsedInput = JSON.parse(exp.commonInput);
-      } catch {
-        parsedInput = { input: exp.commonInput };
-      }
-
       const settings = (exp.settings as Record<string, any>) || {};
       const evaluationsMap: Record<string, any> = {
         ...(settings.evaluations || {}),
@@ -121,7 +116,7 @@ export class ExperimentsService {
         id: exp.id,
         name: exp.name,
         createdAt: exp.createdAt,
-        commonInput: parsedInput,
+        commonInput: exp.commonInput as Record<string, string>,
         evaluationCriteria: settings.evaluationCriteria || [],
         evaluations: evaluationsMap,
         runs: exp.runs.map((r) => ({
@@ -134,8 +129,8 @@ export class ExperimentsService {
           latencyMs: r.latencyMs,
           inputTokens: r.inputTokens,
           outputTokens: r.outputTokens,
-          tokenUsageSource: r.tokenUsageSource,
-          estimatedCost: r.estimatedCost,
+          tokenUsageSource: toApiTokenUsageSource(r.tokenUsageSource),
+          estimatedCost: decimalToNumber(r.estimatedCost),
           errorCode: r.errorCode,
           promptVersionId: r.promptVersionId,
           promptId: r.promptVersion?.prompt?.id,
@@ -174,13 +169,6 @@ export class ExperimentsService {
       throw new NotFoundException(`Experiment with ID "${id}" was not found.`);
     }
 
-    let parsedInput: Record<string, string> = {};
-    try {
-      parsedInput = JSON.parse(exp.commonInput);
-    } catch {
-      parsedInput = { input: exp.commonInput };
-    }
-
     const settings = (exp.settings as Record<string, any>) || {};
     const evaluationsMap: Record<string, any> = {
       ...(settings.evaluations || {}),
@@ -199,7 +187,7 @@ export class ExperimentsService {
       id: exp.id,
       name: exp.name,
       createdAt: exp.createdAt,
-      commonInput: parsedInput,
+      commonInput: exp.commonInput as Record<string, string>,
       evaluationCriteria: settings.evaluationCriteria || [],
       evaluations: evaluationsMap,
       runs: exp.runs.map((r) => ({
@@ -212,8 +200,8 @@ export class ExperimentsService {
         latencyMs: r.latencyMs,
         inputTokens: r.inputTokens,
         outputTokens: r.outputTokens,
-        tokenUsageSource: r.tokenUsageSource,
-        estimatedCost: r.estimatedCost,
+        tokenUsageSource: toApiTokenUsageSource(r.tokenUsageSource),
+        estimatedCost: decimalToNumber(r.estimatedCost),
         errorCode: r.errorCode,
         promptVersionId: r.promptVersionId,
         promptId: r.promptVersion?.prompt?.id,
@@ -331,7 +319,7 @@ export class ExperimentsService {
       data: {
         ownerId: userId,
         name: dto.name || 'Prompt Comparison',
-        commonInput: JSON.stringify(dto.commonInput),
+        commonInput: dto.commonInput as Prisma.InputJsonObject,
         settings: settingsPayload as unknown as Prisma.InputJsonValue,
         runs: {
           create: [
@@ -344,9 +332,9 @@ export class ExperimentsService {
               status: runA.status,
               inputTokens: runA.inputTokens,
               outputTokens: runA.outputTokens,
-              tokenUsageSource: runA.tokenUsageSource,
+              tokenUsageSource: fromApiTokenUsageSource(runA.tokenUsageSource),
               latencyMs: runA.latencyMs,
-              estimatedCost: runA.estimatedCost,
+              estimatedCost: numberToDecimal(runA.estimatedCost),
               errorCode: runA.errorCode,
             },
             {
@@ -358,9 +346,9 @@ export class ExperimentsService {
               status: runB.status,
               inputTokens: runB.inputTokens,
               outputTokens: runB.outputTokens,
-              tokenUsageSource: runB.tokenUsageSource,
+              tokenUsageSource: fromApiTokenUsageSource(runB.tokenUsageSource),
               latencyMs: runB.latencyMs,
-              estimatedCost: runB.estimatedCost,
+              estimatedCost: numberToDecimal(runB.estimatedCost),
               errorCode: runB.errorCode,
             },
           ],

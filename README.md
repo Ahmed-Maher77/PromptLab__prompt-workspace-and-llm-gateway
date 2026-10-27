@@ -294,6 +294,7 @@ erDiagram
     CONVERSATION ||--o{ CONVERSATION_MESSAGE : contains
     CONVERSATION ||--o{ CONVERSATION_CHECKPOINT : "compacted into"
     CONVERSATION |o--o| CONVERSATION_CHECKPOINT : "active checkpoint"
+    CONVERSATION |o--o{ USAGE_RECORD : "billed as"
 
     USER {
         uuid id PK
@@ -325,7 +326,7 @@ erDiagram
         string model
         int inputTokens
         int outputTokens
-        float estimatedCost
+        decimal estimatedCost
     }
     EXPERIMENT_EVALUATION {
         uuid id PK
@@ -373,7 +374,9 @@ erDiagram
         uuid id PK
         uuid userId FK
         string requestId "unique per user"
-        string status
+        enum status
+        enum operation
+        uuid conversationId FK
         int reservedTokens
         json responseBody
     }
@@ -642,7 +645,7 @@ See [`docs/observability.md`](docs/observability.md) for details.
 | Topic | Location |
 | :--- | :--- |
 | Knowledge base index | [`docs/knowledge/index.md`](docs/knowledge/index.md) |
-| Architecture decisions (ADR-001 – ADR-018) | [`docs/knowledge/decisions`](docs/knowledge/decisions/index.md) |
+| Architecture decisions (ADR-001 – ADR-019) | [`docs/knowledge/decisions`](docs/knowledge/decisions/index.md) |
 | Domain concepts | [`docs/knowledge/concepts`](docs/knowledge/concepts/index.md) |
 | System topology and data model | [`docs/knowledge/architecture`](docs/knowledge/architecture/index.md) |
 | Runbooks and troubleshooting | [`docs/knowledge/operations`](docs/knowledge/operations/index.md) |

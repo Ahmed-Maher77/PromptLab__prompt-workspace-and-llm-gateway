@@ -6,6 +6,7 @@ import { ObservabilityService, ActiveTraceContext } from '../observability/obser
 import { TokenCounterService } from '../tokens/token-counter.service';
 import { StoredLlmResponse } from '../usage/usage.types';
 import { conflict } from '../common/utils/conflict.util';
+import { toUsageOperation } from '../common/enums/usage.enums';
 
 export type LlmOperation =
   | 'playground.execute'
@@ -112,6 +113,7 @@ export class LlmExecutionService {
         provider,
         estimatedTokens,
         conversationId: params.conversationId,
+        operation: toUsageOperation(params.operation),
       });
 
       // If this call did not create the record, handle replay / in-progress

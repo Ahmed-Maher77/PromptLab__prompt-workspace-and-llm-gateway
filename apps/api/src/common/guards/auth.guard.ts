@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
   ConflictException,
 } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
@@ -138,7 +139,7 @@ export class AuthGuard implements CanActivate {
     }
     const email = user.email || `${user.id}@promptlab.local`;
     const displayName = user.displayName || user.id;
-    const role = user.role || 'user';
+    const role: UserRole = user.role === 'admin' ? 'admin' : 'user';
 
     try {
       await this.prisma.user.upsert({

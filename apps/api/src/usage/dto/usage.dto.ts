@@ -1,3 +1,4 @@
+import { UsageOperation } from '@prisma/client';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export class UpdateQuotaPolicyDto {
@@ -21,6 +22,7 @@ export class ReserveUsageDto {
   provider!: string;
   estimatedTokens!: number;
   conversationId?: string;
+  operation?: UsageOperation;
 }
 
 import { StoredLlmResponse } from '../usage.types';

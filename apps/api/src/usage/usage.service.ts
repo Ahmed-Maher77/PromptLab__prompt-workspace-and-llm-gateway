@@ -10,6 +10,12 @@ import {
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsageRecord } from '@prisma/client';
+import { decimalToNumber, numberToDecimal } from '../common/utils/decimal.util';
+import {
+  fromApiTokenUsageSource,
+  toApiTokenUsageSource,
+  toApiUsageStatus,
+} from '../common/enums/usage.enums';
 import { ModelCatalogService } from '../providers/model-catalog.service';
 import { APP_CONFIG, ValidatedEnvironment } from '../common/config/env.validation';
 import {
@@ -229,10 +235,8 @@ export class UsageService {
         ? Math.min(100, Math.round((reservedTokens / effectiveTokenLimit) * 1000) / 10)
         : 0;
 
-    const estimatedTotalCost =
-      costAggregate._sum.estimatedCost !== null
-        ? Math.round(costAggregate._sum.estimatedCost * 1_000_000) / 1_000_000
-        : 0;
+    const costSum = decimalToNumber(costAggregate._sum.estimatedCost);
+    const estimatedTotalCost = costSum !== null ? Math.round(costSum * 1_000_000) / 1_000_000 : 0;
 
     return {
       userId: uid,
@@ -291,11 +295,11 @@ export class UsageService {
         INSERT INTO "usage_records" (
           "id", "requestId", "userId", "conversationId", "provider", "model",
           "inputTokens", "outputTokens", "tokenUsageSource", "reservedTokens",
-          "status", "createdAt"
+          "status", "operation", "createdAt"
         ) VALUES (
           ${id}, ${dto.requestId}, ${uid}, ${dto.conversationId || null}, ${dto.provider}, ${dto.model},
-          ${0}, ${0}, ${'estimated'}, ${estimatedTokens},
-          ${'reserved'}, (NOW() AT TIME ZONE 'UTC')
+          ${0}, ${0}, 'estimated', ${estimatedTokens},
+          'reserved', ${dto.operation ?? null}::"UsageOperation", (NOW() AT TIME ZONE 'UTC')
         )
         ON CONFLICT ("userId", "requestId") DO NOTHING
         RETURNING *;
@@ -479,8 +483,8 @@ export class UsageService {
           data: {
             inputTokens,
             outputTokens,
-            tokenUsageSource: source,
-            estimatedCost: cost,
+            tokenUsageSource: fromApiTokenUsageSource(source),
+            estimatedCost: numberToDecimal(cost),
             status: 'reconciled',
             responseBody: dto.responseBody !== undefined ? (dto.responseBody as any) : undefined,
             reconciledAt: new Date(),
@@ -522,9 +526,9 @@ export class UsageService {
             data: {
               inputTokens: conservativeConsumed,
               outputTokens: 0,
-              tokenUsageSource: 'estimated-timeout',
-              estimatedCost: cost,
-              status: 'timeout-ambiguous',
+              tokenUsageSource: 'estimated_timeout',
+              estimatedCost: numberToDecimal(cost),
+              status: 'timeout_ambiguous',
               responseBody: dto.responseBody !== undefined ? (dto.responseBody as any) : { error: dto.error, errorType: dto.errorType },
               reconciledAt: new Date(),
             },
@@ -584,10 +588,11 @@ export class UsageService {
       inputTokens: r.inputTokens,
       outputTokens: r.outputTokens,
       totalTokens: r.inputTokens + r.outputTokens,
-      tokenUsageSource: r.tokenUsageSource,
+      tokenUsageSource: toApiTokenUsageSource(r.tokenUsageSource),
       reservedTokens: r.reservedTokens,
-      estimatedCost: r.estimatedCost,
-      status: r.status,
+      estimatedCost: decimalToNumber(r.estimatedCost),
+      status: toApiUsageStatus(r.status),
+      operation: r.operation,
       createdAt: r.createdAt,
       reconciledAt: r.reconciledAt,
     }));

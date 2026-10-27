@@ -128,6 +128,7 @@ describe('LlmExecutionService', () => {
         userId: 'user-001',
         model: 'gpt-4o-mini',
         estimatedTokens: 550, // 50 (estimate) + 500 (maxTokens)
+        operation: 'playground',
       }),
     );
     expect(providersServiceMock.executeChatCompletion).toHaveBeenCalled();

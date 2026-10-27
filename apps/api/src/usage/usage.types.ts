@@ -1,3 +1,9 @@
+import {
+  ApiTokenUsageSource,
+  ApiUsageOperation,
+  ApiUsageStatus,
+} from '../common/enums/usage.enums';
+
 export interface QuotaPeriodStatus {
   userId: string;
   periodId: string;
@@ -27,10 +33,11 @@ export interface UsageRecordItem {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
-  tokenUsageSource: string;
+  tokenUsageSource: ApiTokenUsageSource;
   reservedTokens: number;
   estimatedCost: number | null;
-  status: string;
+  status: ApiUsageStatus;
+  operation: ApiUsageOperation | null;
   createdAt: Date;
   reconciledAt: Date | null;
 }

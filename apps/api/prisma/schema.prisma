@@ -7,11 +7,65 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  admin
+  user
+}
+
+enum ConversationStatus {
+  active
+  archived
+}
+
+enum MessageRole {
+  system
+  user
+  assistant
+}
+
+enum MessageStatus {
+  complete
+  failed
+}
+
+enum ExperimentRunStatus {
+  completed
+  failed
+}
+
+enum TokenUsageSource {
+  estimated
+  provider_reported @map("provider-reported")
+  estimated_timeout @map("estimated-timeout")
+}
+
+enum QuotaPeriodStatus {
+  active
+  closed
+}
+
+enum UsageStatus {
+  reserved
+  reconciling
+  reconciled
+  failed
+  timeout_ambiguous @map("timeout-ambiguous")
+  expired
+}
+
+enum UsageOperation {
+  playground
+  comparison
+  conversation
+  compaction
+  gateway
+}
+
 model User {
   id          String   @id @default(uuid())
   email       String   @unique
   displayName String
-  role        String   @default("user") // admin, engineer, viewer
+  role        UserRole @default(user)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -63,7 +117,7 @@ model Experiment {
   id          String   @id @default(uuid())
   ownerId     String
   name        String
-  commonInput String
+  commonInput Json
   settings    Json     @default("{}")
   createdAt   DateTime @default(now())
 
@@ -99,12 +153,12 @@ model ExperimentRun {
   provider         String
   model            String
   output           String?
-  status           String   @default("pending") // pending, running, completed, failed
+  status           ExperimentRunStatus
   inputTokens      Int      @default(0)
   outputTokens     Int      @default(0)
-  tokenUsageSource String   @default("estimated") // estimated, provider-reported
+  tokenUsageSource TokenUsageSource @default(estimated)
   latencyMs        Int      @default(0)
-  estimatedCost    Float?
+  estimatedCost    Decimal? @db.Decimal(14, 8)
   errorCode        String?
   createdAt        DateTime @default(now())
 
@@ -124,7 +178,7 @@ model Conversation {
   model     String
   contextBudget Int?
   activeCheckpointId String?
-  status       String   @default("active") // active, archived
+  status       ConversationStatus @default(active)
   lastSequence Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -132,6 +186,7 @@ model Conversation {
   owner            User                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   messages         ConversationMessage[]
   checkpoints      ConversationCheckpoint[] @relation("ConversationCheckpoints")
+  usageRecords     UsageRecord[]
   activeCheckpoint ConversationCheckpoint?  @relation("ActiveConversationCheckpoint", fields: [activeCheckpointId], references: [id], onDelete: SetNull)
 
   @@index([ownerId, updatedAt])
@@ -143,13 +198,13 @@ model ConversationMessage {
   id               String   @id @default(uuid())
   conversationId   String
   requestId        String?
-  role             String // system, user, assistant
+  role             MessageRole
   content          String
   sequenceNumber   Int
-  status           String   @default("complete") // complete, failed
+  status           MessageStatus @default(complete)
   inputTokens      Int?
   outputTokens     Int?
-  tokenUsageSource String? // estimated, provider-reported
+  tokenUsageSource TokenUsageSource?
   createdAt        DateTime @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -195,7 +250,7 @@ model QuotaPeriod {
   tokenLimit     Int
   reservedTokens Int      @default(0)
   actualTokens   Int      @default(0)
-  status         String   @default("active") // active, closed
+  status         QuotaPeriodStatus @default(active)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -213,17 +268,20 @@ model UsageRecord {
   model            String
   inputTokens      Int       @default(0)
   outputTokens     Int       @default(0)
-  tokenUsageSource String    @default("estimated") // estimated, provider-reported
+  tokenUsageSource TokenUsageSource @default(estimated)
   reservedTokens   Int       @default(0)
-  estimatedCost    Float?
-  status           String    @default("pending") // reserved, reconciled, failed
+  estimatedCost    Decimal?  @db.Decimal(14, 8)
+  status           UsageStatus @default(reserved)
+  operation        UsageOperation?
   responseBody     Json?
   createdAt        DateTime  @default(now())
   reconciledAt     DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
   @@unique([userId, requestId])
+  @@index([conversationId])
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@map("usage_records")

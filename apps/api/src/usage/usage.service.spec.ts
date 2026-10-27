@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { UsageService } from './usage.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
@@ -564,7 +565,7 @@ describe('UsageService', () => {
       expect(recordUpdate.data.status).toBe('reconciled');
       expect(recordUpdate.data.inputTokens).toBe(800);
       expect(recordUpdate.data.outputTokens).toBe(400);
-      expect(recordUpdate.data.tokenUsageSource).toBe('provider-reported');
+      expect(recordUpdate.data.tokenUsageSource).toBe('provider_reported');
     });
 
     it('should safely release reservation on failed or timed-out requests without charging actualTokens', async () => {
@@ -638,10 +639,10 @@ describe('UsageService', () => {
       expect(periodUpdate.data.actualTokens).toEqual({ increment: 1_000 });
 
       const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
-      expect(recordUpdate.data.status).toBe('timeout-ambiguous');
-      expect(recordUpdate.data.tokenUsageSource).toBe('estimated-timeout');
+      expect(recordUpdate.data.status).toBe('timeout_ambiguous');
+      expect(recordUpdate.data.tokenUsageSource).toBe('estimated_timeout');
       expect(recordUpdate.data.inputTokens).toBe(1_000);
-      expect(recordUpdate.data.estimatedCost).toBeGreaterThan(0);
+      expect(Number(recordUpdate.data.estimatedCost)).toBeGreaterThan(0);
     });
 
     it('should NOT treat an error containing "timed out" as a timeout when errorType is non-timeout', async () => {
@@ -754,7 +755,7 @@ describe('UsageService', () => {
       expect(periodUpdate.data.actualTokens).toBeUndefined(); // 0 tokens charged
 
       const recordUpdate = mockPrisma.usageRecord.update.mock.calls[0][0];
-      expect(recordUpdate.data.status).toBe('timeout-ambiguous');
+      expect(recordUpdate.data.status).toBe('timeout_ambiguous');
       expect(recordUpdate.data.inputTokens).toBe(0);
 
       (service as any).appConfig.QUOTA_TIMEOUT_CHARGE_RATIO = 0.5;
@@ -941,7 +942,7 @@ describe('UsageService', () => {
       });
 
       mockPrisma.usageRecord.aggregate.mockResolvedValueOnce({
-        _sum: { estimatedCost: 0.125 },
+        _sum: { estimatedCost: new Prisma.Decimal('0.125') },
       });
 
       const status = await service.getStatus('dev-user-001');
@@ -996,6 +997,57 @@ describe('UsageService', () => {
       expect(status.status).toBe('active');
       expect(status.rateLimit.limitPerMinute).toBe(60);
       expect(status.estimatedTotalCost).toBe(0);
+    });
+  });
+
+  describe('getUsageLedger', () => {
+    it('should expose hyphenated API values, numeric cost and the operation', async () => {
+      mockPrisma.usageRecord.findMany.mockResolvedValueOnce([
+        {
+          id: 'u-1',
+          requestId: 'req-1',
+          userId: 'dev-user-001',
+          conversationId: null,
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          inputTokens: 10,
+          outputTokens: 0,
+          tokenUsageSource: 'estimated_timeout',
+          reservedTokens: 20,
+          estimatedCost: new Prisma.Decimal('0.000123'),
+          status: 'timeout_ambiguous',
+          operation: 'comparison',
+          createdAt: new Date('2026-10-27T00:00:00.000Z'),
+          reconciledAt: null,
+        },
+        {
+          id: 'u-2',
+          requestId: 'req-2',
+          userId: 'dev-user-001',
+          conversationId: null,
+          provider: 'openai',
+          model: 'gpt-4o-mini',
+          inputTokens: 0,
+          outputTokens: 0,
+          tokenUsageSource: 'estimated',
+          reservedTokens: 20,
+          estimatedCost: null,
+          status: 'reserved',
+          operation: null,
+          createdAt: new Date('2026-10-27T00:00:00.000Z'),
+          reconciledAt: null,
+        },
+      ]);
+
+      const [first, second] = await service.getUsageLedger('dev-user-001');
+
+      expect(first.status).toBe('timeout-ambiguous');
+      expect(first.tokenUsageSource).toBe('estimated-timeout');
+      expect(first.estimatedCost).toBe(0.000123);
+      expect(typeof first.estimatedCost).toBe('number');
+      expect(first.operation).toBe('comparison');
+      expect(second.estimatedCost).toBeNull();
+      expect(second.operation).toBeNull();
     });
   });
 });

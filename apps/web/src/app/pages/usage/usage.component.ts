@@ -11,11 +11,21 @@ import {
   UsageService,
   QuotaPeriodStatus,
   UsageRecordItem,
+  UsageOperation,
+  UsageRecordStatus,
   QuotaPolicy,
 } from '../../services/usage.service';
 import { ConfirmService } from '../../shared/feedback/confirm.service';
 import { ToastService } from '../../shared/feedback/toast.service';
 import { toApiErrorMessage } from '../../utils/api-error.util';
+
+const CONTEXT_LABELS: Record<UsageOperation, string> = {
+  playground: 'Playground',
+  comparison: 'Comparison',
+  conversation: 'Conversation',
+  compaction: 'Compaction',
+  gateway: 'Gateway',
+};
 
 @Component({
   selector: 'app-usage',
@@ -48,7 +58,7 @@ export class UsageComponent implements OnInit {
   editRateLimit = 60;
 
   // Filter
-  statusFilter: 'all' | 'reconciled' | 'reserved' | 'failed' = 'all';
+  statusFilter: 'all' | UsageRecordStatus = 'all';
   copiedId: string | null = null;
 
   private readonly confirmService = inject(ConfirmService);
@@ -190,6 +200,7 @@ export class UsageComponent implements OnInit {
   }
 
   getContextLabel(record: UsageRecordItem): string {
+    if (record.operation) return CONTEXT_LABELS[record.operation];
     if (record.conversationId) return 'Conversation';
     if (record.requestId.startsWith('req-exp')) return 'Comparison';
     if (record.requestId.startsWith('req-play')) return 'Playground';

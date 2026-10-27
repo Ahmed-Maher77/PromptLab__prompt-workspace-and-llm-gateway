@@ -2547,7 +2547,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         data: {
           ownerId: 'dev-user-001',
           name: 'Concurrent Ratings Experiment',
-          commonInput: '{"topic":"concurrent"}',
+          commonInput: { topic: 'concurrent' },
           settings: {},
           runs: {
             create: [
@@ -2593,7 +2593,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
         data: {
           ownerId: 'dev-user-001',
           name: 'Same Slot Concurrent Experiment',
-          commonInput: '{}',
+          commonInput: {},
           settings: {},
         },
       });
@@ -2889,7 +2889,7 @@ describe('HTTP Routing & App Integration (E2E)', () => {
       });
 
       expect(usageRecord).toBeDefined();
-      expect(usageRecord?.estimatedCost).toBe(0.000042);
+      expect(usageRecord?.estimatedCost?.toNumber()).toBe(0.000042);
       expect((usageRecord?.responseBody as any)?.costSource).toBe('provider-reported');
       expect((usageRecord?.responseBody as any)?.cost).toBe(0.000042);
     });
@@ -3111,6 +3111,138 @@ describe('HTTP Routing & App Integration (E2E)', () => {
     });
   });
 
+  describe('Typed columns, decimal cost and usage operation', () => {
+    const mockCompletion = (providersService: ProvidersService, result: Record<string, unknown>) =>
+      jest.spyOn(providersService, 'executeChatCompletion').mockImplementation(async (params) => ({
+        success: true,
+        model: params.model,
+        content: 'ok',
+        latencyMs: 25,
+        usage: {
+          promptTokens: 10,
+          completionTokens: 5,
+          totalTokens: 15,
+          source: 'provider-reported',
+        },
+        ...result,
+      }) as any);
+
+    const findLedgerItem = async (requestId: string) => {
+      const res = await request(app.getHttpServer())
+        .get('/api/usage/ledger?limit=100')
+        .set(authHeader)
+        .expect(200);
+      return res.body.find((r: any) => r.requestId === requestId);
+    };
+
+    it('returns the cost as a JSON number and the operation in the usage ledger', async () => {
+      const providersService = app.get(ProvidersService);
+      const spy = mockCompletion(providersService, { cost: 0.000123, costSource: 'provider-reported' });
+      const key = `typed-play-${Date.now()}`;
+      try {
+        await request(app.getHttpServer())
+          .post('/api/prompts/run')
+          .set(authHeader)
+          .set('Idempotency-Key', key)
+          .send({ templateBody: 'Say hi', model: 'gpt-4o-mini' })
+          .expect(201);
+
+        const item = await findLedgerItem(key);
+        expect(item.estimatedCost).toBe(0.000123);
+        expect(typeof item.estimatedCost).toBe('number');
+        expect(item.operation).toBe('playground');
+        expect(item.status).toBe('reconciled');
+        expect(item.tokenUsageSource).toBe('provider-reported');
+
+        const status = await request(app.getHttpServer())
+          .get('/api/usage/status')
+          .set(authHeader)
+          .expect(200);
+        expect(typeof status.body.estimatedTotalCost).toBe('number');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('returns experiment run costs as JSON numbers and keeps the common input an object', async () => {
+      const providersService = app.get(ProvidersService);
+      const spy = mockCompletion(providersService, { cost: 0.00042, costSource: 'provider-reported' });
+      const key = `typed-exp-${Date.now()}`;
+      try {
+        const run = await request(app.getHttpServer())
+          .post('/api/experiments/run')
+          .set(authHeader)
+          .set('Idempotency-Key', key)
+          .send({
+            name: 'Typed columns experiment',
+            commonInput: { topic: 'decimals' },
+            slotA: { provider: 'gateway', model: 'gpt-4o-mini', templateBody: 'A {{topic}}' },
+            slotB: { provider: 'gateway', model: 'gpt-4o-mini', templateBody: 'B {{topic}}' },
+          })
+          .expect(201);
+        expect(run.body.slotA.estimatedCost).toBe(0.00042);
+
+        const detail = await request(app.getHttpServer())
+          .get(`/api/experiments/${run.body.experimentId}`)
+          .set(authHeader)
+          .expect(200);
+        expect(detail.body.commonInput).toEqual({ topic: 'decimals' });
+        for (const r of detail.body.runs) {
+          expect(r.estimatedCost).toBe(0.00042);
+          expect(typeof r.estimatedCost).toBe('number');
+          expect(r.tokenUsageSource).toBe('provider-reported');
+          expect(r.status).toBe('completed');
+        }
+
+        const list = await request(app.getHttpServer()).get('/api/experiments').set(authHeader).expect(200);
+        const listed = list.body.find((e: any) => e.id === run.body.experimentId);
+        expect(listed.commonInput).toEqual({ topic: 'decimals' });
+        expect(typeof listed.runs[0].estimatedCost).toBe('number');
+
+        const ledgerA = await findLedgerItem(`${key}:A`);
+        expect(ledgerA.operation).toBe('comparison');
+        expect(ledgerA.estimatedCost).toBe(0.00042);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('round-trips timeout-ambiguous usage records through the ledger', async () => {
+      const providersService = app.get(ProvidersService);
+      const spy = mockCompletion(providersService, {
+        success: false,
+        content: undefined,
+        usage: undefined,
+        errorType: 'timeout',
+        errorMessage: 'Gateway timed out',
+      });
+      const key = `typed-timeout-${Date.now()}`;
+      try {
+        await request(app.getHttpServer())
+          .post('/api/prompts/run')
+          .set(authHeader)
+          .set('Idempotency-Key', key)
+          .send({ templateBody: 'Say hi', model: 'gpt-4o-mini' });
+
+        const item = await findLedgerItem(key);
+        expect(item.status).toBe('timeout-ambiguous');
+        expect(item.tokenUsageSource).toBe('estimated-timeout');
+
+        const stored = await app.get(PrismaService).usageRecord.findFirst({ where: { requestId: key } });
+        expect(stored?.status).toBe('timeout_ambiguous');
+
+        // The stored state still blocks key reuse
+        const reuse = await request(app.getHttpServer())
+          .post('/api/prompts/run')
+          .set(authHeader)
+          .set('Idempotency-Key', key)
+          .send({ templateBody: 'Say hi', model: 'gpt-4o-mini' })
+          .expect(409);
+        expect(reuse.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
 });
-
-

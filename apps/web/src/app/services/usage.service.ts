@@ -21,6 +21,16 @@ export interface QuotaPeriodStatus {
   estimatedTotalCost: number;
 }
 
+export type UsageRecordStatus =
+  | 'reserved'
+  | 'reconciling'
+  | 'reconciled'
+  | 'failed'
+  | 'timeout-ambiguous'
+  | 'expired';
+
+export type UsageOperation = 'playground' | 'comparison' | 'conversation' | 'compaction' | 'gateway';
+
 export interface UsageRecordItem {
   id: string;
   requestId: string;
@@ -34,7 +44,8 @@ export interface UsageRecordItem {
   tokenUsageSource: string;
   reservedTokens: number;
   estimatedCost: number | null;
-  status: 'reserved' | 'reconciled' | 'failed';
+  status: UsageRecordStatus;
+  operation?: UsageOperation | null;
   createdAt: string;
   reconciledAt: string | null;
 }
