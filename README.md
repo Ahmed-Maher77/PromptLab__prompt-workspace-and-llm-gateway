@@ -652,4 +652,4 @@ See [`docs/observability.md`](docs/observability.md) for details.
 | Demo script | [`docs/demo-script.md`](docs/demo-script.md) |
 | Known limitations | [`docs/known-limitations.md`](docs/known-limitations.md) |
 | Design system | [`DESIGN_SYSTEM.md`](DESIGN_SYSTEM.md) |
-| Implementation plan | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) |
+| Specifications | [`docs/specs`](docs/specs/README.md) |

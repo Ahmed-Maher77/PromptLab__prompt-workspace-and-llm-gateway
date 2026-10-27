@@ -3,7 +3,7 @@ title: "PromptLab Knowledge Base"
 description: "Documentation index for PromptLab — Prompt Engineering Workspace and LLM Gateway"
 status: active
 maintainer: "PromptLab Core Team"
-last_updated: "2026-10-20"
+last_updated: "2026-10-27"
 ---
 
 # PromptLab Knowledge Base
@@ -57,6 +57,7 @@ docs/knowledge/
 
 | Section | Description | Entry Point |
 | :--- | :--- | :--- |
+| **Specifications** | What the product must do, with acceptance criteria checked against code and tests | [Specifications Index](../specs/README.md) |
 | **Architecture** | Component boundaries, system interactions, network topology, and Prisma schema | [Architecture Index](./architecture/index.md) |
 | **Concepts** | In-depth domain specifications (prompts, experiments, context compaction, quotas, tracing) | [Concepts Index](./concepts/index.md) |
 | **Decisions (ADRs)** | Formal Architecture Decision Records documenting key technical and architectural choices | [Decisions Index](./decisions/index.md) |

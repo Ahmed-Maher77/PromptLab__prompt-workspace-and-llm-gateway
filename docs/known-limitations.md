@@ -1,86 +1,64 @@
-# PromptLab POC — Known Limitations & Non-Production Boundaries
+# PromptLab — Known Limitations
 
-This document provides an honest, rigorous catalog of known technical limitations, architectural constraints, and operational boundaries of the PromptLab Proof-of-Concept (POC).
-
----
-
-## 1. Authentication and Multi-Tenancy
-
-- **Single-Tenant Developer Mode:**
-  - The application currently runs in a single-tenant developer mode (`authMode: 'single-tenant-developer'`).
-  - Requests are attributed to a hardcoded developer identity (`userId: 'dev-user-001'`).
-  - While domain schemas in Prisma (`QuotaLedger`, `QuotaPolicy`, `AuditLog`, `Conversation`) associate records with `userId`, there is no external identity provider (e.g. Auth0, Keycloak, Microsoft Entra ID), session management, JWT verification, or role-based access control (RBAC).
-  - Anyone with network access to the API or web frontend can access all endpoints and data without credentials.
+What the proof of concept deliberately does not do, and where it would need more work before production. Each item states the current behaviour and what would change it.
 
 ---
 
-## 2. Observability & Telemetry Verification Status
+## 1. Identity and access
 
-- **Unit-Tested vs. Externally Verified:**
-  - Export uses the OpenTelemetry SDK's batching OTLP/HTTP exporter for both the collector and Langfuse. Span IDs, parent-child links, attributes, redaction and failure handling are covered by unit tests with an in-memory exporter.
-  - **Limitation:** Telemetry export has **not** been pointed to or verified against a live OpenTelemetry Collector instance or live Langfuse SaaS/self-hosted deployment. Live collector ingestion tests remain a post-POC operational validation item.
-- **In-Memory Buffer Retention:**
-  - In-memory trace history is capped at 500 traces with FIFO eviction (configurable in `ObservabilityService`).
-  - If the backend process restarts, buffered in-memory traces not exported externally are reset.
+- **Built-in credentials only.** Callers authenticate with an API key from `AUTH_API_KEYS` or an HS256 JWT signed with `AUTH_JWT_SECRET`. Two roles exist: `admin` and `user`, and data is scoped to its owner. There is no external identity provider, no login sessions, no refresh tokens and no key rotation API.
+- **Browser storage.** The web app keeps the signed-in key or token in `localStorage`, so it is exposed to any script running on the page. A production deployment would use an identity provider with short-lived tokens or HTTP-only cookies.
+- **No cross-user views.** Admins can change any user's quota policy through the API, but the usage ledger and the Usage page only show the caller's own records.
 
----
+## 2. Scaling to several API instances
 
-## 3. Model Pricing and Cost Estimation
+- **Rate limits are per instance.** Throttling uses the in-memory store of `@nestjs/throttler`. With several API replicas each enforces the limits separately. A shared store (e.g. Redis) would be needed for global limits. Quotas and idempotency are not affected: they are enforced in PostgreSQL and safe across instances.
+- **Per-instance caches.** The recent-trace buffer behind the Observability page (500 traces, lost on restart) and the model-catalog cache are held in memory per instance. Traces are durable only when exported to an OTLP collector or Langfuse.
+- **Migrations on start.** The API container runs `prisma migrate deploy` on start. That is correct for a single replica. Several replicas should run migrations as a separate deployment step.
 
-- **Configurable October 2024 Reference Rates:**
-  - Model pricing rates are configurable in [`apps/api/src/experiments/cost-calculator.ts`](../apps/api/src/experiments/cost-calculator.ts), defaulting to reference pricing published in **October 2024**:
-    - `gpt-4o-mini`: $0.150 / 1M prompt tokens, $0.600 / 1M completion tokens.
-    - `claude-3-5-sonnet`: $3.000 / 1M prompt tokens, $15.000 / 1M completion tokens.
-  - **Limitation:** These figures are static estimation references, not real-time billing feeds. Upstream provider pricing changes, custom volume discounts, prompt caching discounts, or batch API discounts are not reflected automatically. Unknown models fall back to zero-cost estimates with explicit provenance labelling (`estimated`).
+## 3. Model calls
 
----
+- **No streaming.** Responses are returned when the model finishes, so a request can take up to `LLM_REQUEST_TIMEOUT_MS` (30 s by default). Streaming would need server-sent events and usage taken from the final chunk.
+- **Model identifiers.** IDs are validated for format, not against an allow-list. A model the gateway does not serve fails with a provider error after the quota reservation, which is then reconciled as failed.
+- **Gateway budgets are not used.** Monthly quotas are enforced by the API. LiteLLM's own budgets and virtual keys are not configured.
 
-## 4. Ambiguous Timeout Usage Accounting
+## 4. Cost accuracy
 
-- **Conservative Recovery Heuristic:**
-  - When an LLM request fails due to a network timeout (`GATEWAY_TIMEOUT` / 504) or upstream abort after being dispatched to LiteLLM, the backend cannot reliably determine whether the provider actually processed the tokens.
-  - **Behavior:** The reservation is held conservatively (retaining the reserved quota allocation) rather than automatically releasing the tokens as zero-cost.
-  - **Limitation:** In rare occurrences where upstream processing was immediately dropped, this may temporarily hold quota against the user until the billing cycle or demo reset. A provider reconciliation worker is not included in this POC.
+- **Estimates.** Cost comes from the gateway's response-cost header when present, otherwise from the per-token prices in the gateway's model catalog. Models without catalog prices have no cost (`null`). Provider discounts (caching, batch, volume) are not reflected, and figures are estimates, not billing data.
 
----
+## 5. Ambiguous timeouts
 
-## 5. Database Schema & Migration Management
+- When a model call times out after it was sent, the API cannot know whether the provider processed it. The record is marked `timeout-ambiguous` and charged `QUOTA_TIMEOUT_CHARGE_RATIO` (default 0.5) of the reserved tokens. Reservations that are never reconciled are released by a sweeper that runs every minute. There is no reconciliation against provider billing.
 
-- **Prisma Schema Migrations via `migrate deploy`:**
-  - The database schema is versioned via Prisma migrations in `prisma/migrations/` (baseline: `20261025000000_init`).
-  - Deploy migrations using `npm run prisma:push` or `npm run prisma:deploy` (invoking `prisma migrate deploy`).
-  - New schema changes are created via `npm run prisma:migrate` (`prisma migrate dev`) and tracked in Git.
+## 6. Conversations and comparisons
 
----
+- **Manual compaction.** Compaction is always previewed and approved by the user. There is no automatic threshold; when a conversation outgrows its budget, older turns are dropped from the prompt (the full history stays stored).
+- **Saved comparisons.** A saved comparison stores the prompt versions, models, outputs, metrics and ratings, but not each slot's temperature and max tokens or inline template text, so a rerun may not be identical. The API does not reject comparison inputs that leave template variables unresolved; the web page does.
 
-## 6. Pagination & Query Surface
+## 7. Lists and history
 
-- **Array Slice Contract:**
-  - The list endpoints (`/api/prompts`, `/api/experiments`, `/api/conversations`) support query parameters `limit` (1–100, default unpaginated/all) and `offset` (>= 0).
-  - Data ordering is deterministic (`updatedAt DESC, id ASC` or `createdAt DESC, id ASC`).
-  - **Limitation:** To maintain backward compatibility with existing Angular services and UI components, responses return direct arrays (`Entity[]`) rather than wrapped envelope objects (`{ data: [], total: number, page: number }`). Total record counts and page totals are not yet exposed via response headers or metadata envelopes.
+- `GET /prompts`, `/experiments` and `/conversations` support `limit`/`offset` with deterministic ordering, and return plain arrays without totals. The usage ledger returns the newest records only (up to 100) and has no offset or period filter.
+
+## 8. Telemetry
+
+- Export uses the OpenTelemetry SDK (batched OTLP/HTTP) to a collector and to Langfuse. It is covered by unit tests with an in-memory exporter but has not been verified against a live collector or Langfuse instance.
+
+## 9. Operations
+
+- **Gateway secrets.** Provider keys reach LiteLLM through environment variables. A production deployment would inject them from a secret manager.
+- **No end-to-end check of a fresh setup.** CI applies every migration to an empty PostgreSQL database, runs the integration suite and builds both Docker images, but it does not start the Compose stack or run the Playwright flows.
 
 ---
 
-## 7. LiteLLM Proxy Gateway & Secret Management
+## Summary
 
-- **Local Process & Environment Secrets:**
-  - The LiteLLM proxy runs as a local Python script (`infra/litellm/run_proxy.py`) using configuration from `infra/litellm/config.yaml`.
-  - Upstream provider credentials (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) are read from environment variables.
-  - **Limitation:** In an enterprise deployment, LiteLLM must be containerized in Kubernetes/ECS with secrets injected via AWS Secrets Manager, GCP Secret Manager, or HashiCorp Vault. Virtual key generation, per-team budgets, and automated failover routing within LiteLLM are demonstrated via static configuration rather than dynamic administrative database models.
-
----
-
-## 8. Summary Table of Implementation vs. External Verification
-
-| Capability | Implementation Status | Verification Level | Production Readiness |
-| :--- | :--- | :--- | :--- |
-| **Prompt Studio & Versioning** | Complete | Full API & UI Automated Tests | POC Complete |
-| **Model Comparison (A/B)** | Complete | Full API & UI Automated Tests | POC Complete |
-| **Conversation Compaction** | Complete | Full API & UI Automated Tests | POC Complete |
-| **Atomic Quota Reservation** | Complete | Unit & Integration Tested | POC Complete |
-| **Privacy Redaction Engine** | Complete | Unit & E2E Pattern Tested | POC Complete |
-| **OTLP / Langfuse Exporters** | Complete | Unit Tested (Payloads & Format) | **Requires Live Collector Validation** |
-| **Authentication & RBAC** | Single-tenant stub | Stub / Developer Mode | **Requires Identity Integration** |
-| **Prisma Migrations** | `db push` only | Functional in Local Postgres | **Requires Migration History** |
-| **Live Provider Pricing** | Configurable Oct 2024 | Static Reference Calculations | **Requires Provider Billing API** |
+| Area | Status | Needed for production |
+| :--- | :--- | :--- |
+| Prompt Studio and versioning | Implemented and tested | — |
+| Model comparison | Implemented and tested | Store generation settings with saved comparisons |
+| Conversations and compaction | Implemented and tested | Optional automatic compaction policy |
+| Quotas, idempotency, usage ledger | Implemented, tested against PostgreSQL | Shared rate-limit store for several instances |
+| Authentication and roles | API keys and JWT, two roles | Identity provider, sessions, key rotation |
+| Telemetry export | Implemented, unit tested | Validation against a live collector / Langfuse |
+| Cost | Gateway-reported or catalog estimate | Provider billing reconciliation |
+| Database migrations | Versioned Prisma migrations | Separate migration step for several replicas |

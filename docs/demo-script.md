@@ -1,181 +1,113 @@
-# PromptLab POC — 10-Step Demonstration Script
+# PromptLab — Demonstration Script
 
-This script provides an end-to-end, reproducible walkthrough of all primary capabilities implemented across Phases 0–6 of the PromptLab Proof-of-Concept.
-
----
-
-## Prerequisites and Preparation
-
-1. **Services Running:**
-   - PostgreSQL running on port 5432 (`promptlab` database).
-   - LiteLLM Proxy Gateway running on port 4000: `npm run start:gateway`
-   - NestJS API running on port 3100: `npm run start:api`
-   - Angular Web Application running on port 4200: `npm run start:web`
-2. **Access:** Open your browser at [http://localhost:4200](http://localhost:4200).
-3. **Provider Credentials Note:**
-   - Steps requiring upstream model execution (Steps 4, 6, 7) require valid provider API keys (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`) configured in `.env` and loaded by LiteLLM.
-   - If keys are unconfigured, LiteLLM returns honest configuration errors that the UI displays gracefully without crashing.
-   - All other steps (templating, variable interpolation, version audits, context calculation, compaction simulation, quota reset, tracing inspection, settings) function completely offline.
+An end-to-end walkthrough of the main capabilities. It takes about 15 minutes and works with the Docker stack or a local setup (see the [README](../README.md#getting-started)).
 
 ---
 
-## Walkthrough Steps
+## Before you start
 
-### Step 1: System Health, Environment & LiteLLM Gateway Status
-- **Route:** `/settings`
-- **Action:** Click **Settings** in the bottom of the left sidebar navigation.
-- **Expected Result:**
-  - The System Configuration & Health dashboard displays the active application status.
-  - **Gateway Status:** Shows LiteLLM connectivity badge (`Connected` or `Disconnected`), endpoint (`http://localhost:4000`), and configured model count.
-  - **Database Status:** Reports PostgreSQL connection state and latency in milliseconds.
-  - **Effective Quota Policy:** Displays monthly token limit (`100,000`), request rate limit (`60 req/min`), and user scope (`dev-user-001`).
-  - **Security:** Confirms single-tenant developer mode and that secrets are safely hidden from the browser.
+1. **Start the stack.**
+   - Docker: `docker compose up --build -d`, then wait until `docker compose ps` shows every service as healthy. With `SEED_DEMO_DATA=true` (the default in `.env.example`) the three reference prompts are loaded automatically.
+   - Local: start PostgreSQL, run `npm run prisma:deploy` and `npm run seed`, then `npm run start:gateway`, `npm run start:api` and `npm run start:web`.
+2. **Credentials.** You need an API key from `AUTH_API_KEYS` (or, in development with `AUTH_DEV_TOKENS_ENABLED=true`, a dev token) to sign in. Use an `admin` key to see every page.
+3. **Provider keys.** Steps that call a model (4, 6, 7, 8) need `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY` configured for the LiteLLM gateway. Without them those steps show the provider's error message in the UI; every other step works offline.
 
 ---
 
-### Step 2: Prompt Creation with Composable Techniques
-- **Route:** `/prompts`
+## Step 1 — Sign in and check platform health
+- **Route:** `/login`, then `/`
+- **Action:** Paste your API key or token and sign in. You land on **Platform health**.
+- **Expected:**
+  - Cards for the application API, PostgreSQL and the model gateway with live status and latency.
+  - As an admin you also see the environment, gateway endpoint and configured providers; other users see "Visible to admins only".
+  - The sidebar footer shows the real gateway state ("Gateway online" / "Gateway unreachable"), refreshed every 30 seconds.
+
+## Step 2 — Browse and create a prompt
+- **Route:** `/prompt-studio`
 - **Action:**
-  1. Click **Prompt Studio** in the navigation bar.
-  2. Click **+ New Prompt**.
-  3. Enter Name: `Customer Support Escalator`.
-  4. Select Composable Techniques: select both `few-shot` and `structured-output`.
-  5. In the Template Editor, enter:
+  1. Type `query` in the search box. The list filters after you stop typing and shows *PostgreSQL Query Generator*.
+  2. Filter by technique (e.g. `few-shot`).
+  3. Create a new prompt named `Customer Support Escalator` with the techniques `few-shot` and `structured-output` and this template:
      ```text
-     You are an expert customer service triage agent.
      Analyze the following customer inquiry:
      "{{customer_message}}"
 
-     Classification Categories: {{allowed_categories}}
+     Classification categories: {{allowed_categories}}
 
-     Respond with a JSON object:
-     {
-       "urgency": "low | medium | high",
-       "category": string,
-       "recommended_action": string
-     }
+     Respond with a JSON object: {"urgency": "low | medium | high", "category": string, "recommended_action": string}
      ```
-  6. Click **Save Prompt**.
-- **Expected Result:**
-  - The prompt is persisted with version `v1`.
-  - The technique badges (`few-shot`, `structured-output`) are visible in the header and library.
+  4. Save it.
+- **Expected:** The prompt is stored as `v1`, and `customer_message` and `allowed_categories` are detected as variables.
 
----
+## Step 3 — Variables and live preview
+- **Action:** Fill in the variables:
+  - `customer_message`: `My card was charged twice for order #9821!`
+  - `allowed_categories`: `Billing, Shipping, Account, General`
+- **Expected:**
+  - The resolved preview updates as you type, with a model-aware token estimate. Approximate counts are labelled as such.
+  - Values are inserted literally: a value such as `{{secret}}` appears as text and is never expanded.
 
-### Step 3: Dynamic Template Variables & Live Resolved Preview
-- **Route:** `/prompts` (with `Customer Support Escalator` selected)
-- **Action:**
-  1. Observe the **Template Variables** panel in the lower left.
-  2. Note that `customer_message` and `allowed_categories` were automatically detected from the double-bracket syntax `{{...}}`.
-  3. Enter Test Values:
-     - `customer_message`: `My credit card was charged twice for order #9821!`
-     - `allowed_categories`: `Billing, Shipping, Account, General`
-  4. Observe the **Live Resolved Preview** tab in the center-right panel.
-- **Expected Result:**
-  - The preview immediately displays the fully interpolated prompt text.
-  - Character count and estimated input tokens update dynamically in real time without calling the server.
+## Step 4 — Run in the playground
+- **Action:** In **Run settings** choose `gpt-4o-mini`, temperature `0.2`, max tokens `250`, and run the prompt.
+- **Expected:**
+  - The response appears with latency, prompt, completion and total tokens, and the cost.
+  - Token counts are labelled `provider-reported` when the gateway returned usage, otherwise `estimated`.
+  - Cost comes from the gateway's model catalog.
 
----
+## Step 5 — Immutable versions
+- **Action:** Add the line `Also include a "sentiment" field.` to the template and save it as a new version. Open the version history.
+- **Expected:** `v2` is the current version. `v1` is still available read-only, so past runs stay reproducible.
 
-### Step 4: Playground Execution & Provenance Attribution
-- **Route:** `/prompts` (Playground panel)
-- **Prerequisite:** Valid `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` configured in `.env`.
-- **Action:**
-  1. Select Model: `gpt-4o-mini` (or `claude-3-5-sonnet`).
-  2. Set Temperature: `0.2`, Max Tokens: `250`.
-  3. Click **Run Prompt** (or press `Ctrl+Enter`).
-- **Expected Result:**
-  - A loading indicator indicates gateway processing.
-  - Output panel displays the LLM's response JSON.
-  - The metadata bar displays latency (e.g. `482 ms`), prompt tokens, completion tokens, and total tokens.
-  - Token counts display explicit provenance labels (`provider-reported` when returned by LiteLLM, or `estimated` if calculated via fallback tokenizer).
-
----
-
-### Step 5: Immutable Version History & Audit Trail
-- **Route:** `/prompts`
-- **Action:**
-  1. In the Template Editor, append a line:
-     `Also include a "sentiment" field: "positive | neutral | negative".`
-  2. Enter change description: `Add sentiment analysis field`.
-  3. Click **Save Version**.
-  4. Switch to the **Version History** tab in the sidebar.
-- **Expected Result:**
-  - A new version `v2` is created.
-  - The version timeline displays `v2 (current)` and `v1`.
-  - Clicking `v1` loads the historical template in read-only mode, proving immutability of past revisions.
-
----
-
-### Step 6: Side-by-Side Model Comparison (A/B Testing)
+## Step 6 — Compare two prompts or models
 - **Route:** `/compare`
 - **Action:**
-  1. Click **Model Comparison** in the sidebar.
-  2. In Slot A, select `gpt-4o-mini`, Temperature `0.2`.
-  3. In Slot B, select `claude-3-5-sonnet`, Temperature `0.2`.
-  4. Paste a prompt or load from library:
-     `Explain the difference between optimistic concurrency control and pessimistic locking in 3 bullet points.`
-  5. Click **Run Comparison**.
-  6. Review outputs side-by-side.
-  7. Under the preferred slot (e.g. Slot B), select rating `5 stars` and click **Select Winner B**.
-- **Expected Result:**
-  - Both slots execute concurrently.
-  - Each slot displays its own output, latency, token usage, and calculated cost (labelled `Oct 2024 pricing estimate`).
-  - Rating and winner selection are recorded in the PostgreSQL experiment registry.
+  1. Choose a prompt (or inline text) and a model for each slot, e.g. `v1` with `gpt-4o-mini` in slot A and `v2` in slot B.
+  2. Enter the common input and run the comparison.
+  3. Rate the better slot (1–5 stars), add a note, and open the history drawer to reload the saved comparison.
+- **Expected:**
+  - Both slots run in parallel and show their output, latency, tokens, cost and any evaluation-criteria results.
+  - Ratings are saved per slot.
+  - Reloading a saved comparison always shows the one you clicked last, even if you click quickly.
 
----
-
-### Step 7: Multi-Turn Conversation & Context Window Budgeting
+## Step 7 — Conversation with a context budget
 - **Route:** `/conversations`
 - **Action:**
-  1. Click **Conversations** in the sidebar.
-  2. Click **+ New Conversation**. Title: `Database Optimization Chat`.
-  3. Select Model: `gpt-4o-mini`. Context Budget: `4,000 tokens`.
-  4. Send Message 1: `What causes high sequential scan counts in PostgreSQL?`
-  5. Send Message 2: `How can I identify missing indexes for those queries using pg_stat_statements?`
-- **Expected Result:**
-  - Messages appear in the conversational thread.
-  - The **Context Window Budget Bar** at the top updates showing cumulative token consumption against the 4,000 token ceiling.
-  - Warning colors trigger if usage nears 80% of budget.
+  1. Start a new conversation: title `Database Optimization Chat`, model `gpt-4o-mini`, context budget `4,000` tokens, and an optional system prompt.
+  2. Send: `What causes high sequential scan counts in PostgreSQL?`
+  3. Send: `How do I find missing indexes with pg_stat_statements?`
+  4. Open the context inspector.
+- **Expected:**
+  - The budget indicator turns orange above 70% and red above 85%.
+  - The inspector shows exactly what is sent to the model: the system prompt, the active checkpoint summary, the recent turns that fit, and the new message.
+  - If a message cannot fit even after older turns are dropped, the API refuses it with `CONTEXT_BUDGET_EXCEEDED` before any tokens are charged.
 
----
-
-### Step 8: Conversation Compaction & Summary Preservation
-- **Route:** `/conversations` (with active conversation)
+## Step 8 — Compact and resume
 - **Action:**
-  1. Click the **Compact Context** button in the conversation header.
-  2. Choose Compaction Strategy: **Summarize & Truncate** (replaces older history with a distilled conversation summary, keeping the system prompt and last 2 user-assistant turns).
-  3. Click **Confirm Compaction**.
-- **Expected Result:**
-  - A dedicated **Summary Banner** appears at the top of the conversation thread containing the distilled memory.
-  - The Context Window Budget bar drops significantly (e.g., from 3,200 tokens down to 650 tokens).
-  - The conversation remains fully functional for subsequent messages.
+  1. Click **Compact History**. A preview is generated: a summary plus retained facts, returned by the model as structured JSON.
+  2. Review and edit the summary, then apply it.
+  3. Open **Compaction Checkpoints** to see the checkpoint, and resume from an earlier one if you have several.
+- **Expected:**
+  - Later turns send the summary instead of the compacted messages, and the budget usage drops.
+  - All original messages are kept in the database.
+  - If the model is unavailable or returns something unusable, the preview falls back to an automatic summary and the dialog says so.
 
----
-
-### Step 9: Quota Enforcement, Ledger Accounting & Reset Simulation
+## Step 9 — Usage, quotas and the ledger
 - **Route:** `/usage`
-- **Action:**
-  1. Click **Usage & Quotas** in the sidebar.
-  2. Inspect the **Quota Consumption** gauge and ledger table.
-  3. Observe the breakdown: Monthly Token Limit (`100,000`), Used Tokens, and Remaining Tokens.
-  4. In the Audit Ledger, verify that every run from Steps 4, 6, and 7 is recorded as an immutable ledger transaction with timestamp, prompt tokens, completion tokens, and model ID.
-  5. For demonstration purposes, click **Reset Period (Demo)**.
-- **Expected Result:**
-  - The usage counters reset to 0, archiving the prior ledger period.
-  - The full monthly allowance of 100,000 tokens is restored.
+- **Action:** Review the monthly allowance and the ledger, filter by status, and (in development, as an admin) use **Reset Period for Demo**.
+- **Expected:**
+  - The default allowance is 1,000,000 tokens per user per month, and the rate limit is 60 requests per minute.
+  - Every model call from steps 4, 6, 7 and 8 appears with its operation (Playground, Comparison, Conversation, Compaction), status, tokens and cost.
+  - Repeating a request with the same idempotency key does not create a second charge.
 
----
+## Step 10 — Traces and redaction
+- **Route:** `/observability` (admin)
+- **Action:** Filter the trace list, then open a trace with the mouse or the keyboard (Enter). Press Escape to close it.
+- **Expected:**
+  - Traces for `playground.execute`, `comparison.slot`, `conversation.turn` and `compaction.preview`, each with spans for quota reservation, the gateway call and reconciliation.
+  - The W3C `traceparent` can be copied.
+  - API keys, bearer tokens and similar values appear as `[REDACTED]`, `[REDACTED_API_KEY]` or `[REDACTED_BEARER]`, while token counts stay readable.
+  - When an OTLP collector or Langfuse is configured, the same spans are exported there.
 
-### Step 10: Observability, Distributed Tracing & Privacy Redaction
-- **Route:** `/observability`
-- **Action:**
-  1. Click **Observability** in the sidebar.
-  2. Observe the **Traces Table** showing all recent spans (`prompt.run`, `experiment.compare`, `conversation.turn`).
-  3. Click on the most recent trace row to expand its details.
-  4. Inspect the **Span Details**:
-     - Trace ID and Span ID formatted per W3C specification (`00-...`).
-     - Request / response duration breakdown in milliseconds.
-     - Redaction Verification: Notice that any API keys (`sk-...`), Authorization headers, or bearer tokens are masked as `[REDACTED_API_KEY]` while preserving token counts (`input_tokens: 42`, `output_tokens: 180`).
-- **Expected Result:**
-  - End-to-end auditability without exposing sensitive credentials or private telemetry data.
+## Step 11 — Settings
+- **Route:** `/settings` (admin)
+- **Expected:** A read-only view of the runtime configuration, gateway models, effective quota policy and telemetry status, with no secrets shown.

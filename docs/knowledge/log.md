@@ -4,6 +4,14 @@ This log chronologically records architectural milestones, specification evoluti
 
 ---
 
+## 2026-10-27 — Specifications Folder
+- **Scope:** Replaced the root implementation plan with `docs/specs/`, which describes the product as built.
+- **Artifacts Created:**
+  - Product overview, engineering standards and architecture specifications.
+  - Feature specifications SPEC-10 to SPEC-16, each with acceptance criteria verified against code and tests.
+  - Specifications index with an overall acceptance checklist.
+- **Removed:** the root plan document; references now point to `docs/specs`.
+
 ## 2026-10-20 — Documentation Knowledge Base & Final Delivery
 - **Scope:** Organised the repository documentation into a structured knowledge base with indexed sections and front matter on every document.
 - **Artifacts Created:**
